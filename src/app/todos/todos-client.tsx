@@ -203,97 +203,120 @@ export default function TodosClient({ userId }: { userId: string }) {
   };
 
   return (
-    <main className="mx-auto max-w-2xl p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Todos</h1>
-        <button className="border rounded px-3 py-2" onClick={logout}>
-          Logout
-        </button>
-      </div>
-
-      {/* Share UI */}
-      <div className="border rounded p-3 space-y-2">
-        <div className="text-sm font-semibold">Collaborate</div>
-        <div className="text-xs text-gray-600">
-          Share by collaborator’s Supabase User UUID (Auth → Users).
-        </div>
-
-        <div className="flex gap-2">
-          <input
-            className="flex-1 border rounded px-3 py-2"
-            placeholder="Collaborator user UUID..."
-            value={shareUserId}
-            onChange={(e) => setShareUserId(e.target.value)}
-          />
-          <button className="border rounded px-3 py-2" onClick={() => void share()} disabled={!listId || !shareUserId}>
-            Share
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-200 p-6">
+      <div className="mx-auto max-w-2xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Todos</h1>
+            <p className="text-sm text-slate-500">Realtime + collaborative list</p>
+          </div>
+          <button
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 transition"
+            onClick={logout}
+          >
+            Logout
           </button>
         </div>
-        {shareMsg && <p className="text-sm">{shareMsg}</p>}
-      </div>
 
-      <div className="flex gap-2">
-        <input
-          className="flex-1 border rounded px-3 py-2"
-          placeholder="New todo..."
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <button
-          className="bg-black text-white rounded px-3 py-2 disabled:opacity-60"
-          disabled={!title || !listId}
-          onClick={() => void addTodo()}
-        >
-          Add
-        </button>
-      </div>
+        {/* Share UI */}
+        <div className="rounded-2xl bg-white shadow border border-slate-200 p-4 space-y-2">
+          <div className="font-semibold">Collaborate</div>
+          <div className="text-xs text-slate-500">
+            Share by collaborator’s Supabase User UUID (Auth → Users).
+          </div>
 
-      {msg && <p className="text-sm text-red-600">{msg}</p>}
-
-      <ul className="space-y-2">
-        {todos.map((t) => (
-          <li key={t.id} className="border rounded p-3 space-y-2">
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={t.is_done}
-                onChange={(e) => void toggleTodo(t.id, e.target.checked)}
-              />
-
-              <input
-                key={t.title}
-                className="flex-1 border rounded px-2 py-1"
-                defaultValue={t.title}
-                onBlur={(e) => void updateTitle(t.id, e.target.value)}
-              />
-
-              <button className="border rounded px-3 py-1" onClick={() => void delTodo(t.id)}>
-                Delete
-              </button>
-            </div>
-
-            <TodoImageUpload
-              userId={userId}
-              todoId={t.id}
-              listId={listId}
-              onUploaded={() => loadImages(listId!)}
+          <div className="flex gap-2">
+            <input
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+              placeholder="Collaborator user UUID..."
+              value={shareUserId}
+              onChange={(e) => setShareUserId(e.target.value)}
             />
+            <button
+              className="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50 transition"
+              onClick={() => void share()}
+              disabled={!listId || !shareUserId}
+            >
+              Share
+            </button>
+          </div>
 
-            {(imagesByTodo[t.id] ?? []).length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {(imagesByTodo[t.id] ?? []).map((img) => {
-                  const url = supabase.storage.from(BUCKET).getPublicUrl(img.path).data.publicUrl;
-                  return (
-                    <a key={img.id} href={url} target="_blank" rel="noreferrer">
-                      <img src={url} alt="todo" className="h-20 w-20 rounded object-cover border" />
-                    </a>
-                  );
-                })}
+          {shareMsg && <p className="text-sm text-slate-700">{shareMsg}</p>}
+        </div>
+
+        <div className="rounded-2xl bg-white shadow border border-slate-200 p-4">
+          <div className="flex gap-2">
+            <input
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
+              placeholder="New todo..."
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+            <button
+              className="rounded-lg bg-slate-900 text-white px-4 py-2 font-medium hover:bg-slate-800 disabled:opacity-50 transition"
+              disabled={!title || !listId}
+              onClick={() => void addTodo()}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+
+        {msg && <p className="text-sm text-red-600">{msg}</p>}
+
+        <ul className="space-y-2">
+          {todos.map((t) => (
+            <li key={t.id} className="rounded-2xl bg-white shadow border border-slate-200 p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-slate-900"
+                  checked={t.is_done}
+                  onChange={(e) => void toggleTodo(t.id, e.target.checked)}
+                />
+
+                <input
+                  key={t.title}
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+                  defaultValue={t.title}
+                  onBlur={(e) => void updateTitle(t.id, e.target.value)}
+                />
+
+                <button
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 transition"
+                  onClick={() => void delTodo(t.id)}
+                >
+                  Delete
+                </button>
               </div>
-            )}
-          </li>
-        ))}
-      </ul>
+
+              <TodoImageUpload
+                userId={userId}
+                todoId={t.id}
+                listId={listId}
+                onUploaded={() => loadImages(listId!)}
+              />
+
+              {(imagesByTodo[t.id] ?? []).length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {(imagesByTodo[t.id] ?? []).map((img) => {
+                    const url = supabase.storage.from(BUCKET).getPublicUrl(img.path).data.publicUrl;
+                    return (
+                      <a key={img.id} href={url} target="_blank" rel="noreferrer">
+                        <img
+                          src={url}
+                          alt="todo"
+                          className="h-20 w-20 rounded-xl object-cover border border-slate-200 hover:opacity-90 transition"
+                        />
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
     </main>
   );
 }
