@@ -2,6 +2,8 @@
 
 A minimal Todo app built with **Create T3 App (Next.js + TypeScript)** and **Supabase**.
 
+> Built by me, mainly to understand T3, Supabase, Next.js and TypeScript! 
+
 ## Features
 
 ### Standard
