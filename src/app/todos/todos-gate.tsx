@@ -25,7 +25,7 @@ export default function TodosGate() {
     void run();
   }, [router, supabase]);
 
-  if (loading) return <main className="p-6">Loading...</main>;
+  if (loading) return <main className="min-h-screen bg-background p-6 flex items-center justify-center text-muted-foreground font-medium animate-pulse">Loading Hub...</main>;
   if (!userId) return null;
 
   return <TodosClient userId={userId} />;

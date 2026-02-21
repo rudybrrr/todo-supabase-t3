@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
+import { toast } from "sonner";
+import { LogIn, UserPlus, Mail, Lock } from "lucide-react";
+
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "~/components/ui/card";
 
 export default function LoginPage() {
   const supabase = createSupabaseBrowserClient();
@@ -11,12 +17,10 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
     setLoading(true);
-    setMsg(null);
 
     const { error } =
       mode === "login"
@@ -25,71 +29,98 @@ export default function LoginPage() {
 
     setLoading(false);
 
-    if (error) return setMsg(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
 
+    toast.success(mode === "login" ? "Welcome back!" : "Account created!");
     router.push("/todos");
     router.refresh();
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-200 flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-lg border border-slate-200 p-6 space-y-5">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Todo App</h1>
-          <p className="text-sm text-slate-500">Login or create an account to continue.</p>
-        </div>
+    <main className="min-h-screen bg-background flex items-center justify-center p-6">
+      <Card className="w-full max-w-md border-none shadow-xl ring-1 ring-border">
+        <CardHeader className="space-y-1 pb-8 text-center">
+          <CardTitle className="text-3xl font-bold tracking-tight text-foreground">Task Hub</CardTitle>
+          <CardDescription className="text-muted-foreground">
+            {mode === "login" ? "Welcome back! Login to your account" : "Join us! Create your account to start"}
+          </CardDescription>
+        </CardHeader>
 
-        <div className="flex gap-2">
-          <button
-            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${mode === "login" ? "bg-slate-900 text-white" : "bg-slate-100 hover:bg-slate-200"
-              }`}
-            onClick={() => setMode("login")}
-          >
-            Login
-          </button>
-          <button
-            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${mode === "register" ? "bg-slate-900 text-white" : "bg-slate-100 hover:bg-slate-200"
-              }`}
-            onClick={() => setMode("register")}
-          >
-            Register
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Email</label>
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
+        <CardContent className="space-y-6">
+          <div className="flex p-1 bg-muted rounded-xl">
+            <button
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${mode === "login"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                }`}
+              onClick={() => setMode("login")}
+            >
+              <LogIn className="w-4 h-4" />
+              Login
+            </button>
+            <button
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${mode === "register"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                }`}
+              onClick={() => setMode("register")}
+            >
+              <UserPlus className="w-4 h-4" />
+              Register
+            </button>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Password</label>
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
-              placeholder="••••••••"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground/80 ml-1">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-10 h-11 bg-muted/30 border-border focus:bg-card transition-all"
+                  placeholder="name@example.com"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-foreground/80 ml-1">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-10 h-11 bg-muted/30 border-border focus:bg-card transition-all"
+                  placeholder="••••••••"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void submit()}
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </CardContent>
 
-        <button
-          className="w-full rounded-lg bg-slate-900 text-white py-2.5 font-medium hover:bg-slate-800 disabled:opacity-50 disabled:hover:bg-slate-900 transition"
-          disabled={loading || !email || !password}
-          onClick={submit}
-        >
-          {loading ? "..." : mode === "login" ? "Login" : "Create account"}
-        </button>
-
-        {msg && <p className="text-sm text-red-600">{msg}</p>}
-      </div>
+        <CardFooter className="pt-2 pb-8">
+          <Button
+            className="w-full h-11 text-base font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg transition-all rounded-xl"
+            disabled={loading || !email || !password}
+            onClick={submit}
+          >
+            {loading ? (
+              <div className="h-5 w-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+            ) : mode === "login" ? (
+              "Sign In"
+            ) : (
+              "Create Account"
+            )}
+          </Button>
+        </CardFooter>
+      </Card>
     </main>
   );
-
 }
