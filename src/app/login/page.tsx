@@ -43,7 +43,7 @@ export default function LoginPage() {
     <main className="min-h-screen bg-background flex items-center justify-center p-6">
       <Card className="w-full max-w-md border-none shadow-xl ring-1 ring-border">
         <CardHeader className="space-y-1 pb-8 text-center">
-          <CardTitle className="text-3xl font-bold tracking-tight text-foreground">Task Hub</CardTitle>
+          <CardTitle className="text-3xl font-bold tracking-tight text-foreground">Study Sprint</CardTitle>
           <CardDescription className="text-muted-foreground">
             {mode === "login" ? "Welcome back! Login to your account" : "Join us! Create your account to start"}
           </CardDescription>

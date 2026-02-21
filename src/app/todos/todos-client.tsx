@@ -10,7 +10,10 @@ import {
   ClipboardList,
   Image as ImageIcon,
   CheckCircle2,
-  Circle
+  Circle,
+  TrendingUp,
+  Target,
+  Layout
 } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
@@ -227,6 +230,11 @@ export default function TodosClient({ userId }: { userId: string }) {
     }
   };
 
+  const logout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
+
   /*
   const share = async () => {
     if (!listId) return;
@@ -245,57 +253,50 @@ export default function TodosClient({ userId }: { userId: string }) {
   };
   */
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/login";
-  };
+  const completedCount = todos.filter(t => t.is_done).length;
+  const progress = todos.length > 0 ? (completedCount / todos.length) * 100 : 0;
 
   return (
     <main className="min-h-screen bg-background p-4 md:p-8">
-      <div className="mx-auto max-w-3xl space-y-8">
+      <div className="mx-auto max-w-3xl space-y-6">
         {/* Header Section */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-card p-6 rounded-2xl shadow-sm border border-border">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <div className="p-2 bg-primary rounded-xl">
-                <ClipboardList className="w-5 h-5 text-primary-foreground" />
+                <Target className="w-5 h-5 text-primary-foreground" />
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">Task Hub</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">Study Sprint</h1>
             </div>
-            <p className="text-sm text-muted-foreground font-medium ml-1">Organize your daily workflow effortlessly</p>
+            <p className="text-sm text-muted-foreground font-medium ml-1">Precision planning for your daily goals</p>
           </div>
           <div className="flex items-center gap-2 self-start sm:self-center">
             <ModeToggle />
-            <Button variant="outline" size="sm" onClick={logout} className="gap-2 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all font-medium">
+            <Button variant="outline" size="sm" onClick={logout} className="gap-2 border-border hover:bg-muted transition-all font-medium rounded-xl">
               <LogOut className="w-4 h-4" />
               Logout
             </Button>
           </div>
         </div>
 
-        {/* Disabled Share UI section - preserved for future use
-        {false && (
-          <Card className="border-slate-200 shadow-sm overflow-hidden">
-            <CardHeader className="bg-slate-50/50 pb-4">
-              <CardTitle className="text-lg">Collaborate</CardTitle>
-              <CardDescription>Share by collaborator’s Supabase User UUID</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Collaborator user UUID..."
-                  value={shareUserId}
-                  onChange={(e) => setShareUserId(e.target.value)}
-                  className="bg-white"
-                />
-                <Button onClick={() => void share()} disabled={!listId || !shareUserId}>
-                  Share
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        */}
+        {/* Progress Stats Bar */}
+        <div className="bg-card p-5 rounded-2xl shadow-sm border border-border">
+          <div className="flex items-center justify-between mb-3 text-sm font-semibold">
+            <div className="flex items-center gap-2 text-foreground">
+              <TrendingUp className="w-4 h-4 text-primary" />
+              Focus
+            </div>
+            <div className="text-muted-foreground">
+              {completedCount}/{todos.length} Completed
+            </div>
+          </div>
+          <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
 
         {/* Add Todo Section */}
         <Card className="border-none shadow-md bg-card overflow-hidden ring-1 ring-border">
@@ -304,7 +305,7 @@ export default function TodosClient({ userId }: { userId: string }) {
               <div className="relative flex-1">
                 <Input
                   className="h-12 text-base border-none bg-muted focus-visible:ring-1 focus-visible:ring-ring pl-4 transition-all"
-                  placeholder="What needs to be done?"
+                  placeholder="Plan your next victory..."
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && void addTodo()}
@@ -313,10 +314,10 @@ export default function TodosClient({ userId }: { userId: string }) {
               <Button
                 onClick={() => void addTodo()}
                 disabled={!title.trim() || !listId || isSubmitting}
-                className="h-12 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-all rounded-xl shadow-sm"
+                className="h-12 px-6 bg-primary hover:bg-primary/95 text-primary-foreground font-bold transition-all rounded-xl shadow-lg active:scale-95"
               >
                 <Plus className="w-5 h-5 mr-2" />
-                Add Task
+                Add Action
               </Button>
             </div>
           </CardContent>
@@ -325,25 +326,37 @@ export default function TodosClient({ userId }: { userId: string }) {
         {/* Todo List */}
         <div className="space-y-4">
           {todos.length === 0 ? (
-            <div className="text-center py-20 bg-card rounded-3xl border border-dashed border-border">
-              <div className="inline-flex p-4 bg-muted rounded-2xl mb-4">
-                <ClipboardList className="w-8 h-8 text-muted-foreground/30" />
+            <div className="text-center py-20 bg-card rounded-3xl border border-dashed border-border flex flex-col items-center">
+              <div className="relative mb-6">
+                <div className="absolute inset-0 bg-primary/10 rounded-full blur-3xl animate-pulse" />
+                <div className="relative p-6 bg-muted rounded-3xl">
+                  <Layout className="w-12 h-12 text-muted-foreground/40" />
+                </div>
               </div>
-              <h3 className="text-lg font-semibold text-foreground">No tasks yet</h3>
-              <p className="text-muted-foreground mt-1">Get started by creating your first task above</p>
+              <h3 className="text-xl font-bold text-foreground">Clear Horizon</h3>
+              <p className="text-muted-foreground mt-2 max-w-xs mx-auto">
+                No active missions. Ignite your productivity by adding your first task above.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-6 rounded-xl border-dashed border-2 hover:border-primary text-muted-foreground hover:text-primary transition-all"
+                onClick={() => document.querySelector('input')?.focus()}
+              >
+                Start Your Day
+              </Button>
             </div>
           ) : (
-            <ul className="grid gap-4">
+            <ul className="grid gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {todos.map((t) => (
-                <li key={t.id}>
-                  <Card className={`group border-border shadow-sm transition-all duration-200 hover:shadow-md hover:ring-1 hover:ring-ring/20 ${t.is_done ? 'bg-muted/50' : 'bg-card'}`}>
-                    <CardContent className="p-5">
+                <li key={t.id} className="transition-all hover:translate-x-1 duration-200">
+                  <Card className={`group border-border/50 shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/20 ${t.is_done ? 'bg-muted/40 opacity-75' : 'bg-card'}`}>
+                    <CardContent className="p-4 sm:p-5">
                       <div className="flex items-start gap-4">
                         <button
                           onClick={() => void toggleTodo(t.id, !t.is_done)}
-                          className={`mt-1 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${t.is_done
-                            ? 'bg-primary border-primary text-primary-foreground'
-                            : 'border-input text-transparent hover:border-muted-foreground'
+                          className={`mt-1 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${t.is_done
+                            ? 'bg-primary border-primary text-primary-foreground scale-110 shadow-lg shadow-primary/20'
+                            : 'border-input text-transparent hover:border-primary/50'
                             }`}
                         >
                           {t.is_done && <CheckCircle2 className="h-4 w-4" />}
@@ -352,14 +365,14 @@ export default function TodosClient({ userId }: { userId: string }) {
                         <div className="flex-1 space-y-3">
                           <input
                             key={t.title}
-                            className={`w-full bg-transparent text-lg font-medium outline-none transition-all ${t.is_done ? 'text-muted-foreground line-through' : 'text-foreground'
+                            className={`w-full bg-transparent text-lg font-semibold outline-none transition-all ${t.is_done ? 'text-muted-foreground line-through' : 'text-foreground hover:text-primary/90'
                               }`}
                             defaultValue={t.title}
                             onBlur={(e) => void updateTitle(t.id, e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && (e.currentTarget.blur())}
                           />
 
-                          <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-3">
                             <TodoImageUpload
                               userId={userId}
                               todoId={t.id}
@@ -369,23 +382,23 @@ export default function TodosClient({ userId }: { userId: string }) {
 
                             <Dialog>
                               <DialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 ml-auto transition-colors">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 ml-auto transition-all rounded-lg opacity-0 group-hover:opacity-100">
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </DialogTrigger>
-                              <DialogContent className="sm:max-w-md">
+                              <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-3xl">
                                 <DialogHeader>
-                                  <DialogTitle>Delete Task</DialogTitle>
-                                  <DialogDescription>
-                                    Are you sure you want to delete "{t.title}"? This action cannot be undone.
+                                  <DialogTitle className="text-xl font-bold">Retire Task</DialogTitle>
+                                  <DialogDescription className="text-muted-foreground">
+                                    Are you sure you want to remove "{t.title}"? This mission record will be deleted permanently.
                                   </DialogDescription>
                                 </DialogHeader>
-                                <DialogFooter className="sm:justify-end gap-2">
+                                <DialogFooter className="sm:justify-end gap-3 mt-4">
                                   <DialogTrigger asChild>
-                                    <Button variant="outline">Cancel</Button>
+                                    <Button variant="outline" className="rounded-xl border-border">Keep Mission</Button>
                                   </DialogTrigger>
-                                  <Button variant="destructive" onClick={() => void delTodo(t.id)}>
-                                    Delete Task
+                                  <Button variant="destructive" className="rounded-xl bg-destructive hover:bg-destructive/90 shadow-lg shadow-destructive/20" onClick={() => void delTodo(t.id)}>
+                                    Confirm Removal
                                   </Button>
                                 </DialogFooter>
                               </DialogContent>
@@ -394,7 +407,7 @@ export default function TodosClient({ userId }: { userId: string }) {
 
                           {/* Image Feed */}
                           {(imagesByTodo[t.id] ?? []).length > 0 && (
-                            <div className="flex flex-wrap gap-2 pt-2 border-t border-border mt-3">
+                            <div className="flex flex-wrap gap-2.5 pt-3 border-t border-border/10 mt-3">
                               {(imagesByTodo[t.id] ?? []).map((img) => {
                                 const url = supabase.storage.from(BUCKET).getPublicUrl(img.path).data.publicUrl;
                                 return (
@@ -402,9 +415,9 @@ export default function TodosClient({ userId }: { userId: string }) {
                                     <img
                                       src={url}
                                       alt="todo attachment"
-                                      className="h-20 w-20 rounded-xl object-cover ring-1 ring-border group-hover/img:opacity-90 transition-all shadow-sm"
+                                      className="h-20 w-20 rounded-2xl object-cover ring-2 ring-border/50 group-hover/img:scale-105 transition-all shadow-md group-hover/img:shadow-xl group-hover/img:ring-primary/20"
                                     />
-                                    <div className="absolute inset-0 rounded-xl ring-inset ring-foreground/5 group-hover/img:ring-foreground/10" />
+                                    <div className="absolute inset-0 rounded-2xl ring-inset ring-foreground/5 group-hover/img:bg-foreground/5 transition-all" />
                                   </a>
                                 );
                               })}
