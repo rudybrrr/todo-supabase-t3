@@ -37,7 +37,7 @@ export const ListSidebar = React.memo(function ListSidebar({
     userId,
 }: ListSidebarProps) {
     return (
-        <div className="flex flex-col h-full bg-card/50 backdrop-blur-sm border-r border-border">
+        <div className="flex flex-col h-full glass border-r">
             <div className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-primary/10 text-primary">
                     <Hash className="w-5 h-5 font-bold" />
@@ -91,7 +91,7 @@ export const ListSidebar = React.memo(function ListSidebar({
                                     <Button
                                         variant={activeListId === list.id ? "secondary" : "ghost"}
                                         className={`flex-1 justify-start gap-3 rounded-xl font-medium transition-all ${activeListId === list.id
-                                            ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                            ? "bg-primary/10 text-primary hover:bg-primary/20 shadow-lg shadow-primary/10 ring-1 ring-primary/20"
                                             : "hover:bg-muted"
                                             }`}
                                         onClick={() => onListSelect(list.id)}

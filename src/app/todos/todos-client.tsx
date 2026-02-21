@@ -22,6 +22,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ModeToggle } from "~/components/mode-toggle";
 import { ListSidebar } from "./list-sidebar";
+import { FocusTimer } from "./focus-timer";
 import { Sheet, SheetContent, SheetTrigger } from "~/components/ui/sheet";
 import { Separator } from "~/components/ui/separator";
 import {
@@ -363,9 +364,9 @@ export default function TodosClient({ userId }: { userId: string }) {
   const currentList = useMemo(() => lists.find(l => l.id === listId), [lists, listId]);
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-transparent">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-72 flex-col fixed inset-y-0 shadow-sm">
+      <aside className="hidden md:flex w-72 flex-col fixed inset-y-0 shadow-xl glass z-20 border-r">
         <ListSidebar
           lists={lists}
           activeListId={listId}
@@ -381,7 +382,7 @@ export default function TodosClient({ userId }: { userId: string }) {
       <main className="flex-1 md:pl-72 flex flex-col">
         <div className="mx-auto w-full max-w-3xl p-4 md:p-8 space-y-6">
           {/* Header Section */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-card p-6 rounded-2xl shadow-sm border border-border">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between glass p-6 rounded-2xl shadow-xl z-10 sticky top-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <Sheet>
@@ -416,7 +417,7 @@ export default function TodosClient({ userId }: { userId: string }) {
           </div>
 
           {/* Progress Stats Bar */}
-          <div className="bg-card p-5 rounded-2xl shadow-sm border border-border">
+          <div className="glass-card p-5 rounded-2xl">
             <div className="flex items-center justify-between mb-3 text-sm font-semibold">
               <div className="flex items-center gap-2 text-foreground">
                 <TrendingUp className="w-4 h-4 text-primary" />
@@ -434,8 +435,11 @@ export default function TodosClient({ userId }: { userId: string }) {
             </div>
           </div>
 
+          {/* Sprint Mode Focus Timer */}
+          <FocusTimer />
+
           {/* Add Todo Section */}
-          <Card className="border-none shadow-md bg-card overflow-hidden ring-1 ring-border">
+          <Card className="border-none shadow-2xl glass-card overflow-hidden ring-1 ring-border/50">
             <CardContent className="p-4 sm:p-6">
               <div className="flex gap-3">
                 <div className="relative flex-1">
@@ -465,7 +469,7 @@ export default function TodosClient({ userId }: { userId: string }) {
               <div className="text-center py-20 bg-card rounded-3xl border border-dashed border-border flex flex-col items-center">
                 <div className="relative mb-6">
                   <div className="absolute inset-0 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-                  <div className="relative p-6 bg-muted rounded-3xl">
+                  <div className="relative p-6 bg-muted rounded-3xl animate-float">
                     <Layout className="w-12 h-12 text-muted-foreground/40" />
                   </div>
                 </div>
@@ -484,13 +488,13 @@ export default function TodosClient({ userId }: { userId: string }) {
             ) : (
               <ul className="grid gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {todos.map((t) => (
-                  <li key={t.id} className="transition-all hover:translate-x-1 duration-200">
-                    <Card className={`group border-border/50 shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/20 ${t.is_done ? 'bg-muted/40 opacity-75' : 'bg-card'}`}>
+                  <li key={t.id} className="transition-all hover:-translate-y-1 hover:scale-[1.01] duration-300">
+                    <Card className={`group border-border/50 shadow-lg transition-all duration-300 hover:shadow-2xl hover:border-primary/40 ${t.is_done ? 'bg-muted/40 opacity-75' : 'glass-card'}`}>
                       <CardContent className="p-4 sm:p-5">
                         <div className="flex items-start gap-4">
                           <button
                             onClick={() => void toggleTodo(t.id, !t.is_done)}
-                            className={`mt-1 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${t.is_done
+                            className={`mt-1 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 checkbox-ping ${t.is_done
                               ? 'bg-primary border-primary text-primary-foreground scale-110 shadow-lg shadow-primary/20'
                               : 'border-input text-transparent hover:border-primary/50'
                               }`}

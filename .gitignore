@@ -47,3 +47,6 @@ yarn-error.log*
 
 # project checklist
 todo.md
+
+# documents
+*.pdf
