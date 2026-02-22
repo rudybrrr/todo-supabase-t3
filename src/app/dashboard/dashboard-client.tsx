@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { FocusSession, TodoList } from "~/lib/types";
 
 // Chart color palette
 const COLORS = [
@@ -26,22 +27,13 @@ const COLORS = [
     "#be123c"
 ];
 
-interface FocusSession {
-    id: string;
-    user_id: string;
-    list_id: string | null;
-    duration_seconds: number;
-    mode: 'focus' | 'shortBreak' | 'longBreak';
-    inserted_at: string;
-    todo_lists?: { name: string } | null;
-}
 
 export default function DashboardClient({ userId }: { userId: string }) {
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const router = useRouter();
-    const [lists, setLists] = useState<any[]>([]);
-    const [weeklyData, setWeeklyData] = useState<any[]>([]);
-    const [subjectData, setSubjectData] = useState<any[]>([]);
+    const [lists, setLists] = useState<TodoList[]>([]);
+    const [weeklyData, setWeeklyData] = useState<{ day: string; date: string; minutes: number }[]>([]);
+    const [subjectData, setSubjectData] = useState<{ name: string; value: number }[]>([]);
     const [stats, setStats] = useState({
         totalHours: "0h",
         tasksCompleted: 0,
@@ -73,12 +65,12 @@ export default function DashboardClient({ userId }: { userId: string }) {
             if (sessions) {
                 // Parse Weekly Data (Last 7 days)
                 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                const last7Days = Array.from({ length: 7 }, (_, i) => {
+                const last7Days: { day: string; date: string; minutes: number }[] = Array.from({ length: 7 }, (_, i) => {
                     const d = new Date();
                     d.setDate(d.getDate() - (6 - i));
                     return {
-                        day: days[d.getDay()],
-                        date: d.toISOString().split('T')[0],
+                        day: days[d.getDay()] ?? "Unknown",
+                        date: d.toISOString().split('T')[0] ?? "",
                         minutes: 0
                     };
                 });

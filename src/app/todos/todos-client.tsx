@@ -25,6 +25,7 @@ import { ListSidebar } from "./list-sidebar";
 import { FocusTimer } from "./focus-timer";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "~/components/ui/sheet";
 import { Separator } from "~/components/ui/separator";
+import { TodoImageUpload } from "./todo-image-upload";
 import {
   Card,
   CardContent,
@@ -42,34 +43,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "~/components/ui/dialog";
+import type { TodoList, TodoRow, TodoImageRow } from "~/lib/types";
 
 const BUCKET = "todo-images";
-
-type TodoList = {
-  id: string;
-  name: string;
-  owner_id: string;
-  inserted_at: string;
-  user_role?: string;
-};
-
-type TodoRow = {
-  id: string;
-  user_id: string;
-  list_id: string;
-  title: string;
-  is_done: boolean;
-  inserted_at: string;
-};
-
-type TodoImageRow = {
-  id: string;
-  todo_id: string;
-  user_id: string;
-  list_id: string;
-  path: string;
-  inserted_at: string;
-};
 
 export default function TodosClient({ userId }: { userId: string }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -95,9 +71,9 @@ export default function TodosClient({ userId }: { userId: string }) {
       return;
     }
 
-    const userLists = (members ?? []).map(m => ({
-      ...((m as any).todo_lists as TodoList),
-      user_role: (m as any).role
+    const userLists: TodoList[] = (members ?? []).map(m => ({
+      ...(m.todo_lists as any as TodoList),
+      user_role: m.role
     }));
     setLists(userLists);
 
@@ -142,7 +118,7 @@ export default function TodosClient({ userId }: { userId: string }) {
       .from("todo_lists")
       .insert({ owner_id: userId, name: "Inbox" })
       .select("id")
-      .single();
+      .single<{ id: string }>();
 
     if (listErr) {
       toast.error(listErr.message);
@@ -358,7 +334,7 @@ export default function TodosClient({ userId }: { userId: string }) {
     }
   }, [supabase, lists, listId, loadLists, userId]);
 
-  const addTodo = async () => {
+  const addTodo = useCallback(async () => {
     if (!listId || !title.trim()) return;
 
     setIsSubmitting(true);
@@ -377,9 +353,9 @@ export default function TodosClient({ userId }: { userId: string }) {
     setTitle("");
     toast.success("Todo added!");
     void loadTodos(listId);
-  };
+  }, [supabase, listId, title, userId, loadTodos]);
 
-  const toggleTodo = async (id: string, next: boolean) => {
+  const toggleTodo = useCallback(async (id: string, next: boolean) => {
     if (!listId) return;
 
     const { error } = await supabase.from("todos").update({ is_done: next }).eq("id", id);
@@ -388,9 +364,9 @@ export default function TodosClient({ userId }: { userId: string }) {
     } else {
       void loadTodos(listId);
     }
-  };
+  }, [supabase, listId, loadTodos]);
 
-  const updateTitle = async (id: string, nextTitle: string) => {
+  const updateTitle = useCallback(async (id: string, nextTitle: string) => {
     if (!listId) return;
 
     const { error } = await supabase.from("todos").update({ title: nextTitle }).eq("id", id);
@@ -399,9 +375,9 @@ export default function TodosClient({ userId }: { userId: string }) {
     } else {
       void loadTodos(listId);
     }
-  };
+  }, [supabase, listId, loadTodos]);
 
-  const delTodo = async (id: string) => {
+  const delTodo = useCallback(async (id: string) => {
     if (!listId) return;
 
     const { error } = await supabase.from("todos").delete().eq("id", id);
@@ -411,7 +387,7 @@ export default function TodosClient({ userId }: { userId: string }) {
       toast.success("Todo deleted");
       void loadTodos(listId);
     }
-  };
+  }, [supabase, listId, loadTodos]);
 
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -660,76 +636,3 @@ export default function TodosClient({ userId }: { userId: string }) {
   );
 }
 
-function TodoImageUpload({
-  userId,
-  todoId,
-  listId,
-  onUploaded,
-}: {
-  userId: string;
-  todoId: string;
-  listId: string | null;
-  onUploaded: () => Promise<void> | void;
-}) {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const [uploading, setUploading] = useState(false);
-
-  const upload = async (file: File) => {
-    if (!listId) return;
-
-    setUploading(true);
-    const ext = file.name.split(".").pop() ?? "jpg";
-    const path = `${userId}/${todoId}/${crypto.randomUUID()}.${ext}`;
-
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
-
-    if (upErr) {
-      setUploading(false);
-      return toast.error(upErr.message);
-    }
-
-    const { error: dbErr } = await supabase.from("todo_images").insert({
-      todo_id: todoId,
-      user_id: userId,
-      list_id: listId,
-      path,
-    });
-
-    setUploading(false);
-    if (dbErr) return toast.error(dbErr.message);
-
-    toast.success("Image uploaded!");
-    await onUploaded();
-  };
-
-  return (
-    <div className="flex items-center gap-2 overflow-hidden">
-      <label className={`inline-flex items-center gap-2 cursor-pointer text-xs font-semibold py-1.5 px-3 rounded-lg transition-all ${uploading
-        ? 'bg-muted text-muted-foreground/50'
-        : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-        }`}>
-        {uploading ? (
-          <>
-            <div className="h-3 w-3 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-            Uploading...
-          </>
-        ) : (
-          <>
-            <ImageIcon className="w-3.5 h-3.5" />
-            Attach Image
-          </>
-        )}
-        <input
-          type="file"
-          className="hidden"
-          accept="image/*"
-          disabled={uploading || !listId}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void upload(f);
-          }}
-        />
-      </label>
-    </div>
-  );
-}

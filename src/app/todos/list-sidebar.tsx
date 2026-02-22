@@ -12,11 +12,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { ModeToggle } from "~/components/mode-toggle";
 
-type TodoList = {
-    id: string;
-    name: string;
-    owner_id: string;
-};
+import type { TodoList } from "~/lib/types";
 
 interface ListSidebarProps {
     lists: TodoList[];
@@ -39,6 +35,8 @@ export const ListSidebar = React.memo(function ListSidebar({
     onLogout,
     userId,
 }: ListSidebarProps) {
+    const inbox = React.useMemo(() => lists.find(l => l.name === "Inbox"), [lists]);
+
     return (
         <div className="flex flex-col h-full glass border-r">
             <div className="p-4 flex items-center justify-between">
@@ -65,16 +63,16 @@ export const ListSidebar = React.memo(function ListSidebar({
                                 </Button>
                             </Link>
 
-                            {lists.find(l => l.name === "Inbox") && (
+                            {inbox && (
                                 <Button
-                                    variant={activeListId === lists.find(l => l.name === "Inbox")?.id ? "secondary" : "ghost"}
-                                    className={`w-full justify-start gap-3 rounded-xl font-medium transition-all ${activeListId === lists.find(l => l.name === "Inbox")?.id
+                                    variant={activeListId === inbox.id ? "secondary" : "ghost"}
+                                    className={`w-full justify-start gap-3 rounded-xl font-medium transition-all ${activeListId === inbox.id
                                         ? "bg-primary/10 text-primary hover:bg-primary/20"
                                         : "hover:bg-muted"
                                         }`}
-                                    onClick={() => onListSelect(lists.find(l => l.name === "Inbox")!.id)}
+                                    onClick={() => onListSelect(inbox.id)}
                                 >
-                                    <Inbox className={`h-4 w-4 ${activeListId === lists.find(l => l.name === "Inbox")?.id ? "text-primary" : "text-primary"}`} />
+                                    <Inbox className={`h-4 w-4 ${activeListId === inbox.id ? "text-primary" : "text-primary"}`} />
                                     Inbox
                                 </Button>
                             )}

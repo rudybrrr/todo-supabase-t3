@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import { Play, Pause, RotateCcw } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
-import { useFocus, MODE_CONFIG, type TimerMode } from "~/components/focus-provider";
+import { useFocus, MODE_CONFIG } from "~/components/focus-provider";
+import type { TimerMode } from "~/lib/types";
 
 export function FocusTimer({ userId, listId }: { userId?: string; listId?: string | null }) {
     const {

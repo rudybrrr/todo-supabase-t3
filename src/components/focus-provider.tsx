@@ -5,7 +5,7 @@ import { Brain, Coffee, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 
-export type TimerMode = "focus" | "shortBreak" | "longBreak";
+import type { TimerMode } from "~/lib/types";
 
 export const MODE_CONFIG = {
     focus: {
