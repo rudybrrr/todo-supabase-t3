@@ -11,6 +11,7 @@ import {
     DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { ModeToggle } from "~/components/mode-toggle";
+import { motion, AnimatePresence } from "framer-motion";
 
 import type { TodoList } from "~/lib/types";
 
@@ -38,12 +39,12 @@ export const ListSidebar = React.memo(function ListSidebar({
     const inbox = React.useMemo(() => lists.find(l => l.name === "Inbox"), [lists]);
 
     return (
-        <div className="flex flex-col h-full glass border-r">
-            <div className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-primary/10 text-primary">
-                    <Hash className="w-5 h-5 font-bold" />
-                    <span className="font-bold tracking-tight text-sm uppercase">Study Sprint</span>
+        <div className="flex flex-col h-full bg-sidebar border-r border-sidebar-border">
+            <div className="p-4 flex items-center gap-3">
+                <div className="p-1 rounded bg-primary text-primary-foreground">
+                    <Hash className="w-4 h-4" />
                 </div>
+                <h1 className="font-extrabold tracking-tight text-lg text-sidebar-foreground">Study Sprint</h1>
             </div>
 
             <ScrollArea className="flex-1 px-3">
@@ -56,9 +57,9 @@ export const ListSidebar = React.memo(function ListSidebar({
                             <Link href="/dashboard" className="block w-full">
                                 <Button
                                     variant="ghost"
-                                    className="w-full justify-start gap-3 rounded-xl font-medium transition-all hover:bg-muted"
+                                    className="w-full justify-start gap-3 rounded-lg font-medium transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                                 >
-                                    <LayoutDashboard className="h-4 w-4 text-primary" />
+                                    <LayoutDashboard className="h-4 w-4" />
                                     Insights
                                 </Button>
                             </Link>
@@ -66,13 +67,13 @@ export const ListSidebar = React.memo(function ListSidebar({
                             {inbox && (
                                 <Button
                                     variant={activeListId === inbox.id ? "secondary" : "ghost"}
-                                    className={`w-full justify-start gap-3 rounded-xl font-medium transition-all ${activeListId === inbox.id
-                                        ? "bg-primary/10 text-primary hover:bg-primary/20"
-                                        : "hover:bg-muted"
+                                    className={`w-full justify-start gap-3 rounded-lg font-medium transition-all ${activeListId === inbox.id
+                                        ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                                        : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80"
                                         }`}
                                     onClick={() => onListSelect(inbox.id)}
                                 >
-                                    <Inbox className={`h-4 w-4 ${activeListId === inbox.id ? "text-primary" : "text-primary"}`} />
+                                    <Inbox className="h-4 w-4" />
                                     Inbox
                                 </Button>
                             )}
@@ -97,54 +98,63 @@ export const ListSidebar = React.memo(function ListSidebar({
                         </div>
 
                         <div className="space-y-1">
-                            {lists.filter(l => l.name !== "Inbox").map((list) => (
-                                <div key={list.id} className="group flex items-center gap-1">
-                                    <Button
-                                        variant={activeListId === list.id ? "secondary" : "ghost"}
-                                        className={`flex-1 justify-start gap-3 rounded-xl font-medium transition-all ${activeListId === list.id
-                                            ? "bg-primary/10 text-primary hover:bg-primary/20 shadow-lg shadow-primary/10 ring-1 ring-primary/20"
-                                            : "hover:bg-muted"
-                                            }`}
-                                        onClick={() => onListSelect(list.id)}
+                            <AnimatePresence mode="popLayout" initial={false}>
+                                {lists.filter(l => l.name !== "Inbox").map((list) => (
+                                    <motion.div
+                                        key={list.id}
+                                        layout
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        exit={{ opacity: 0, x: -10 }}
+                                        className="group flex items-center gap-1"
                                     >
-                                        <FolderPlus className={`h-4 w-4 ${activeListId === list.id ? "text-primary" : "text-muted-foreground/60"}`} />
-                                        <span className="truncate">{list.name}</span>
-                                        {list.owner_id !== userId && (
-                                            <Users className="h-3 w-3 ml-auto text-primary opacity-70" />
-                                        )}
-                                    </Button>
-
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"
-                                            >
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="rounded-xl border-border shadow-2xl">
-                                            {list.owner_id === userId && (
-                                                <DropdownMenuItem
-                                                    className="rounded-lg cursor-pointer flex gap-2"
-                                                    onClick={() => onInvite(list.id)}
-                                                >
-                                                    <Share2 className="h-4 w-4" />
-                                                    Invite Member
-                                                </DropdownMenuItem>
+                                        <Button
+                                            variant={activeListId === list.id ? "secondary" : "ghost"}
+                                            className={`flex-1 justify-start gap-3 rounded-lg font-medium transition-all ${activeListId === list.id
+                                                ? "bg-primary/10 text-primary hover:bg-primary/20 ring-1 ring-primary/20"
+                                                : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80"
+                                                }`}
+                                            onClick={() => onListSelect(list.id)}
+                                        >
+                                            <Hash className={`h-4 w-4 ${activeListId === list.id ? "text-primary" : "text-sidebar-foreground/40"}`} />
+                                            <span className="truncate">{list.name}</span>
+                                            {list.owner_id !== userId && (
+                                                <Users className="h-3 w-3 ml-auto text-primary opacity-70" />
                                             )}
-                                            <DropdownMenuItem
-                                                className="text-destructive focus:text-destructive focus:bg-destructive/10 rounded-lg cursor-pointer flex gap-2"
-                                                onClick={() => onDeleteList(list.id)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                                {list.owner_id === userId ? "Delete Project" : "Leave Project"}
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </div>
-                            ))}
+                                        </Button>
+
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"
+                                                >
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="rounded-xl border-border shadow-2xl">
+                                                {list.owner_id === userId && (
+                                                    <DropdownMenuItem
+                                                        className="rounded-lg cursor-pointer flex gap-2"
+                                                        onClick={() => onInvite(list.id)}
+                                                    >
+                                                        <Share2 className="h-4 w-4" />
+                                                        Invite Member
+                                                    </DropdownMenuItem>
+                                                )}
+                                                <DropdownMenuItem
+                                                    className="text-destructive focus:text-destructive focus:bg-destructive/10 rounded-lg cursor-pointer flex gap-2"
+                                                    onClick={() => onDeleteList(list.id)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                    {list.owner_id === userId ? "Delete Project" : "Leave Project"}
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </motion.div>
+                                ))}
+                            </AnimatePresence>
                         </div>
                     </div>
                 </div>
@@ -157,7 +167,7 @@ export const ListSidebar = React.memo(function ListSidebar({
                         variant="ghost"
                         size="sm"
                         onClick={onLogout}
-                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-2 rounded-xl"
+                        className="text-sidebar-foreground/60 hover:text-destructive hover:bg-destructive/10 gap-2 rounded-lg"
                     >
                         <LogOut className="h-4 w-4" />
                         <span className="text-xs font-bold uppercase tracking-wider">Logout</span>

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { Brain, Coffee, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
+import confetti from "canvas-confetti";
 
 import type { TimerMode } from "~/lib/types";
 
@@ -44,6 +45,8 @@ interface FocusContextType {
     toggleTimer: () => void;
     resetTimer: () => void;
     handleModeChange: (newMode: TimerMode) => void;
+    currentListId: string | null;
+    setCurrentListId: (id: string | null) => void;
 }
 
 const FocusContext = createContext<FocusContextType | undefined>(undefined);
@@ -53,6 +56,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     const [mode, setMode] = useState<TimerMode>("focus");
     const [timeLeft, setTimeLeft] = useState(MODE_CONFIG.focus.duration);
     const [isActive, setIsActive] = useState(false);
+    const [currentListId, setCurrentListId] = useState<string | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
 
     // Initial Load from localStorage
@@ -103,12 +107,13 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
             user_id: user.id,
             duration_seconds: MODE_CONFIG[mode].duration,
             mode: mode,
+            list_id: currentListId, // Now capturing the actual list ID
         });
 
         if (error) {
             console.error("Error saving focus session:", error);
         }
-    }, [supabase, mode]);
+    }, [supabase, mode, currentListId]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -120,6 +125,15 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         } else if (timeLeft === 0 && isActive) {
             setIsActive(false);
             void saveSession();
+
+            // Celebratory Confetti Blast!
+            void confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 },
+                colors: ['#6366f1', '#10b981', '#f59e0b']
+            });
+
             toast.success(
                 mode === "focus"
                     ? "Study session complete! Take a well-deserved break."
@@ -130,7 +144,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         return () => clearInterval(interval);
     }, [isActive, timeLeft, mode, saveSession]);
 
-    const value = {
+    const value = useMemo(() => ({
         mode,
         timeLeft,
         isActive,
@@ -140,7 +154,9 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         toggleTimer,
         resetTimer,
         handleModeChange,
-    };
+        currentListId,
+        setCurrentListId,
+    }), [mode, timeLeft, isActive, toggleTimer, resetTimer, handleModeChange, currentListId]);
 
     return (
         <FocusContext.Provider value={value}>

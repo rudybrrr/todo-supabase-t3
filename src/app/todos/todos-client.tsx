@@ -17,12 +17,15 @@ import {
   Menu,
   Hash
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import confetti from "canvas-confetti";
 
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ModeToggle } from "~/components/mode-toggle";
 import { ListSidebar } from "./list-sidebar";
 import { FocusTimer } from "./focus-timer";
+import { useFocus } from "~/components/focus-provider";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "~/components/ui/sheet";
 import { Separator } from "~/components/ui/separator";
 import { TodoImageUpload } from "./todo-image-upload";
@@ -56,6 +59,11 @@ export default function TodosClient({ userId }: { userId: string }) {
   const [imagesByTodo, setImagesByTodo] = useState<Record<string, TodoImageRow[]>>({});
   const [title, setTitle] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { setCurrentListId } = useFocus();
+
+  useEffect(() => {
+    setCurrentListId(listId);
+  }, [listId, setCurrentListId]);
 
   const [open, setOpen] = useState(false);
 
@@ -362,6 +370,15 @@ export default function TodosClient({ userId }: { userId: string }) {
     if (error) {
       toast.error(error.message);
     } else {
+      if (next) {
+        // Subtle haptic confetti for task completion
+        void confetti({
+          particleCount: 40,
+          spread: 50,
+          origin: { y: 0.8 },
+          colors: ['#6366f1', '#10b981']
+        });
+      }
       void loadTodos(listId);
     }
   }, [supabase, listId, loadTodos]);
@@ -461,10 +478,10 @@ export default function TodosClient({ userId }: { userId: string }) {
                     />
                   </SheetContent>
                 </Sheet>
-                <div className="p-2 bg-primary rounded-xl">
-                  <Target className="w-5 h-5 text-primary-foreground" />
+                <div className="p-1.5 bg-primary rounded shadow-sm">
+                  <Hash className="w-4 h-4 text-primary-foreground" />
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight text-foreground truncate max-w-[200px]">
+                <h1 className="text-xl font-bold tracking-tight text-foreground truncate max-w-[200px]">
                   {currentList?.name ?? "Study Sprint"}
                 </h1>
               </div>
@@ -475,17 +492,12 @@ export default function TodosClient({ userId }: { userId: string }) {
           </div>
 
           {/* Progress Stats Bar */}
-          <div className="glass-card p-5 rounded-2xl">
-            <div className="flex items-center justify-between mb-3 text-sm font-semibold">
-              <div className="flex items-center gap-2 text-foreground">
-                <TrendingUp className="w-4 h-4 text-primary" />
-                Focus
-              </div>
-              <div className="text-muted-foreground">
-                {completedCount}/{todos.length} Completed
-              </div>
+          <div className="px-4 py-2 border-b border-border/50">
+            <div className="flex items-center justify-between mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <span>Progress</span>
+              <span>{completedCount}/{todos.length}</span>
             </div>
-            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full bg-primary transition-all duration-500 ease-out"
                 style={{ width: `${progress}%` }}
@@ -497,40 +509,49 @@ export default function TodosClient({ userId }: { userId: string }) {
           <FocusTimer />
 
           {/* Add Todo Section */}
-          <Card className="border-none shadow-2xl glass-card overflow-hidden ring-1 ring-border/50">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex gap-3">
-                <div className="relative flex-1">
-                  <Input
-                    className="h-12 text-base border-none bg-muted focus-visible:ring-1 focus-visible:ring-ring pl-4 transition-all"
-                    placeholder="Plan your next victory..."
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && void addTodo()}
-                  />
-                </div>
+          <div className="bg-card/50 rounded-xl overflow-hidden border border-border/50 shadow-sm transition-shadow focus-within:shadow-md">
+            <div className="flex items-center gap-2 p-1 pl-3">
+              <Plus className="w-4 h-4 text-primary" />
+              <Input
+                className="h-10 text-sm border-none bg-transparent focus-visible:ring-0 shadow-none px-0"
+                placeholder="Add a task..."
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void addTodo()}
+              />
+              {title.trim() && (
                 <Button
                   onClick={() => void addTodo()}
                   disabled={!title.trim() || !listId || isSubmitting}
-                  className="h-12 px-6 bg-primary hover:bg-primary/95 text-primary-foreground font-bold transition-all rounded-xl shadow-lg active:scale-95"
+                  size="sm"
+                  className="h-8 mr-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold transition-all rounded-lg"
                 >
-                  <Plus className="w-5 h-5 mr-2" />
-                  Add Action
+                  Add
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              )}
+            </div>
+          </div>
 
           {/* Todo List */}
           <div className="space-y-4">
             {todos.length === 0 ? (
               <div className="text-center py-20 bg-card rounded-3xl border border-dashed border-border flex flex-col items-center">
-                <div className="relative mb-6">
+                <motion.div
+                  className="relative mb-6"
+                  animate={{
+                    y: [0, -15, 0],
+                  }}
+                  transition={{
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                >
                   <div className="absolute inset-0 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-                  <div className="relative p-6 bg-muted rounded-3xl animate-float">
+                  <div className="relative p-6 bg-muted rounded-3xl">
                     <Layout className="w-12 h-12 text-muted-foreground/40" />
                   </div>
-                </div>
+                </motion.div>
                 <h3 className="text-xl font-bold text-foreground">Clear Horizon</h3>
                 <p className="text-muted-foreground mt-2 max-w-xs mx-auto">
                   No active missions. Ignite your productivity by adding your first task above.
@@ -544,26 +565,38 @@ export default function TodosClient({ userId }: { userId: string }) {
                 </Button>
               </div>
             ) : (
-              <ul className="grid gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {todos.map((t) => (
-                  <li key={t.id} className="transition-all hover:-translate-y-1 hover:scale-[1.01] duration-300">
-                    <Card className={`group border-border/50 shadow-lg transition-all duration-300 hover:shadow-2xl hover:border-primary/40 ${t.is_done ? 'bg-muted/40 opacity-75' : 'glass-card'}`}>
-                      <CardContent className="p-4 sm:p-5">
+              <ul className="grid gap-3">
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {todos.map((t) => (
+                    <motion.li
+                      key={t.id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, x: -20, transition: { duration: 0.2 } }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 500,
+                        damping: 30,
+                        mass: 1
+                      }}
+                    >
+                      <div className={`group border-b border-border/40 py-2.5 transition-colors hover:bg-muted/30 ${t.is_done ? 'opacity-60' : ''}`}>
                         <div className="flex items-start gap-4">
                           <button
                             onClick={() => void toggleTodo(t.id, !t.is_done)}
-                            className={`mt-1 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 checkbox-ping ${t.is_done
-                              ? 'bg-primary border-primary text-primary-foreground scale-110 shadow-lg shadow-primary/20'
-                              : 'border-input text-transparent hover:border-primary/50'
+                            className={`mt-1.5 h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${t.is_done
+                              ? 'bg-primary border-primary text-primary-foreground'
+                              : 'border-muted-foreground/30 hover:border-primary'
                               }`}
                           >
-                            {t.is_done && <CheckCircle2 className="h-4 w-4" />}
+                            {t.is_done && <CheckCircle2 className="h-2.5 w-2.5" />}
                           </button>
 
                           <div className="flex-1 space-y-3">
                             <input
                               key={t.title}
-                              className={`w-full bg-transparent text-lg font-semibold outline-none transition-all ${t.is_done ? 'text-muted-foreground line-through' : 'text-foreground hover:text-primary/90'
+                              className={`w-full bg-transparent text-sm font-medium outline-none transition-all ${t.is_done ? 'text-muted-foreground/60 line-through' : 'text-foreground hover:text-primary/90'
                                 }`}
                               defaultValue={t.title}
                               onBlur={(e) => void updateTitle(t.id, e.target.value)}
@@ -580,8 +613,8 @@ export default function TodosClient({ userId }: { userId: string }) {
 
                               <Dialog>
                                 <DialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 ml-auto transition-all rounded-lg opacity-0 group-hover:opacity-100">
-                                    <Trash2 className="h-4 w-4" />
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 ml-auto transition-all rounded-md opacity-0 group-hover:opacity-100">
+                                    <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
                                 </DialogTrigger>
                                 <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-3xl">
@@ -623,10 +656,10 @@ export default function TodosClient({ userId }: { userId: string }) {
                             )}
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  </li>
-                ))}
+                      </div>
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
               </ul>
             )}
           </div>

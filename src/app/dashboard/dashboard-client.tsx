@@ -1,66 +1,118 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
-} from "recharts";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import dynamic from "next/dynamic";
+const AreaChart = dynamic(() => import("recharts").then((mod) => mod.AreaChart), { ssr: false });
+const Area = dynamic(() => import("recharts").then((mod) => mod.Area), { ssr: false });
+const PieChart = dynamic(() => import("recharts").then((mod) => mod.PieChart), { ssr: false });
+const Pie = dynamic(() => import("recharts").then((mod) => mod.Pie), { ssr: false });
+const Cell = dynamic(() => import("recharts").then((mod) => mod.Cell), { ssr: false });
+const ResponsiveContainer = dynamic(() => import("recharts").then((mod) => mod.ResponsiveContainer), { ssr: false });
+const XAxis = dynamic(() => import("recharts").then((mod) => mod.XAxis), { ssr: false });
+const YAxis = dynamic(() => import("recharts").then((mod) => mod.YAxis), { ssr: false });
+const CartesianGrid = dynamic(() => import("recharts").then((mod) => mod.CartesianGrid), { ssr: false });
+const Tooltip = dynamic(() => import("recharts").then((mod) => mod.Tooltip), { ssr: false });
 import {
     Brain, Timer, CheckCircle2, Flame, ArrowLeft,
     Calendar, TrendingUp, Target, Clock
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { ListSidebar } from "../todos/list-sidebar";
-import { FocusTimer } from "../todos/focus-timer"; // Added this import
+import { FocusTimer } from "../todos/focus-timer";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import { useTheme } from "next-themes";
+import { toast } from "sonner";
 import type { FocusSession, TodoList } from "~/lib/types";
 
-// Chart color palette
-const COLORS = [
-    "hsl(var(--primary))",
-    "#fb7185",
-    "#f43f5e",
-    "#e11d48",
-    "#be123c"
+const DARK_COLORS = [
+    "#f8fafc", // Arctic White
+    "#bae6fd", // Bright Sky
+    "#fecdd3", // Bright Rose
+    "#99f6e4", // Bright Teal
+    "#fef08a", // Bright Yellow
+    "#e9d5ff"  // Bright Lavender
 ];
 
+const LIGHT_COLORS = [
+    "hsl(var(--primary))",
+    "#e11d48", // Rose 600
+    "#059669", // Emerald 600
+    "#2563eb", // Blue 600
+    "#d97706", // Amber 600
+    "#7c3aed"  // Violet 600
+];
+
+
+// Module-level "Instant Cache" to survive navigation
+let dashCache: {
+    weeklyData: { day: string; date: string; minutes: number }[];
+    subjectData: { name: string; value: number }[];
+    stats: { totalHours: string; tasksCompleted: number; streak: number; avgSession: string };
+    lists: TodoList[];
+} | null = null;
 
 export default function DashboardClient({ userId }: { userId: string }) {
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const router = useRouter();
-    const [lists, setLists] = useState<TodoList[]>([]);
-    const [weeklyData, setWeeklyData] = useState<{ day: string; date: string; minutes: number }[]>([]);
-    const [subjectData, setSubjectData] = useState<{ name: string; value: number }[]>([]);
-    const [stats, setStats] = useState({
+    const { theme, resolvedTheme } = useTheme();
+    const [mounted, setMounted] = useState(false);
+    const [lists, setLists] = useState<TodoList[]>(dashCache?.lists || []);
+
+    // Safety check for hydration
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
+    const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
+    const chartStroke = isDark ? "#ffffff" : "hsl(var(--primary))";
+    const chartGrid = isDark ? "#ffffff" : "hsl(var(--border))";
+    const chartTick = isDark ? "#ffffff" : "hsl(var(--foreground))";
+    const chartFill = isDark ? "#f8fafc" : "hsl(var(--primary))";
+    const [weeklyData, setWeeklyData] = useState<{ day: string; date: string; minutes: number }[]>(dashCache?.weeklyData || []);
+    const [subjectData, setSubjectData] = useState<{ name: string; value: number }[]>(dashCache?.subjectData || []);
+    const [stats, setStats] = useState(dashCache?.stats || {
         totalHours: "0h",
         tasksCompleted: 0,
         streak: 0,
         avgSession: "0m"
     });
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(!dashCache); // Only show loading if no cache
 
-    const fetchStats = useCallback(async () => {
-        setLoading(true);
+    const fetchStatsAndLists = useCallback(async () => {
+        // Only show loading pulse if we have literally no data (first visit)
+        if (!dashCache) setLoading(true);
+
         try {
-            // 1. Fetch Focus Sessions
-            const { data: sessions } = await supabase
-                .from("focus_sessions")
-                .select(`
-                    *,
-                    todo_lists (name)
-                `)
-                .eq("user_id", userId)
-                .order("inserted_at", { ascending: true }) as { data: FocusSession[] | null };
+            // FIRE EVERYTHING IN PARALLEL 🏎️
+            const [sessionsRes, todosRes, listsRes] = await Promise.all([
+                supabase
+                    .from("focus_sessions")
+                    .select("*, todo_lists (name)")
+                    .eq("user_id", userId)
+                    .order("inserted_at", { ascending: true }),
+                supabase
+                    .from("todos")
+                    .select("*", { count: 'exact', head: true })
+                    .eq("user_id", userId)
+                    .eq("is_done", true),
+                supabase
+                    .from("todo_lists")
+                    .select("*")
+                    .eq("owner_id", userId)
+            ]);
 
-            // 2. Fetch Completed Tasks
-            const { count: completedCount } = await supabase
-                .from("todos")
-                .select("*", { count: 'exact', head: true })
-                .eq("user_id", userId)
-                .eq("is_done", true);
+            const sessions = sessionsRes.data as FocusSession[] | null;
+            const completedCount = todosRes.count;
+            const listsData = listsRes.data as TodoList[] | null;
+
+            if (listsData) {
+                setLists(listsData);
+            }
 
             if (sessions) {
                 // Parse Weekly Data (Last 7 days)
@@ -83,51 +135,46 @@ export default function DashboardClient({ userId }: { userId: string }) {
                     if (s.mode === "focus") {
                         totalSeconds += s.duration_seconds;
                         focusSessionCount++;
-
-                        // Weekly distribution
                         const sessionDate = new Date(s.inserted_at as string).toISOString().split('T')[0];
                         const dayData = last7Days.find(d => d.date === sessionDate);
-                        if (dayData) {
-                            dayData.minutes += Math.round(s.duration_seconds / 60);
-                        }
-
-                        // Subject breakdown
+                        if (dayData) dayData.minutes += Math.round(s.duration_seconds / 60);
                         const subjectName = s.todo_lists?.name || "General";
                         subjects[subjectName] = (subjects[subjectName] || 0) + Math.round(s.duration_seconds / 60);
                     }
                 });
 
-                setWeeklyData(last7Days);
-                setSubjectData(Object.entries(subjects).map(([name, value]) => ({ name, value })));
-
-                setStats({
+                const newStats = {
                     totalHours: (totalSeconds / 3600).toFixed(1) + "h",
                     tasksCompleted: completedCount || 0,
                     streak: calculateStreak(sessions),
-                    avgSession: focusSessionCount > 0
-                        ? Math.round((totalSeconds / 60) / focusSessionCount) + "m"
-                        : "0m"
-                });
+                    avgSession: focusSessionCount > 0 ? Math.round((totalSeconds / 60) / focusSessionCount) + "m" : "0m"
+                };
+
+                const newWeeklyData = last7Days;
+                const newSubjectData = Object.entries(subjects).map(([name, value]) => ({ name, value }));
+
+                setWeeklyData(newWeeklyData);
+                setSubjectData(newSubjectData);
+                setStats(newStats);
+
+                // Update the "Extreme Cache" 🏎️
+                dashCache = {
+                    weeklyData: newWeeklyData,
+                    subjectData: newSubjectData,
+                    stats: newStats,
+                    lists: listsData || []
+                };
             }
         } catch (error) {
-            console.error("Error fetching stats:", error);
+            console.error("Extreme Fetch Error:", error);
         } finally {
             setLoading(false);
         }
     }, [supabase, userId]);
 
-    const fetchLists = useCallback(async () => {
-        const { data } = await supabase
-            .from("todo_lists")
-            .select("*")
-            .eq("owner_id", userId);
-        if (data) setLists(data);
-    }, [supabase, userId]);
-
     useEffect(() => {
-        void fetchLists();
-        void fetchStats();
-    }, [fetchLists, fetchStats]);
+        void fetchStatsAndLists();
+    }, [fetchStatsAndLists]);
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -136,24 +183,35 @@ export default function DashboardClient({ userId }: { userId: string }) {
 
     function calculateStreak(sessions: FocusSession[]) {
         if (!sessions.length) return 0;
+
+        // Get unique dates in YYYY-MM-DD format, sorted newest to oldest
         const rawDates = sessions
             .filter(s => !!s.inserted_at)
             .map(s => new Date(s.inserted_at).toISOString().split('T')[0]) as string[];
-        const dates = Array.from(new Set(rawDates)).reverse();
+        const dates = Array.from(new Set(rawDates)).sort().reverse();
 
         let streak = 0;
-        let currentDate = new Date();
-        currentDate.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-        for (const dateStr of dates) {
-            const date = new Date(dateStr);
+        let expectedDiff = 0;
+        for (let i = 0; i < dates.length; i++) {
+            const date = new Date(dates[i]!);
             date.setHours(0, 0, 0, 0);
 
-            const diffDays = Math.floor((currentDate.getTime() - date.getTime()) / (1000 * 3600 * 24));
+            // Calculate difference in calendar days
+            const diffDays = Math.round((today.getTime() - date.getTime()) / (1000 * 3600 * 24));
 
-            if (diffDays === streak) {
+            if (diffDays === expectedDiff) {
+                // Perfect consecutive match
                 streak++;
-            } else if (diffDays > streak) {
+                expectedDiff++;
+            } else if (i === 0 && diffDays === 1) {
+                // Special case: Missed today, but started yesterday. Streak is still active.
+                streak = 1;
+                expectedDiff = 2;
+            } else {
+                // Gap detected
                 break;
             }
         }
@@ -212,152 +270,162 @@ export default function DashboardClient({ userId }: { userId: string }) {
 
                     {/* Quick Stats Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <StatsCard
-                            title="Total Focus"
-                            value={stats.totalHours}
-                            subtext={parseFloat(stats.totalHours) > 0 ? "Lifetime focus" : "Ready to focus?"}
-                            icon={Brain}
-                            color="text-primary"
-                        />
-                        <StatsCard
-                            title="Completed"
-                            value={stats.tasksCompleted}
-                            subtext={stats.tasksCompleted > 0 ? "Tasks done" : "Finish a task to start"}
-                            icon={CheckCircle2}
-                            color="text-emerald-500"
-                        />
-                        <StatsCard
-                            title="Study Streak"
-                            value={`${stats.streak} days`}
-                            subtext={stats.streak > 0 ? "Keep it up!" : "Start your journey today"}
-                            icon={Flame}
-                            color="text-orange-500"
-                        />
-                        <StatsCard
-                            title="Avg Session"
-                            value={stats.avgSession}
-                            subtext={parseInt(stats.avgSession) > 0 ? "Highly productive" : "Start your first session"}
-                            icon={Timer}
-                            color="text-blue-500"
-                        />
+                        {[
+                            { title: "Total Focus", value: stats.totalHours, subtext: parseFloat(stats.totalHours) > 0 ? "Lifetime focus" : "Ready to focus?", icon: Brain, color: "text-primary" },
+                            { title: "Completed", value: stats.tasksCompleted, subtext: stats.tasksCompleted > 0 ? "Tasks done" : "Finish a task to start", icon: CheckCircle2, color: "text-emerald-500" },
+                            { title: "Study Streak", value: `${stats.streak} days`, subtext: stats.streak > 0 ? "Keep it up!" : "Start your journey today", icon: Flame, color: "text-orange-500" },
+                            { title: "Avg Session", value: stats.avgSession, subtext: parseInt(stats.avgSession) > 0 ? "Highly productive" : "Start your first session", icon: Timer, color: "text-blue-500" }
+                        ].map((stat, i) => (
+                            <motion.div
+                                key={stat.title}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: i * 0.05, duration: 0.3 }}
+                                whileHover={{ y: -2 }}
+                            >
+                                <StatsCard
+                                    title={stat.title}
+                                    value={stat.value}
+                                    subtext={stat.subtext}
+                                    icon={stat.icon}
+                                    color={stat.color}
+                                />
+                            </motion.div>
+                        ))}
                     </div>
 
                     {/* Charts Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Main Study Chart */}
-                        <Card className="lg:col-span-2 glass-card rounded-3xl overflow-hidden border-border/40 shadow-xl shadow-primary/5">
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-lg font-bold flex items-center gap-2">
-                                    <Clock className="w-5 h-5 text-primary" />
-                                    Weekly Review
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="h-[350px] pt-4">
-                                {weeklyData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={weeklyData}>
-                                            <defs>
-                                                <linearGradient id="colorMinutes" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                                                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                                                </linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.5} />
-                                            <XAxis
-                                                dataKey="day"
-                                                axisLine={false}
-                                                tickLine={false}
-                                                tick={{ fill: 'var(--foreground)', opacity: 0.6, fontSize: 12, fontWeight: 700 }}
-                                                dy={10}
-                                            />
-                                            <YAxis
-                                                axisLine={false}
-                                                tickLine={false}
-                                                tick={{ fill: 'var(--foreground)', opacity: 0.6, fontSize: 12, fontWeight: 700 }}
-                                            />
-                                            <Tooltip
-                                                contentStyle={{
-                                                    backgroundColor: 'hsl(var(--card))',
-                                                    borderRadius: '16px',
-                                                    border: '1px solid hsl(var(--border))',
-                                                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
-                                                    color: 'var(--foreground)'
-                                                }}
-                                                itemStyle={{ color: 'var(--foreground)' }}
-                                                labelStyle={{ color: 'var(--foreground)', fontWeight: 'bold' }}
-                                                cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
-                                            />
-                                            <Area
-                                                type="monotone"
-                                                dataKey="minutes"
-                                                stroke="hsl(var(--primary))"
-                                                strokeWidth={4}
-                                                fillOpacity={1}
-                                                fill="url(#colorMinutes)"
-                                            />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="h-full flex items-center justify-center text-muted-foreground italic">
-                                        No focus data yet for this week.
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
+                        <motion.div
+                            className="lg:col-span-2"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2, duration: 0.4 }}
+                        >
+                            <Card className="bg-card/50 rounded-2xl overflow-hidden border-border/40 shadow-sm transition-shadow hover:shadow-md h-full">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-lg font-bold flex items-center gap-2">
+                                        <Clock className="w-5 h-5 text-primary" />
+                                        Weekly Review
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="h-[350px] pt-4">
+                                    {weeklyData.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={weeklyData}>
+                                                <defs>
+                                                    <linearGradient id="colorMinutes" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor={chartFill} stopOpacity={isDark ? 0.9 : 0.6} />
+                                                        <stop offset="95%" stopColor={chartFill} stopOpacity={isDark ? 0.4 : 0.1} />
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartGrid} strokeOpacity={isDark ? 0.2 : 0.5} />
+                                                <XAxis
+                                                    dataKey="day"
+                                                    axisLine={false}
+                                                    tickLine={false}
+                                                    tick={{ fill: chartTick, opacity: isDark ? 1 : 0.7, fontSize: 13, fontWeight: 800 }}
+                                                    dy={10}
+                                                />
+                                                <YAxis
+                                                    axisLine={false}
+                                                    tickLine={false}
+                                                    tick={{ fill: chartTick, opacity: isDark ? 1 : 0.7, fontSize: 13, fontWeight: 800 }}
+                                                />
+                                                <Tooltip
+                                                    contentStyle={{
+                                                        backgroundColor: 'rgba(var(--card), 0.8)',
+                                                        backdropFilter: 'blur(12px)',
+                                                        borderRadius: '16px',
+                                                        border: '1px solid rgba(var(--border), 0.5)',
+                                                        boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                                                        color: 'var(--foreground)'
+                                                    }}
+                                                    itemStyle={{ color: 'var(--foreground)' }}
+                                                    labelStyle={{ color: 'var(--foreground)', fontWeight: 'bold' }}
+                                                    cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
+                                                />
+                                                <Area
+                                                    type="monotone"
+                                                    dataKey="minutes"
+                                                    stroke={chartStroke}
+                                                    strokeWidth={6}
+                                                    dot={{ r: 5, fill: chartStroke, strokeWidth: 3, stroke: isDark ? '#0f172a' : '#ffffff' }}
+                                                    activeDot={{ r: 8, strokeWidth: 0 }}
+                                                    fillOpacity={1}
+                                                    fill="url(#colorMinutes)"
+                                                />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-muted-foreground italic">
+                                            No focus data yet for this week.
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </motion.div>
 
                         {/* Project Breakdown */}
-                        <Card className="glass-card rounded-3xl overflow-hidden border-border/40 shadow-xl shadow-primary/5">
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-lg font-bold flex items-center gap-2">
-                                    <Target className="w-5 h-5 text-primary" />
-                                    Subject Focus
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="h-[350px] flex flex-col items-center justify-center pt-4">
-                                {subjectData.length > 0 ? (
-                                    <>
-                                        <ResponsiveContainer width="100%" height="70%">
-                                            <PieChart>
-                                                <Pie
-                                                    data={subjectData}
-                                                    cx="50%"
-                                                    cy="50%"
-                                                    innerRadius={60}
-                                                    outerRadius={80}
-                                                    paddingAngle={8}
-                                                    dataKey="value"
-                                                >
-                                                    {subjectData.map((entry, index) => (
-                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
-                                                    ))}
-                                                </Pie>
-                                                <Tooltip />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                        <div className="w-full mt-4 space-y-2 overflow-y-auto max-h-[100px] custom-scrollbar px-2">
-                                            {subjectData.map((entry, index) => (
-                                                <div key={entry.name} className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2 min-w-0">
-                                                        <div
-                                                            className="w-3 h-3 rounded-full flex-shrink-0"
-                                                            style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                                                        />
-                                                        <span className="text-xs font-bold truncate">{entry.name}</span>
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3, duration: 0.4 }}
+                        >
+                            <Card className="bg-card/50 rounded-2xl overflow-hidden border-border/40 shadow-sm transition-shadow hover:shadow-md h-full">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-lg font-bold flex items-center gap-2">
+                                        <Target className="w-5 h-5 text-primary" />
+                                        Subject Focus
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="h-[350px] flex flex-col items-center justify-center pt-4">
+                                    {subjectData.length > 0 ? (
+                                        <>
+                                            <ResponsiveContainer width="100%" height="70%">
+                                                <PieChart>
+                                                    <Pie
+                                                        data={subjectData}
+                                                        cx="50%"
+                                                        cy="50%"
+                                                        innerRadius={60}
+                                                        outerRadius={80}
+                                                        paddingAngle={8}
+                                                        dataKey="value"
+                                                    >
+                                                        {subjectData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={colors[index % colors.length]} stroke={isDark ? "#ffffff" : "transparent"} strokeOpacity={0.5} strokeWidth={3} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                            <div className="w-full mt-4 space-y-2 overflow-y-auto max-h-[100px] custom-scrollbar px-2">
+                                                {subjectData.map((entry, index) => (
+                                                    <div key={entry.name} className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <div
+                                                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                                                style={{ backgroundColor: colors[index % colors.length] }}
+                                                            />
+                                                            <span className="text-xs font-bold truncate">{entry.name}</span>
+                                                        </div>
+                                                        <span className="text-xs text-muted-foreground font-mono flex-shrink-0">
+                                                            {entry.value}m
+                                                        </span>
                                                     </div>
-                                                    <span className="text-xs text-muted-foreground font-mono flex-shrink-0">
-                                                        {entry.value}m
-                                                    </span>
-                                                </div>
-                                            ))}
+                                                ))}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-muted-foreground italic text-center p-8">
+                                            Complete your first focus session to see subject breakdown.
                                         </div>
-                                    </>
-                                ) : (
-                                    <div className="h-full flex items-center justify-center text-muted-foreground italic text-center p-8">
-                                        Complete your first focus session to see subject breakdown.
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </motion.div>
                     </div>
 
                 </div>
@@ -366,9 +434,9 @@ export default function DashboardClient({ userId }: { userId: string }) {
     );
 }
 
-function StatsCard({ title, value, subtext, icon: Icon, color }: any) {
+const StatsCard = React.memo(function StatsCard({ title, value, subtext, icon: Icon, color }: any) {
     return (
-        <Card className="glass-card rounded-2xl border-border/40 hover:shadow-lg transition-all duration-300 group">
+        <Card className="bg-card/50 rounded-xl border-border/40 hover:shadow-md transition-all duration-300 group">
             <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{title}</p>
@@ -381,4 +449,4 @@ function StatsCard({ title, value, subtext, icon: Icon, color }: any) {
             </CardContent>
         </Card>
     );
-}
+});
