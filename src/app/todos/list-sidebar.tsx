@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus, Hash, Inbox, ChevronRight, MoreHorizontal, Trash2, FolderPlus, LogOut, User, LayoutDashboard } from "lucide-react";
+import { Plus, Hash, Inbox, ChevronRight, MoreHorizontal, Trash2, FolderPlus, LogOut, User, LayoutDashboard, Share2, Users } from "lucide-react";
 import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -24,6 +24,7 @@ interface ListSidebarProps {
     onListSelect: (id: string) => void;
     onCreateList: () => void;
     onDeleteList: (id: string) => void;
+    onInvite: (id: string) => void;
     onLogout: () => void;
     userId: string;
 }
@@ -34,6 +35,7 @@ export const ListSidebar = React.memo(function ListSidebar({
     onListSelect,
     onCreateList,
     onDeleteList,
+    onInvite,
     onLogout,
     userId,
 }: ListSidebarProps) {
@@ -109,6 +111,9 @@ export const ListSidebar = React.memo(function ListSidebar({
                                     >
                                         <FolderPlus className={`h-4 w-4 ${activeListId === list.id ? "text-primary" : "text-muted-foreground/60"}`} />
                                         <span className="truncate">{list.name}</span>
+                                        {list.owner_id !== userId && (
+                                            <Users className="h-3 w-3 ml-auto text-primary opacity-70" />
+                                        )}
                                     </Button>
 
                                     <DropdownMenu>
@@ -122,12 +127,21 @@ export const ListSidebar = React.memo(function ListSidebar({
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end" className="rounded-xl border-border shadow-2xl">
+                                            {list.owner_id === userId && (
+                                                <DropdownMenuItem
+                                                    className="rounded-lg cursor-pointer flex gap-2"
+                                                    onClick={() => onInvite(list.id)}
+                                                >
+                                                    <Share2 className="h-4 w-4" />
+                                                    Invite Member
+                                                </DropdownMenuItem>
+                                            )}
                                             <DropdownMenuItem
                                                 className="text-destructive focus:text-destructive focus:bg-destructive/10 rounded-lg cursor-pointer flex gap-2"
                                                 onClick={() => onDeleteList(list.id)}
                                             >
                                                 <Trash2 className="h-4 w-4" />
-                                                Delete Project
+                                                {list.owner_id === userId ? "Delete Project" : "Leave Project"}
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>

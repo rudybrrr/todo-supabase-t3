@@ -23,7 +23,7 @@ import { Input } from "~/components/ui/input";
 import { ModeToggle } from "~/components/mode-toggle";
 import { ListSidebar } from "./list-sidebar";
 import { FocusTimer } from "./focus-timer";
-import { Sheet, SheetContent, SheetTrigger } from "~/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "~/components/ui/sheet";
 import { Separator } from "~/components/ui/separator";
 import {
   Card,
@@ -50,6 +50,7 @@ type TodoList = {
   name: string;
   owner_id: string;
   inserted_at: string;
+  user_role?: string;
 };
 
 type TodoRow = {
@@ -80,13 +81,13 @@ export default function TodosClient({ userId }: { userId: string }) {
   const [title, setTitle] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [shareUserId, setShareUserId] = useState("");
+  const [open, setOpen] = useState(false);
 
   const loadLists = async () => {
     // Get lists where user is a member
     const { data: members, error: memErr } = await supabase
       .from("todo_list_members")
-      .select("list_id, todo_lists(*)")
+      .select("list_id, role, todo_lists(*)")
       .eq("user_id", userId);
 
     if (memErr) {
@@ -94,7 +95,10 @@ export default function TodosClient({ userId }: { userId: string }) {
       return;
     }
 
-    const userLists = (members ?? []).map(m => (m as any).todo_lists as TodoList);
+    const userLists = (members ?? []).map(m => ({
+      ...((m as any).todo_lists as TodoList),
+      user_role: (m as any).role
+    }));
     setLists(userLists);
 
     if (!listId && userLists.length > 0) {
@@ -190,7 +194,26 @@ export default function TodosClient({ userId }: { userId: string }) {
     setImagesByTodo(grouped);
   }, [supabase]);
 
+  const ensureProfile = async () => {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (!profile) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from("profiles").insert({
+          id: userId,
+          email: user.email,
+        });
+      }
+    }
+  };
+
   useEffect(() => {
+    void ensureProfile();
     void ensureList();
   }, [supabase, userId]);
 
@@ -223,6 +246,41 @@ export default function TodosClient({ userId }: { userId: string }) {
       void supabase.removeChannel(imagesChannel);
     };
   }, [supabase, listId, loadTodos, loadImages]);
+
+  const handleInvite = useCallback(async (lid: string) => {
+    const email = prompt("Enter the email of the student you want to invite:");
+    if (!email) return;
+
+    // 1. Find user by email in profiles
+    const { data: profile, error: profErr } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("email", email.toLowerCase().trim())
+      .maybeSingle();
+
+    if (profErr) return toast.error(profErr.message);
+    if (!profile) return toast.error("No student found with that email. Ask them to log in first!");
+
+    // 2. Add to todo_list_members
+    const { error: memErr } = await supabase
+      .from("todo_list_members")
+      .insert({
+        list_id: lid,
+        user_id: profile.id,
+        role: "editor"
+      });
+
+    if (memErr) {
+      if (memErr.code === "23505") {
+        toast.error("This student is already a member of the project.");
+      } else {
+        toast.error(memErr.message);
+      }
+      return;
+    }
+
+    toast.success(`Invited ${email} successfully!`);
+  }, [supabase]);
 
   const addList = useCallback(async () => {
     const name = prompt("Enter list name:");
@@ -260,25 +318,45 @@ export default function TodosClient({ userId }: { userId: string }) {
       return;
     }
 
-    if (!confirm("Are you sure? All tasks and data in this project will be permanently erased.")) return;
+    const isOwner = listToDelete?.owner_id === userId;
 
-    // Manually cleanup dependencies to ensure delete succeeds if CASCADE is not set
-    const { error: todoErr } = await supabase.from("todos").delete().eq("list_id", lid);
-    if (todoErr) return toast.error(todoErr.message);
+    if (isOwner) {
+      if (!confirm("Are you sure? All tasks and data in this project will be permanently erased.")) return;
 
-    const { error: memErr } = await supabase.from("todo_list_members").delete().eq("list_id", lid);
-    if (memErr) return toast.error(memErr.message);
+      // Manually cleanup dependencies to ensure delete succeeds if CASCADE is not set
+      const { error: todoErr } = await supabase.from("todos").delete().eq("list_id", lid);
+      if (todoErr) return toast.error(todoErr.message);
 
-    // Finally delete the list itself
-    const { error } = await supabase.from("todo_lists").delete().eq("id", lid);
-    if (error) {
-      toast.error(error.message);
+      const { error: memErr } = await supabase.from("todo_list_members").delete().eq("list_id", lid);
+      if (memErr) return toast.error(memErr.message);
+
+      // Finally delete the list itself
+      const { error } = await supabase.from("todo_lists").delete().eq("id", lid);
+      if (error) {
+        toast.error(error.message);
+      } else {
+        toast.success("Project and all associated data deleted");
+        if (listId === lid) setListId(null);
+        void loadLists();
+      }
     } else {
-      toast.success("Project and all associated data deleted");
-      if (listId === lid) setListId(null);
-      void loadLists();
+      if (!confirm("Are you sure you want to leave this shared project?")) return;
+
+      const { error } = await supabase
+        .from("todo_list_members")
+        .delete()
+        .eq("list_id", lid)
+        .eq("user_id", userId);
+
+      if (error) {
+        toast.error(error.message);
+      } else {
+        toast.success("You have left the project");
+        if (listId === lid) setListId(null);
+        void loadLists();
+      }
     }
-  }, [supabase, lists, listId, loadLists]);
+  }, [supabase, lists, listId, loadLists, userId]);
 
   const addTodo = async () => {
     if (!listId || !title.trim()) return;
@@ -340,23 +418,6 @@ export default function TodosClient({ userId }: { userId: string }) {
     window.location.href = "/login";
   }, [supabase]);
 
-  /*
-  const share = async () => {
-    if (!listId) return;
-    const trimmed = shareUserId.trim();
-    if (!trimmed) return;
-
-    const { error } = await supabase.from("todo_list_members").insert({
-      list_id: listId,
-      user_id: trimmed,
-      role: "editor",
-    });
-
-    if (error) return toast.error(error.message);
-    setShareUserId("");
-    toast.success("Collaborator added!");
-  };
-  */
 
   const completedCount = useMemo(() => todos.filter(t => t.is_done).length, [todos]);
   const progress = useMemo(() => todos.length > 0 ? (completedCount / todos.length) * 100 : 0, [todos.length, completedCount]);
@@ -366,39 +427,60 @@ export default function TodosClient({ userId }: { userId: string }) {
   return (
     <div className="flex min-h-screen bg-transparent">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-72 flex-col fixed inset-y-0 shadow-xl glass z-20 border-r">
+      <aside className="hidden lg:flex w-80 flex-col fixed inset-y-0 shadow-xl glass z-20 border-r">
         <ListSidebar
           lists={lists}
           activeListId={listId}
           onListSelect={setListId}
           onCreateList={addList}
           onDeleteList={deleteList}
+          onInvite={handleInvite}
           onLogout={logout}
           userId={userId}
         />
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 md:pl-72 flex flex-col">
+      <main className="flex-1 lg:pl-80 flex flex-col min-h-screen">
         <div className="mx-auto w-full max-w-3xl p-4 md:p-8 space-y-6">
           {/* Header Section */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between glass p-6 rounded-2xl shadow-xl z-10 sticky top-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <Sheet>
+                <Sheet open={open} onOpenChange={setOpen}>
                   <SheetTrigger asChild>
-                    <Button variant="outline" size="icon" className="md:hidden h-10 w-10 mr-2 bg-card border-border shadow-sm hover:text-primary transition-all">
+                    <Button variant="outline" size="icon" className="lg:hidden h-10 w-10 mr-2 bg-card border-border shadow-sm hover:text-primary transition-all">
                       <Menu className="h-5 w-5" />
                     </Button>
                   </SheetTrigger>
                   <SheetContent side="left" className="p-0 w-72 border-none">
+                    <SheetHeader className="sr-only">
+                      <SheetTitle>Navigation Menu</SheetTitle>
+                      <SheetDescription>Access your study lists and settings</SheetDescription>
+                    </SheetHeader>
                     <ListSidebar
                       lists={lists}
                       activeListId={listId}
-                      onListSelect={setListId}
-                      onCreateList={addList}
-                      onDeleteList={deleteList}
-                      onLogout={logout}
+                      onListSelect={(id) => {
+                        setListId(id);
+                        setOpen(false);
+                      }}
+                      onCreateList={() => {
+                        void addList();
+                        setOpen(false);
+                      }}
+                      onDeleteList={(id) => {
+                        void deleteList(id);
+                        setOpen(false);
+                      }}
+                      onInvite={(lid) => {
+                        void handleInvite(lid);
+                        setOpen(false);
+                      }}
+                      onLogout={() => {
+                        void logout();
+                        setOpen(false);
+                      }}
                       userId={userId}
                     />
                   </SheetContent>
@@ -573,8 +655,8 @@ export default function TodosClient({ userId }: { userId: string }) {
             )}
           </div>
         </div>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }
 

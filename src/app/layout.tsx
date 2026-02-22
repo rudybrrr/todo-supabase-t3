@@ -4,6 +4,7 @@ import { type Metadata } from "next";
 import { Geist } from "next/font/google";
 import { Toaster } from "~/components/ui/sonner";
 import { ThemeProvider } from "~/components/theme-provider";
+import { FocusProvider } from "~/components/focus-provider";
 
 export const metadata: Metadata = {
   title: "Study Sprint",
@@ -28,8 +29,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster />
+          <FocusProvider>
+            {children}
+            <Toaster />
+          </FocusProvider>
         </ThemeProvider>
       </body>
     </html>

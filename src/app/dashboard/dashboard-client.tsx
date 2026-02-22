@@ -11,29 +11,20 @@ import {
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { ListSidebar } from "../todos/list-sidebar";
+import { FocusTimer } from "../todos/focus-timer"; // Added this import
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-// Mock data for initial visualization
-const MOCK_WEEKLY_DATA = [
-    { day: "Mon", minutes: 120 },
-    { day: "Tue", minutes: 80 },
-    { day: "Wed", minutes: 150 },
-    { day: "Thu", minutes: 45 },
-    { day: "Fri", minutes: 190 },
-    { day: "Sat", minutes: 60 },
-    { day: "Sun", minutes: 30 },
+// Chart color palette
+const COLORS = [
+    "hsl(var(--primary))",
+    "#fb7185",
+    "#f43f5e",
+    "#e11d48",
+    "#be123c"
 ];
-
-const MOCK_PROJECT_DATA = [
-    { name: "Math", value: 400 },
-    { name: "Physics", value: 300 },
-    { name: "General", value: 200 },
-];
-
-const COLORS = ["#f43f5e", "#ef4444", "#fb7185", "#fda4af", "#ef4444"];
 
 interface FocusSession {
     id: string;
@@ -196,6 +187,7 @@ export default function DashboardClient({ userId }: { userId: string }) {
                     onListSelect={() => router.push("/todos")}
                     onCreateList={() => router.push("/todos")}
                     onDeleteList={() => { }}
+                    onInvite={() => { }}
                     onLogout={handleLogout}
                     userId={userId}
                 />
@@ -222,6 +214,9 @@ export default function DashboardClient({ userId }: { userId: string }) {
                             </Button>
                         </Link>
                     </header>
+
+                    {/* Persistent Focus Timer */}
+                    <FocusTimer userId={userId} />
 
                     {/* Quick Stats Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -275,26 +270,29 @@ export default function DashboardClient({ userId }: { userId: string }) {
                                                     <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                                                 </linearGradient>
                                             </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted))" />
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.5} />
                                             <XAxis
                                                 dataKey="day"
                                                 axisLine={false}
                                                 tickLine={false}
-                                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12, fontWeight: 600 }}
+                                                tick={{ fill: 'var(--foreground)', opacity: 0.6, fontSize: 12, fontWeight: 700 }}
                                                 dy={10}
                                             />
                                             <YAxis
                                                 axisLine={false}
                                                 tickLine={false}
-                                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12, fontWeight: 600 }}
+                                                tick={{ fill: 'var(--foreground)', opacity: 0.6, fontSize: 12, fontWeight: 700 }}
                                             />
                                             <Tooltip
                                                 contentStyle={{
                                                     backgroundColor: 'hsl(var(--card))',
                                                     borderRadius: '16px',
                                                     border: '1px solid hsl(var(--border))',
-                                                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'
+                                                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                                                    color: 'var(--foreground)'
                                                 }}
+                                                itemStyle={{ color: 'var(--foreground)' }}
+                                                labelStyle={{ color: 'var(--foreground)', fontWeight: 'bold' }}
                                                 cursor={{ stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
                                             />
                                             <Area
@@ -338,7 +336,7 @@ export default function DashboardClient({ userId }: { userId: string }) {
                                                     dataKey="value"
                                                 >
                                                     {subjectData.map((entry, index) => (
-                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
                                                     ))}
                                                 </Pie>
                                                 <Tooltip />

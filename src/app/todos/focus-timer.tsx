@@ -1,46 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { Play, Pause, RotateCcw, Coffee, Brain, Timer } from "lucide-react";
+import { useMemo } from "react";
+import { Play, Pause, RotateCcw } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
-import { toast } from "sonner";
-import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
-
-type TimerMode = "focus" | "shortBreak" | "longBreak";
-
-const MODE_CONFIG = {
-    focus: {
-        duration: 25 * 60,
-        label: "Focus Time",
-        icon: Brain,
-        color: "text-primary",
-        bgColor: "bg-primary/10",
-        progressColor: "stroke-primary",
-    },
-    shortBreak: {
-        duration: 5 * 60,
-        label: "Short Break",
-        icon: Coffee,
-        color: "text-green-500",
-        bgColor: "bg-green-500/10",
-        progressColor: "stroke-green-500",
-    },
-    longBreak: {
-        duration: 15 * 60,
-        label: "Long Break",
-        icon: Timer,
-        color: "text-blue-500",
-        bgColor: "bg-blue-500/10",
-        progressColor: "stroke-blue-500",
-    },
-};
+import { useFocus, MODE_CONFIG, type TimerMode } from "~/components/focus-provider";
 
 export function FocusTimer({ userId, listId }: { userId?: string; listId?: string | null }) {
-    const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-    const [mode, setMode] = useState<TimerMode>("focus");
-    const [timeLeft, setTimeLeft] = useState(MODE_CONFIG.focus.duration);
-    const [isActive, setIsActive] = useState(false);
+    const {
+        mode,
+        timeLeft,
+        isActive,
+        toggleTimer,
+        resetTimer,
+        handleModeChange
+    } = useFocus();
 
     const config = MODE_CONFIG[mode];
 
@@ -49,62 +23,6 @@ export function FocusTimer({ userId, listId }: { userId?: string; listId?: strin
         const secs = seconds % 60;
         return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
     };
-
-    const resetTimer = useCallback(() => {
-        setIsActive(false);
-        setTimeLeft(MODE_CONFIG[mode].duration);
-    }, [mode]);
-
-    const toggleTimer = () => {
-        setIsActive(!isActive);
-    };
-
-    const handleModeChange = (newMode: TimerMode) => {
-        setMode(newMode);
-        setIsActive(false);
-        setTimeLeft(MODE_CONFIG[newMode].duration);
-    };
-
-    const saveSession = useCallback(async () => {
-        if (!userId) return;
-
-        const { error } = await supabase.from("focus_sessions").insert({
-            user_id: userId,
-            list_id: listId || null,
-            duration_seconds: MODE_CONFIG[mode].duration,
-            mode: mode,
-        });
-
-        if (error) {
-            console.error("Error saving focus session:", error);
-            // Don't show toast for every fail to avoid spamming if offline, but log it
-        } else {
-            console.log("Session saved successfully");
-        }
-    }, [supabase, userId, listId, mode]);
-
-    useEffect(() => {
-        let interval: NodeJS.Timeout;
-
-        if (isActive && timeLeft > 0) {
-            interval = setInterval(() => {
-                setTimeLeft((prev) => prev - 1);
-            }, 1000);
-        } else if (timeLeft === 0) {
-            setIsActive(false);
-
-            // Save session to database
-            void saveSession();
-
-            toast.success(
-                mode === "focus"
-                    ? "Study session complete! Take a well-deserved break."
-                    : "Break's over! Ready to get back into focus mode?"
-            );
-        }
-
-        return () => clearInterval(interval);
-    }, [isActive, timeLeft, mode, saveSession]);
 
     const progress = useMemo(() => {
         const total = MODE_CONFIG[mode].duration;
@@ -218,6 +136,5 @@ export function FocusTimer({ userId, listId }: { userId?: string; listId?: strin
                 </div>
             </CardContent>
         </Card>
-
     );
 }
