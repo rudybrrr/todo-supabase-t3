@@ -5,6 +5,7 @@ import { Play, Pause, RotateCcw, Coffee, Brain, Timer } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { toast } from "sonner";
+import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 
 type TimerMode = "focus" | "shortBreak" | "longBreak";
 
@@ -35,7 +36,8 @@ const MODE_CONFIG = {
     },
 };
 
-export function FocusTimer() {
+export function FocusTimer({ userId, listId }: { userId?: string; listId?: string | null }) {
+    const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [mode, setMode] = useState<TimerMode>("focus");
     const [timeLeft, setTimeLeft] = useState(MODE_CONFIG.focus.duration);
     const [isActive, setIsActive] = useState(false);
@@ -63,6 +65,24 @@ export function FocusTimer() {
         setTimeLeft(MODE_CONFIG[newMode].duration);
     };
 
+    const saveSession = useCallback(async () => {
+        if (!userId) return;
+
+        const { error } = await supabase.from("focus_sessions").insert({
+            user_id: userId,
+            list_id: listId || null,
+            duration_seconds: MODE_CONFIG[mode].duration,
+            mode: mode,
+        });
+
+        if (error) {
+            console.error("Error saving focus session:", error);
+            // Don't show toast for every fail to avoid spamming if offline, but log it
+        } else {
+            console.log("Session saved successfully");
+        }
+    }, [supabase, userId, listId, mode]);
+
     useEffect(() => {
         let interval: NodeJS.Timeout;
 
@@ -72,16 +92,19 @@ export function FocusTimer() {
             }, 1000);
         } else if (timeLeft === 0) {
             setIsActive(false);
+
+            // Save session to database
+            void saveSession();
+
             toast.success(
                 mode === "focus"
                     ? "Study session complete! Take a well-deserved break."
                     : "Break's over! Ready to get back into focus mode?"
             );
-            // Play a subtle notification sound (optional/future)
         }
 
         return () => clearInterval(interval);
-    }, [isActive, timeLeft, mode]);
+    }, [isActive, timeLeft, mode, saveSession]);
 
     const progress = useMemo(() => {
         const total = MODE_CONFIG[mode].duration;
@@ -144,7 +167,9 @@ export function FocusTimer() {
                                     {mode === "focus" ? "Focus Session" : "Recharge"}
                                 </h2>
                                 <p className="text-[10px] text-muted-foreground font-medium truncate hidden sm:block">
-                                    {mode === "focus" ? "Stay committed to your tasks!" : "Step away for a moment."}
+                                    {mode === "focus"
+                                        ? "Complete the session to log your progress!"
+                                        : "Step away for a moment."}
                                 </p>
                             </div>
 

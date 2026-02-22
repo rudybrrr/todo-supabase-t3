@@ -1,5 +1,6 @@
 import React from "react";
-import { Plus, Hash, Inbox, ChevronRight, MoreHorizontal, Trash2, FolderPlus, LogOut, User } from "lucide-react";
+import { Plus, Hash, Inbox, ChevronRight, MoreHorizontal, Trash2, FolderPlus, LogOut, User, LayoutDashboard } from "lucide-react";
+import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Separator } from "~/components/ui/separator";
@@ -52,6 +53,16 @@ export const ListSidebar = React.memo(function ListSidebar({
                             Favorites
                         </h2>
                         <div className="space-y-1">
+                            <Link href="/dashboard" className="block w-full">
+                                <Button
+                                    variant="ghost"
+                                    className="w-full justify-start gap-3 rounded-xl font-medium transition-all hover:bg-muted"
+                                >
+                                    <LayoutDashboard className="h-4 w-4 text-primary" />
+                                    Insights
+                                </Button>
+                            </Link>
+
                             {lists.find(l => l.name === "Inbox") && (
                                 <Button
                                     variant={activeListId === lists.find(l => l.name === "Inbox")?.id ? "secondary" : "ghost"}
