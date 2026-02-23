@@ -22,6 +22,7 @@ import confetti from "canvas-confetti";
 
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { ModeToggle } from "~/components/mode-toggle";
 import { ListSidebar } from "./list-sidebar";
 import { FocusTimer } from "./focus-timer";
@@ -50,16 +51,40 @@ import type { TodoList, TodoRow, TodoImageRow } from "~/lib/types";
 
 const BUCKET = "todo-images";
 
-export default function TodosClient({ userId }: { userId: string }) {
+import { useData } from "~/components/data-provider";
+
+export default function TodosClient({ userId }: { userId: string, username?: string }) {
+  const { lists, profile, loading: dataLoading, refreshData } = useData();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [listId, setListId] = useState<string | null>(null);
-  const [lists, setLists] = useState<TodoList[]>([]);
-
   const [todos, setTodos] = useState<TodoRow[]>([]);
   const [imagesByTodo, setImagesByTodo] = useState<Record<string, TodoImageRow[]>>({});
   const [title, setTitle] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { setCurrentListId } = useFocus();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // Initialize listId from URL or fallback to first list
+  useEffect(() => {
+    if (dataLoading) return;
+
+    const urlListId = searchParams.get("listId");
+    if (urlListId) {
+      setListId(urlListId);
+    } else if (lists.length > 0 && !listId) {
+      setListId(lists[0]!.id);
+    }
+  }, [searchParams, lists, dataLoading]);
+
+  // Sync state to URL
+  const handleListSelect = useCallback((id: string) => {
+    setListId(id);
+    const params = new URLSearchParams(searchParams);
+    params.set("listId", id);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     setCurrentListId(listId);
@@ -67,84 +92,7 @@ export default function TodosClient({ userId }: { userId: string }) {
 
   const [open, setOpen] = useState(false);
 
-  const loadLists = async () => {
-    // Get lists where user is a member
-    const { data: members, error: memErr } = await supabase
-      .from("todo_list_members")
-      .select("list_id, role, todo_lists(*)")
-      .eq("user_id", userId);
-
-    if (memErr) {
-      toast.error(memErr.message);
-      return;
-    }
-
-    const userLists: TodoList[] = (members ?? []).map(m => ({
-      ...(m.todo_lists as any as TodoList),
-      user_role: m.role
-    }));
-    setLists(userLists);
-
-    if (!listId && userLists.length > 0) {
-      setListId(userLists[0]!.id);
-    }
-  };
-
-  const ensureList = async () => {
-    const { data: mem, error: memErr } = await supabase
-      .from("todo_list_members")
-      .select("list_id")
-      .eq("user_id", userId)
-      .limit(1);
-
-    if (memErr) {
-      toast.error(memErr.message);
-      return;
-    }
-
-    if (mem && mem.length > 0) {
-      void loadLists();
-      return;
-    }
-
-    // Double check if an "Inbox" already exists for this owner to prevent unique constraint violations
-    const { data: existingInbox } = await supabase
-      .from("todo_lists")
-      .select("id")
-      .eq("owner_id", userId)
-      .eq("name", "Inbox")
-      .maybeSingle();
-
-    if (existingInbox) {
-      // If list exists but member record was missing, fix the member record
-      await supabase.from("todo_list_members").upsert({ list_id: existingInbox.id, user_id: userId, role: "owner" });
-      void loadLists();
-      return;
-    }
-
-    const { data: newList, error: listErr } = await supabase
-      .from("todo_lists")
-      .insert({ owner_id: userId, name: "Inbox" })
-      .select("id")
-      .single<{ id: string }>();
-
-    if (listErr) {
-      toast.error(listErr.message);
-      return;
-    }
-
-    const { error: mErr } = await supabase
-      .from("todo_list_members")
-      .insert({ list_id: newList.id, user_id: userId, role: "owner" });
-
-    if (mErr) {
-      toast.error(mErr.message);
-      return;
-    }
-
-    void loadLists();
-  };
-
+  // We still need to load todos for the specific list
   const loadTodos = useCallback(async (lid: string) => {
     const { data, error } = await supabase
       .from("todos")
@@ -178,29 +126,6 @@ export default function TodosClient({ userId }: { userId: string }) {
     setImagesByTodo(grouped);
   }, [supabase]);
 
-  const ensureProfile = async () => {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (!profile) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from("profiles").insert({
-          id: userId,
-          email: user.email,
-        });
-      }
-    }
-  };
-
-  useEffect(() => {
-    void ensureProfile();
-    void ensureList();
-  }, [supabase, userId]);
-
   useEffect(() => {
     if (!listId) return;
 
@@ -211,7 +136,7 @@ export default function TodosClient({ userId }: { userId: string }) {
       .channel(`todos-rt-${listId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "todos", filter: `list_id=eq.${listId}` },
+        { event: "*", schema: "public", table: "todos" },
         () => void loadTodos(listId),
       )
       .subscribe();
@@ -220,7 +145,7 @@ export default function TodosClient({ userId }: { userId: string }) {
       .channel(`todo-images-rt-${listId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "todo_images", filter: `list_id=eq.${listId}` },
+        { event: "*", schema: "public", table: "todo_images" },
         () => void loadImages(listId),
       )
       .subscribe();
@@ -291,9 +216,9 @@ export default function TodosClient({ userId }: { userId: string }) {
     }
 
     toast.success("Project created!");
-    void loadLists();
+    void refreshData();
     setListId(newList.id);
-  }, [supabase, userId, loadLists]);
+  }, [supabase, userId, refreshData]);
 
   const deleteList = useCallback(async (lid: string) => {
     const listToDelete = lists.find(l => l.id === lid);
@@ -321,7 +246,7 @@ export default function TodosClient({ userId }: { userId: string }) {
       } else {
         toast.success("Project and all associated data deleted");
         if (listId === lid) setListId(null);
-        void loadLists();
+        void refreshData();
       }
     } else {
       if (!confirm("Are you sure you want to leave this shared project?")) return;
@@ -337,48 +262,63 @@ export default function TodosClient({ userId }: { userId: string }) {
       } else {
         toast.success("You have left the project");
         if (listId === lid) setListId(null);
-        void loadLists();
+        void refreshData();
       }
     }
-  }, [supabase, lists, listId, loadLists, userId]);
+  }, [supabase, lists, listId, userId, refreshData]);
 
   const addTodo = useCallback(async () => {
     if (!listId || !title.trim()) return;
 
     setIsSubmitting(true);
-    const { error } = await supabase.from("todos").insert({
+    const newTodo: TodoRow = {
+      id: crypto.randomUUID(),
       user_id: userId,
       list_id: listId,
       title,
+      is_done: false,
+      inserted_at: new Date().toISOString()
+    };
+
+    // Optimistic Update
+    setTodos(prev => [newTodo, ...prev]);
+    setTitle("");
+
+    const { error } = await supabase.from("todos").insert({
+      user_id: userId,
+      list_id: listId,
+      title: newTodo.title,
       is_done: false,
     });
 
     setIsSubmitting(false);
     if (error) {
       toast.error(error.message);
+      // Rollback
+      void loadTodos(listId);
       return;
     }
-    setTitle("");
     toast.success("Todo added!");
-    void loadTodos(listId);
   }, [supabase, listId, title, userId, loadTodos]);
 
   const toggleTodo = useCallback(async (id: string, next: boolean) => {
     if (!listId) return;
 
+    // Optimistic Update
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, is_done: next } : t));
+
+    if (next) {
+      void confetti({
+        particleCount: 40,
+        spread: 50,
+        origin: { y: 0.8 },
+        colors: ['#de483a', '#10b981']
+      });
+    }
+
     const { error } = await supabase.from("todos").update({ is_done: next }).eq("id", id);
     if (error) {
       toast.error(error.message);
-    } else {
-      if (next) {
-        // Subtle haptic confetti for task completion
-        void confetti({
-          particleCount: 40,
-          spread: 50,
-          origin: { y: 0.8 },
-          colors: ['#6366f1', '#10b981']
-        });
-      }
       void loadTodos(listId);
     }
   }, [supabase, listId, loadTodos]);
@@ -386,10 +326,12 @@ export default function TodosClient({ userId }: { userId: string }) {
   const updateTitle = useCallback(async (id: string, nextTitle: string) => {
     if (!listId) return;
 
+    // Optimistic Update
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, title: nextTitle } : t));
+
     const { error } = await supabase.from("todos").update({ title: nextTitle }).eq("id", id);
     if (error) {
       toast.error(error.message);
-    } else {
       void loadTodos(listId);
     }
   }, [supabase, listId, loadTodos]);
@@ -397,12 +339,15 @@ export default function TodosClient({ userId }: { userId: string }) {
   const delTodo = useCallback(async (id: string) => {
     if (!listId) return;
 
+    // Optimistic Update
+    setTodos(prev => prev.filter(t => t.id !== id));
+
     const { error } = await supabase.from("todos").delete().eq("id", id);
     if (error) {
       toast.error(error.message);
+      void loadTodos(listId);
     } else {
       toast.success("Todo deleted");
-      void loadTodos(listId);
     }
   }, [supabase, listId, loadTodos]);
 
@@ -424,12 +369,13 @@ export default function TodosClient({ userId }: { userId: string }) {
         <ListSidebar
           lists={lists}
           activeListId={listId}
-          onListSelect={setListId}
+          onListSelect={handleListSelect}
           onCreateList={addList}
           onDeleteList={deleteList}
           onInvite={handleInvite}
           onLogout={logout}
           userId={userId}
+          username={profile?.username}
         />
       </aside>
 
@@ -455,7 +401,7 @@ export default function TodosClient({ userId }: { userId: string }) {
                       lists={lists}
                       activeListId={listId}
                       onListSelect={(id) => {
-                        setListId(id);
+                        handleListSelect(id);
                         setOpen(false);
                       }}
                       onCreateList={() => {
@@ -475,6 +421,7 @@ export default function TodosClient({ userId }: { userId: string }) {
                         setOpen(false);
                       }}
                       userId={userId}
+                      username={profile?.username}
                     />
                   </SheetContent>
                 </Sheet>
@@ -509,11 +456,11 @@ export default function TodosClient({ userId }: { userId: string }) {
           <FocusTimer />
 
           {/* Add Todo Section */}
-          <div className="bg-card/50 rounded-xl overflow-hidden border border-border/50 shadow-sm transition-shadow focus-within:shadow-md">
-            <div className="flex items-center gap-2 p-1 pl-3">
-              <Plus className="w-4 h-4 text-primary" />
+          <div className="bg-muted/20 rounded-xl overflow-hidden border border-border/50 shadow-sm transition-all focus-within:shadow-md focus-within:bg-muted/30 focus-within:border-primary/30">
+            <div className="flex items-center gap-2 p-1 pl-4">
+              <Plus className="w-4 h-4 text-primary/70" />
               <Input
-                className="h-10 text-sm border-none bg-transparent focus-visible:ring-0 shadow-none px-0"
+                className="h-10 text-sm border-none bg-transparent dark:bg-transparent focus-visible:ring-0 shadow-none px-0 outline-none"
                 placeholder="Add a task..."
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}

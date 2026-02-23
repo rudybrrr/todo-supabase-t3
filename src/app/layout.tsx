@@ -5,6 +5,7 @@ import { Geist } from "next/font/google";
 import { Toaster } from "~/components/ui/sonner";
 import { ThemeProvider } from "~/components/theme-provider";
 import { FocusProvider } from "~/components/focus-provider";
+import { DataProvider } from "~/components/data-provider";
 
 export const metadata: Metadata = {
   title: "Study Sprint",
@@ -29,10 +30,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <FocusProvider>
-            {children}
-            <Toaster />
-          </FocusProvider>
+          <DataProvider>
+            <FocusProvider>
+              {children}
+              <Toaster />
+            </FocusProvider>
+          </DataProvider>
         </ThemeProvider>
       </body>
     </html>

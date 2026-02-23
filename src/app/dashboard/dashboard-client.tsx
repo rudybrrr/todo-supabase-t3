@@ -47,185 +47,41 @@ const LIGHT_COLORS = [
 ];
 
 
-// Module-level "Instant Cache" to survive navigation
-let dashCache: {
-    weeklyData: { day: string; date: string; minutes: number }[];
-    subjectData: { name: string; value: number }[];
-    stats: { totalHours: string; tasksCompleted: number; streak: number; avgSession: string };
-    lists: TodoList[];
-} | null = null;
+import { useData } from "~/components/data-provider";
 
 export default function DashboardClient({ userId }: { userId: string }) {
-    const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+    const { lists, profile, stats, loading, refreshData } = useData();
     const router = useRouter();
     const { theme, resolvedTheme } = useTheme();
     const [mounted, setMounted] = useState(false);
-    const [lists, setLists] = useState<TodoList[]>(dashCache?.lists || []);
 
-    // Safety check for hydration
     useEffect(() => {
         setMounted(true);
     }, []);
 
     const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
     const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
-    const chartStroke = isDark ? "#ffffff" : "hsl(var(--primary))";
+    const chartStroke = isDark ? "#ffffff" : "#000000";
     const chartGrid = isDark ? "#ffffff" : "hsl(var(--border))";
     const chartTick = isDark ? "#ffffff" : "hsl(var(--foreground))";
-    const chartFill = isDark ? "#f8fafc" : "hsl(var(--primary))";
-    const [weeklyData, setWeeklyData] = useState<{ day: string; date: string; minutes: number }[]>(dashCache?.weeklyData || []);
-    const [subjectData, setSubjectData] = useState<{ name: string; value: number }[]>(dashCache?.subjectData || []);
-    const [stats, setStats] = useState(dashCache?.stats || {
-        totalHours: "0h",
-        tasksCompleted: 0,
-        streak: 0,
-        avgSession: "0m"
-    });
-    const [loading, setLoading] = useState(!dashCache); // Only show loading if no cache
-
-    const fetchStatsAndLists = useCallback(async () => {
-        // Only show loading pulse if we have literally no data (first visit)
-        if (!dashCache) setLoading(true);
-
-        try {
-            // FIRE EVERYTHING IN PARALLEL 🏎️
-            const [sessionsRes, todosRes, listsRes] = await Promise.all([
-                supabase
-                    .from("focus_sessions")
-                    .select("*, todo_lists (name)")
-                    .eq("user_id", userId)
-                    .order("inserted_at", { ascending: true }),
-                supabase
-                    .from("todos")
-                    .select("*", { count: 'exact', head: true })
-                    .eq("user_id", userId)
-                    .eq("is_done", true),
-                supabase
-                    .from("todo_lists")
-                    .select("*")
-                    .eq("owner_id", userId)
-            ]);
-
-            const sessions = sessionsRes.data as FocusSession[] | null;
-            const completedCount = todosRes.count;
-            const listsData = listsRes.data as TodoList[] | null;
-
-            if (listsData) {
-                setLists(listsData);
-            }
-
-            if (sessions) {
-                // Parse Weekly Data (Last 7 days)
-                const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                const last7Days: { day: string; date: string; minutes: number }[] = Array.from({ length: 7 }, (_, i) => {
-                    const d = new Date();
-                    d.setDate(d.getDate() - (6 - i));
-                    return {
-                        day: days[d.getDay()] ?? "Unknown",
-                        date: d.toISOString().split('T')[0] ?? "",
-                        minutes: 0
-                    };
-                });
-
-                let totalSeconds = 0;
-                let focusSessionCount = 0;
-                const subjects: Record<string, number> = {};
-
-                sessions.forEach(s => {
-                    if (s.mode === "focus") {
-                        totalSeconds += s.duration_seconds;
-                        focusSessionCount++;
-                        const sessionDate = new Date(s.inserted_at as string).toISOString().split('T')[0];
-                        const dayData = last7Days.find(d => d.date === sessionDate);
-                        if (dayData) dayData.minutes += Math.round(s.duration_seconds / 60);
-                        const subjectName = s.todo_lists?.name || "General";
-                        subjects[subjectName] = (subjects[subjectName] || 0) + Math.round(s.duration_seconds / 60);
-                    }
-                });
-
-                const newStats = {
-                    totalHours: (totalSeconds / 3600).toFixed(1) + "h",
-                    tasksCompleted: completedCount || 0,
-                    streak: calculateStreak(sessions),
-                    avgSession: focusSessionCount > 0 ? Math.round((totalSeconds / 60) / focusSessionCount) + "m" : "0m"
-                };
-
-                const newWeeklyData = last7Days;
-                const newSubjectData = Object.entries(subjects).map(([name, value]) => ({ name, value }));
-
-                setWeeklyData(newWeeklyData);
-                setSubjectData(newSubjectData);
-                setStats(newStats);
-
-                // Update the "Extreme Cache" 🏎️
-                dashCache = {
-                    weeklyData: newWeeklyData,
-                    subjectData: newSubjectData,
-                    stats: newStats,
-                    lists: listsData || []
-                };
-            }
-        } catch (error) {
-            console.error("Extreme Fetch Error:", error);
-        } finally {
-            setLoading(false);
-        }
-    }, [supabase, userId]);
-
-    useEffect(() => {
-        void fetchStatsAndLists();
-    }, [fetchStatsAndLists]);
+    const chartFill = isDark ? "#f8fafc" : "#000000";
 
     const handleLogout = async () => {
+        const supabase = createSupabaseBrowserClient();
         await supabase.auth.signOut();
-        router.refresh();
+        router.push("/login");
     };
 
-    function calculateStreak(sessions: FocusSession[]) {
-        if (!sessions.length) return 0;
-
-        // Get unique dates in YYYY-MM-DD format, sorted newest to oldest
-        const rawDates = sessions
-            .filter(s => !!s.inserted_at)
-            .map(s => new Date(s.inserted_at).toISOString().split('T')[0]) as string[];
-        const dates = Array.from(new Set(rawDates)).sort().reverse();
-
-        let streak = 0;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        let expectedDiff = 0;
-        for (let i = 0; i < dates.length; i++) {
-            const date = new Date(dates[i]!);
-            date.setHours(0, 0, 0, 0);
-
-            // Calculate difference in calendar days
-            const diffDays = Math.round((today.getTime() - date.getTime()) / (1000 * 3600 * 24));
-
-            if (diffDays === expectedDiff) {
-                // Perfect consecutive match
-                streak++;
-                expectedDiff++;
-            } else if (i === 0 && diffDays === 1) {
-                // Special case: Missed today, but started yesterday. Streak is still active.
-                streak = 1;
-                expectedDiff = 2;
-            } else {
-                // Gap detected
-                break;
-            }
-        }
-        return streak;
-    }
-
-    if (loading) {
+    if (loading || !stats) {
         return <div className="flex h-screen items-center justify-center bg-background">
             <div className="animate-pulse flex flex-col items-center gap-4">
                 <TrendingUp className="w-12 h-12 text-primary/40" />
-                <p className="text-muted-foreground font-bold tracking-widest uppercase text-xs">Analyzing Focus...</p>
+                <p className="text-muted-foreground font-bold tracking-widest uppercase text-xs">Preparing Insights...</p>
             </div>
         </div>;
     }
+
+    const username = profile?.username;
 
     return (
         <div className="flex h-screen bg-background overflow-hidden">
@@ -234,12 +90,13 @@ export default function DashboardClient({ userId }: { userId: string }) {
                 <ListSidebar
                     lists={lists}
                     activeListId={null}
-                    onListSelect={() => router.push("/todos")}
+                    onListSelect={(id) => router.push(`/todos?listId=${id}`)}
                     onCreateList={() => router.push("/todos")}
                     onDeleteList={() => { }}
                     onInvite={() => { }}
                     onLogout={handleLogout}
                     userId={userId}
+                    username={username}
                 />
             </aside>
 
@@ -311,9 +168,9 @@ export default function DashboardClient({ userId }: { userId: string }) {
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent className="h-[350px] pt-4">
-                                    {weeklyData.length > 0 ? (
+                                    {stats.weeklyData.length > 0 ? (
                                         <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={weeklyData}>
+                                            <AreaChart data={stats.weeklyData}>
                                                 <defs>
                                                     <linearGradient id="colorMinutes" x1="0" y1="0" x2="0" y2="1">
                                                         <stop offset="5%" stopColor={chartFill} stopOpacity={isDark ? 0.9 : 0.6} />
@@ -381,12 +238,12 @@ export default function DashboardClient({ userId }: { userId: string }) {
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent className="h-[350px] flex flex-col items-center justify-center pt-4">
-                                    {subjectData.length > 0 ? (
+                                    {stats.subjectData.length > 0 ? (
                                         <>
                                             <ResponsiveContainer width="100%" height="70%">
                                                 <PieChart>
                                                     <Pie
-                                                        data={subjectData}
+                                                        data={stats.subjectData}
                                                         cx="50%"
                                                         cy="50%"
                                                         innerRadius={60}
@@ -394,7 +251,7 @@ export default function DashboardClient({ userId }: { userId: string }) {
                                                         paddingAngle={8}
                                                         dataKey="value"
                                                     >
-                                                        {subjectData.map((entry, index) => (
+                                                        {stats.subjectData.map((entry: { name: string; value: number }, index: number) => (
                                                             <Cell key={`cell-${index}`} fill={colors[index % colors.length]} stroke={isDark ? "#ffffff" : "transparent"} strokeOpacity={0.5} strokeWidth={3} />
                                                         ))}
                                                     </Pie>
@@ -402,7 +259,7 @@ export default function DashboardClient({ userId }: { userId: string }) {
                                                 </PieChart>
                                             </ResponsiveContainer>
                                             <div className="w-full mt-4 space-y-2 overflow-y-auto max-h-[100px] custom-scrollbar px-2">
-                                                {subjectData.map((entry, index) => (
+                                                {stats.subjectData.map((entry: { name: string; value: number }, index: number) => (
                                                     <div key={entry.name} className="flex items-center justify-between">
                                                         <div className="flex items-center gap-2 min-w-0">
                                                             <div

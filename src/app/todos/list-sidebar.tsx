@@ -24,6 +24,7 @@ interface ListSidebarProps {
     onInvite: (id: string) => void;
     onLogout: () => void;
     userId: string;
+    username?: string;
 }
 
 export const ListSidebar = React.memo(function ListSidebar({
@@ -35,6 +36,7 @@ export const ListSidebar = React.memo(function ListSidebar({
     onInvite,
     onLogout,
     userId,
+    username,
 }: ListSidebarProps) {
     const inbox = React.useMemo(() => lists.find(l => l.name === "Inbox"), [lists]);
 
@@ -174,15 +176,18 @@ export const ListSidebar = React.memo(function ListSidebar({
                     </Button>
                 </div>
 
-                <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted/50">
-                    <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
-                        <User className="h-4 w-4" />
+                <Link href="/settings" className="block outline-none group">
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted/50 transition-all hover:bg-primary/10 hover:ring-1 hover:ring-primary/20">
+                        <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
+                            <User className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold truncate">{username ? `@${username}` : "Set Username"}</p>
+                            <p className="text-[10px] text-muted-foreground truncate font-medium uppercase tracking-tight">Profile Settings</p>
+                        </div>
+                        <ChevronRight className="w-3 h-3 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold truncate">Student Session</p>
-                        <p className="text-[10px] text-muted-foreground truncate">Focusing Today</p>
-                    </div>
-                </div>
+                </Link>
             </div>
         </div>
     );

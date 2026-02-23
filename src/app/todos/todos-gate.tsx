@@ -11,6 +11,7 @@ export default function TodosGate() {
   const router = useRouter();
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,7 +21,15 @@ export default function TodosGate() {
         router.replace("/login");
         return;
       }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", data.user.id)
+        .single();
+
       setUserId(data.user.id);
+      setUsername(profile?.username);
       setLoading(false);
     };
     void run();
@@ -29,5 +38,5 @@ export default function TodosGate() {
   if (loading) return <TodosSkeleton />;
   if (!userId) return null;
 
-  return <TodosClient userId={userId} />;
+  return <TodosClient userId={userId} username={username} />;
 }

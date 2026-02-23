@@ -51,7 +51,10 @@ interface FocusContextType {
 
 const FocusContext = createContext<FocusContextType | undefined>(undefined);
 
+import { useData } from "./data-provider";
+
 export function FocusProvider({ children }: { children: React.ReactNode }) {
+    const { userId } = useData();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [mode, setMode] = useState<TimerMode>("focus");
     const [timeLeft, setTimeLeft] = useState(MODE_CONFIG.focus.duration);
@@ -100,20 +103,19 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const saveSession = useCallback(async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!userId) return;
 
         const { error } = await supabase.from("focus_sessions").insert({
-            user_id: user.id,
+            user_id: userId,
             duration_seconds: MODE_CONFIG[mode].duration,
             mode: mode,
-            list_id: currentListId, // Now capturing the actual list ID
+            list_id: currentListId,
         });
 
         if (error) {
             console.error("Error saving focus session:", error);
         }
-    }, [supabase, mode, currentListId]);
+    }, [supabase, mode, currentListId, userId]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;
