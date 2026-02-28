@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus, Hash, Inbox, ChevronRight, MoreHorizontal, Trash2, FolderPlus, LogOut, User, LayoutDashboard, Share2, Users } from "lucide-react";
+import { Plus, Hash, Inbox, ChevronRight, MoreHorizontal, Trash2, FolderPlus, LogOut, User, LayoutDashboard, Share2, Users, Trophy } from "lucide-react";
 import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -27,6 +27,9 @@ interface ListSidebarProps {
     username?: string;
 }
 
+import { usePathname } from "next/navigation";
+import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
+
 export const ListSidebar = React.memo(function ListSidebar({
     lists,
     activeListId,
@@ -38,6 +41,7 @@ export const ListSidebar = React.memo(function ListSidebar({
     userId,
     username,
 }: ListSidebarProps) {
+    const pathname = usePathname();
     const inbox = React.useMemo(() => lists.find(l => l.name === "Inbox"), [lists]);
 
     return (
@@ -58,11 +62,26 @@ export const ListSidebar = React.memo(function ListSidebar({
                         <div className="space-y-1">
                             <Link href="/dashboard" className="block w-full">
                                 <Button
-                                    variant="ghost"
-                                    className="w-full justify-start gap-3 rounded-lg font-medium transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                    variant={pathname === "/dashboard" ? "secondary" : "ghost"}
+                                    className={`w-full justify-start gap-3 rounded-lg font-medium transition-all ${pathname === "/dashboard"
+                                        ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                                        : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80"
+                                        }`}
                                 >
                                     <LayoutDashboard className="h-4 w-4" />
                                     Insights
+                                </Button>
+                            </Link>
+                            <Link href="/study-hall" className="block w-full">
+                                <Button
+                                    variant={pathname === "/study-hall" ? "secondary" : "ghost"}
+                                    className={`w-full justify-start gap-3 rounded-lg font-medium transition-all ${pathname === "/study-hall"
+                                        ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                                        : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80"
+                                        }`}
+                                >
+                                    <Trophy className="h-4 w-4" />
+                                    Study Hall
                                 </Button>
                             </Link>
 
@@ -178,9 +197,11 @@ export const ListSidebar = React.memo(function ListSidebar({
 
                 <Link href="/settings" className="block outline-none group">
                     <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted/50 transition-all hover:bg-primary/10 hover:ring-1 hover:ring-primary/20">
-                        <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
-                            <User className="h-4 w-4" />
-                        </div>
+                        <Avatar className="w-8 h-8 border border-border group-hover:border-primary transition-colors">
+                            <AvatarFallback className="bg-primary/20 text-primary font-bold group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                                {username ? username.substring(0, 1).toUpperCase() : <User className="h-4 w-4" />}
+                            </AvatarFallback>
+                        </Avatar>
                         <div className="flex-1 min-w-0">
                             <p className="text-xs font-bold truncate">{username ? `@${username}` : "Set Username"}</p>
                             <p className="text-[10px] text-muted-foreground truncate font-medium uppercase tracking-tight">Profile Settings</p>

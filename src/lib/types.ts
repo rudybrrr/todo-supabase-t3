@@ -42,3 +42,20 @@ export interface Profile {
     full_name?: string;
     avatar_url?: string;
 }
+
+export interface LeaderboardEntry {
+    user_id: string;
+    username: string;
+    avatar_url: string | null;
+    total_minutes: number;
+    rank?: number;
+}
+
+export interface ActivityFeedEvent {
+    id: string;
+    user_id: string;
+    username: string;
+    avatar_url: string | null;
+    duration_seconds: number;
+    inserted_at: string;
+}

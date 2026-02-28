@@ -53,8 +53,8 @@ export default function LoginPage() {
           <div className="flex p-1 bg-muted rounded-xl">
             <button
               className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${mode === "login"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
                 }`}
               onClick={() => setMode("login")}
             >
@@ -63,8 +63,8 @@ export default function LoginPage() {
             </button>
             <button
               className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${mode === "register"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
                 }`}
               onClick={() => setMode("register")}
             >
