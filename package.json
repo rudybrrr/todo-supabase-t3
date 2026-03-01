@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^18.0.1",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.93.3",
     "@t3-oss/env-nextjs": "^0.12.0",

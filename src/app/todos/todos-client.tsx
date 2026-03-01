@@ -383,13 +383,13 @@ export default function TodosClient({ userId }: { userId: string, username?: str
       <main className="flex-1 lg:pl-80 flex flex-col min-h-screen">
         <div className="mx-auto w-full max-w-3xl p-4 md:p-8 space-y-6">
           {/* Header Section */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between glass p-6 rounded-2xl shadow-xl z-10 sticky top-4">
-            <div className="space-y-1">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between pt-8 pb-4">
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Sheet open={open} onOpenChange={setOpen}>
                   <SheetTrigger asChild>
-                    <Button variant="outline" size="icon" className="lg:hidden h-10 w-10 mr-2 bg-card border-border shadow-sm hover:text-primary transition-all">
-                      <Menu className="h-5 w-5" />
+                    <Button variant="ghost" size="icon" className="lg:hidden h-10 w-10 -ml-3 text-muted-foreground hover:text-foreground">
+                      <Menu className="h-6 w-6" />
                     </Button>
                   </SheetTrigger>
                   <SheetContent side="left" className="p-0 w-72 border-none">
@@ -425,43 +425,42 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                     />
                   </SheetContent>
                 </Sheet>
-                <div className="p-1.5 bg-primary rounded shadow-sm">
-                  <Hash className="w-4 h-4 text-primary-foreground" />
-                </div>
-                <h1 className="text-xl font-bold tracking-tight text-foreground truncate max-w-[200px]">
+                <h1 className="text-3xl font-bold tracking-tight text-foreground lg:-ml-1">
                   {currentList?.name ?? "Study Sprint"}
                 </h1>
               </div>
               {currentList?.name === "Inbox" && (
-                <p className="text-sm text-muted-foreground font-medium ml-1">Your quick-access brain dump for immediate tasks</p>
+                <p className="text-[15px] text-muted-foreground lg:ml-0">Keep track of your immediate thoughts and tasks.</p>
               )}
             </div>
-          </div>
 
-          {/* Progress Stats Bar */}
-          <div className="px-4 py-2 border-b border-border/50">
-            <div className="flex items-center justify-between mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              <span>Progress</span>
-              <span>{completedCount}/{todos.length}</span>
-            </div>
-            <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary transition-all duration-500 ease-out"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+            {/* Things 3 Style Circular Progress */}
+            {todos.length > 0 && (
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground sm:mb-2">
+                <div
+                  className="relative h-5 w-5 rounded-full overflow-hidden border-2 border-muted"
+                  style={{
+                    background: `conic-gradient(var(--primary) ${progress}%, transparent ${progress}%)`,
+                    transform: 'rotate(-90deg)'
+                  }}
+                >
+                  <div className="absolute inset-0 bg-transparent rounded-full border border-border/20" />
+                </div>
+                <span>{completedCount} of {todos.length}</span>
+              </div>
+            )}
           </div>
 
           {/* Sprint Mode Focus Timer */}
           <FocusTimer />
 
           {/* Add Todo Section */}
-          <div className="bg-muted/20 rounded-xl overflow-hidden border border-border/50 shadow-sm transition-all focus-within:shadow-md focus-within:bg-muted/30 focus-within:border-primary/30">
-            <div className="flex items-center gap-2 p-1 pl-4">
-              <Plus className="w-4 h-4 text-primary/70" />
+          <div className="relative group/add mb-6">
+            <div className="flex items-center gap-3 p-1 rounded-xl transition-all border border-transparent focus-within:border-border/60 focus-within:bg-muted/20 focus-within:shadow-sm">
+              <Plus className="w-5 h-5 text-muted-foreground/40 ml-2 group-focus-within/add:text-primary transition-colors" />
               <Input
-                className="h-10 text-sm border-none bg-transparent dark:bg-transparent focus-visible:ring-0 shadow-none px-0 outline-none"
-                placeholder="Add a task..."
+                className="h-10 text-[15px] p-0 font-medium border-none bg-transparent dark:bg-transparent focus-visible:ring-0 shadow-none outline-none placeholder:text-muted-foreground/50 placeholder:font-normal"
+                placeholder="New To-Do"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && void addTodo()}
@@ -471,121 +470,108 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                   onClick={() => void addTodo()}
                   disabled={!title.trim() || !listId || isSubmitting}
                   size="sm"
-                  className="h-8 mr-1 bg-primary hover:bg-primary/90 text-primary-foreground font-bold transition-all rounded-lg"
+                  className="h-8 mr-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-all rounded-[8px]"
                 >
-                  Add
+                  Save
                 </Button>
               )}
             </div>
+            <Separator className="mt-2 bg-border/50" />
           </div>
 
           {/* Todo List */}
-          <div className="space-y-4">
+          <div className="space-y-1">
             {todos.length === 0 ? (
-              <div className="text-center py-20 bg-card rounded-3xl border border-dashed border-border flex flex-col items-center">
+              <div className="text-center py-20 flex flex-col items-center">
                 <motion.div
                   className="relative mb-6"
-                  animate={{
-                    y: [0, -15, 0],
-                  }}
-                  transition={{
-                    duration: 4,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
+                  animate={{ y: [0, -10, 0] }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                 >
-                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-                  <div className="relative p-6 bg-muted rounded-3xl">
-                    <Layout className="w-12 h-12 text-muted-foreground/40" />
+                  <div className="absolute inset-0 bg-primary/5 rounded-full blur-3xl animate-pulse" />
+                  <div className="relative p-5 bg-muted/50 rounded-full border border-border/20">
+                    <Layout className="w-10 h-10 text-muted-foreground/40" />
                   </div>
                 </motion.div>
                 <h3 className="text-xl font-bold text-foreground">Clear Horizon</h3>
-                <p className="text-muted-foreground mt-2 max-w-xs mx-auto">
+                <p className="text-[15px] text-muted-foreground mt-2 max-w-xs mx-auto">
                   No active missions. Ignite your productivity by adding your first task above.
                 </p>
-                <Button
-                  variant="outline"
-                  className="mt-6 rounded-xl border-dashed border-2 hover:border-primary text-muted-foreground hover:text-primary transition-all"
-                  onClick={() => document.querySelector('input')?.focus()}
-                >
-                  Start Your Day
-                </Button>
               </div>
             ) : (
-              <ul className="grid gap-3">
+              <ul className="flex flex-col">
                 <AnimatePresence mode="popLayout" initial={false}>
                   {todos.map((t) => (
                     <motion.li
                       key={t.id}
                       layout
-                      initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.9, x: -20, transition: { duration: 0.2 } }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 500,
-                        damping: 30,
-                        mass: 1
-                      }}
+                      exit={{ opacity: 0, scale: 0.95, x: -10, transition: { duration: 0.15 } }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                      className="group relative"
                     >
-                      <div className={`group border-b border-border/40 py-2.5 transition-colors hover:bg-muted/30 ${t.is_done ? 'opacity-60' : ''}`}>
-                        <div className="flex items-start gap-4">
+                      <div className={`flex flex-col py-2.5 transition-all outline-none rounded-xl hover:bg-muted/40 px-2 -mx-2 ${t.is_done ? 'opacity-60' : ''}`}>
+                        <div className="flex items-start gap-3 w-full">
                           <button
                             onClick={() => void toggleTodo(t.id, !t.is_done)}
-                            className={`mt-1.5 h-4 w-4 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${t.is_done
+                            className={`mt-[3px] h-5 w-5 rounded-full border-[1.5px] flex-shrink-0 flex items-center justify-center transition-all duration-200 ${t.is_done
                               ? 'bg-primary border-primary text-primary-foreground'
-                              : 'border-muted-foreground/30 hover:border-primary'
+                              : 'border-muted-foreground/30 hover:border-primary/60'
                               }`}
                           >
-                            {t.is_done && <CheckCircle2 className="h-2.5 w-2.5" />}
+                            {t.is_done && <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={3} />}
                           </button>
 
-                          <div className="flex-1 space-y-3">
+                          <div className="flex-1 min-w-0 space-y-2">
                             <input
                               key={t.title}
-                              className={`w-full bg-transparent text-sm font-medium outline-none transition-all ${t.is_done ? 'text-muted-foreground/60 line-through' : 'text-foreground hover:text-primary/90'
+                              className={`w-full bg-transparent text-[15px] outline-none transition-all truncate block ${t.is_done ? 'text-muted-foreground/60 line-through font-normal' : 'text-foreground font-medium'
                                 }`}
                               defaultValue={t.title}
                               onBlur={(e) => void updateTitle(t.id, e.target.value)}
                               onKeyDown={(e) => e.key === "Enter" && (e.currentTarget.blur())}
                             />
 
-                            <div className="flex items-center gap-3">
-                              <TodoImageUpload
-                                userId={userId}
-                                todoId={t.id}
-                                listId={listId}
-                                onUploaded={() => loadImages(listId!)}
-                              />
+                            <div className="flex items-center gap-2">
+                              {/* Interaction Icons that appear on hover */}
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
+                                <TodoImageUpload
+                                  userId={userId}
+                                  todoId={t.id}
+                                  listId={listId}
+                                  onUploaded={() => loadImages(listId!)}
+                                />
 
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 ml-auto transition-all rounded-md opacity-0 group-hover:opacity-100">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-3xl">
-                                  <DialogHeader>
-                                    <DialogTitle className="text-xl font-bold">Retire Task</DialogTitle>
-                                    <DialogDescription className="text-muted-foreground">
-                                      Are you sure you want to remove "{t.title}"? This mission record will be deleted permanently.
-                                    </DialogDescription>
-                                  </DialogHeader>
-                                  <DialogFooter className="sm:justify-end gap-3 mt-4">
-                                    <DialogTrigger asChild>
-                                      <Button variant="outline" className="rounded-xl border-border">Keep Mission</Button>
-                                    </DialogTrigger>
-                                    <Button variant="destructive" className="rounded-xl bg-destructive hover:bg-destructive/90 shadow-lg shadow-destructive/20" onClick={() => void delTodo(t.id)}>
-                                      Confirm Removal
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded-md">
+                                      <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
+                                  </DialogTrigger>
+                                  <DialogContent className="sm:max-w-md border-none shadow-2xl rounded-3xl">
+                                    <DialogHeader>
+                                      <DialogTitle className="text-xl font-bold">Retire Task</DialogTitle>
+                                      <DialogDescription className="text-muted-foreground">
+                                        Are you sure you want to remove "{t.title}"? This cannot be undone.
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <DialogFooter className="sm:justify-end gap-3 mt-4">
+                                      <DialogTrigger asChild>
+                                        <Button variant="outline" className="rounded-xl border-border">Cancel</Button>
+                                      </DialogTrigger>
+                                      <Button variant="destructive" className="rounded-xl bg-destructive hover:bg-destructive/90 shadow-lg shadow-destructive/20" onClick={() => void delTodo(t.id)}>
+                                        Delete
+                                      </Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
+                              </div>
                             </div>
 
                             {/* Image Feed */}
                             {(imagesByTodo[t.id] ?? []).length > 0 && (
-                              <div className="flex flex-wrap gap-2.5 pt-3 border-t border-border/10 mt-3">
+                              <div className="flex flex-wrap gap-2 pt-2 mt-1">
                                 {(imagesByTodo[t.id] ?? []).map((img) => {
                                   const url = supabase.storage.from(BUCKET).getPublicUrl(img.path).data.publicUrl;
                                   return (
@@ -593,9 +579,9 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                                       <img
                                         src={url}
                                         alt="todo attachment"
-                                        className="h-20 w-20 rounded-2xl object-cover ring-2 ring-border/50 group-hover/img:scale-105 transition-all shadow-md group-hover/img:shadow-xl group-hover/img:ring-primary/20"
+                                        className="h-16 w-16 rounded-xl object-cover ring-1 ring-border/50 group-hover/img:scale-105 transition-all shadow-sm group-hover/img:shadow-md"
                                       />
-                                      <div className="absolute inset-0 rounded-2xl ring-inset ring-foreground/5 group-hover/img:bg-foreground/5 transition-all" />
+                                      <div className="absolute inset-0 rounded-xl ring-inset ring-foreground/5 transition-all" />
                                     </a>
                                   );
                                 })}
@@ -604,6 +590,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                           </div>
                         </div>
                       </div>
+                      <Separator className="absolute bottom-0 left-9 right-2 bg-border/40 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </motion.li>
                   ))}
                 </AnimatePresence>
