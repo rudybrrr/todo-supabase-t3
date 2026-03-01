@@ -15,6 +15,9 @@ export interface TodoRow {
     title: string;
     is_done: boolean;
     inserted_at: string;
+    description?: string | null;
+    due_date?: string | null;
+    priority?: 'high' | 'medium' | 'low' | null;
 }
 
 export interface TodoImageRow {

@@ -15,7 +15,9 @@ import {
   Target,
   Layout,
   Menu,
-  Hash
+  Hash,
+  Flag,
+  Calendar as CalendarIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -47,11 +49,45 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "~/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
+import { Calendar } from "~/components/ui/calendar";
+import { format, isToday, isTomorrow, isYesterday, differenceInCalendarDays } from "date-fns";
 import type { TodoList, TodoRow, TodoImageRow } from "~/lib/types";
 
 const BUCKET = "todo-images";
 
 import { useData } from "~/components/data-provider";
+
+type StatusFilter = "all" | "active" | "done";
+type PriorityFilter = "all" | "high" | "medium" | "low";
+
+function getRelativeDueDateLabel(dateStr: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+
+  if (isToday(date)) return 'Today';
+  if (isTomorrow(date)) return 'Tomorrow';
+  if (isYesterday(date)) return 'Yesterday';
+
+  const diff = differenceInCalendarDays(date, now);
+  if (diff > 1 && diff < 7) {
+    return format(date, "'This' EEEE");
+  }
+
+  if (diff >= 7) {
+    return `In ${diff} days`;
+  }
+
+  if (diff < -1) {
+    return `${Math.abs(diff)} days overdue`;
+  }
+
+  return format(date, 'MMM d, yyyy');
+}
 
 export default function TodosClient({ userId }: { userId: string, username?: string }) {
   const { lists, profile, loading: dataLoading, refreshData } = useData();
@@ -61,6 +97,20 @@ export default function TodosClient({ userId }: { userId: string, username?: str
   const [imagesByTodo, setImagesByTodo] = useState<Record<string, TodoImageRow[]>>({});
   const [title, setTitle] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+
+  // Inline Creator State
+  const [isCreatorExpanded, setIsCreatorExpanded] = useState(false);
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState<"high" | "medium" | "low" | null>(null);
+  const [dueDate, setDueDate] = useState<string | null>(null);
+
+  // Individual Task Expand State
+  const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
+  const [editDesc, setEditDesc] = useState("");
+  const [editPriority, setEditPriority] = useState<"high" | "medium" | "low" | null>(null);
+  const [editDate, setEditDate] = useState<string | null>(null);
   const { setCurrentListId } = useFocus();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -96,7 +146,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
   const loadTodos = useCallback(async (lid: string) => {
     const { data, error } = await supabase
       .from("todos")
-      .select("id, user_id, list_id, title, is_done, inserted_at")
+      .select("id, user_id, list_id, title, is_done, inserted_at, description, due_date, priority")
       .eq("list_id", lid)
       .order("inserted_at", { ascending: false });
 
@@ -157,18 +207,21 @@ export default function TodosClient({ userId }: { userId: string, username?: str
   }, [supabase, listId, loadTodos, loadImages]);
 
   const handleInvite = useCallback(async (lid: string) => {
-    const email = prompt("Enter the email of the student you want to invite:");
-    if (!email) return;
+    const handle = prompt("Enter the @username of the student you want to invite:");
+    if (!handle) return;
 
-    // 1. Find user by email in profiles
+    // clean up handle just in case they added @ 
+    const cleanUsername = handle.replace('@', '').toLowerCase().trim();
+
+    // 1. Find user by username in profiles
     const { data: profile, error: profErr } = await supabase
       .from("profiles")
       .select("id")
-      .eq("email", email.toLowerCase().trim())
+      .ilike("username", cleanUsername)
       .maybeSingle();
 
     if (profErr) return toast.error(profErr.message);
-    if (!profile) return toast.error("No student found with that email. Ask them to log in first!");
+    if (!profile) return toast.error(`No student found with username @${cleanUsername}.`);
 
     // 2. Add to todo_list_members
     const { error: memErr } = await supabase
@@ -181,14 +234,14 @@ export default function TodosClient({ userId }: { userId: string, username?: str
 
     if (memErr) {
       if (memErr.code === "23505") {
-        toast.error("This student is already a member of the project.");
+        toast.error(`@${cleanUsername} is already a member of this project.`);
       } else {
         toast.error(memErr.message);
       }
       return;
     }
 
-    toast.success(`Invited ${email} successfully!`);
+    toast.success(`Invited @${cleanUsername} successfully!`);
   }, [supabase]);
 
   const addList = useCallback(async () => {
@@ -276,6 +329,9 @@ export default function TodosClient({ userId }: { userId: string, username?: str
       user_id: userId,
       list_id: listId,
       title,
+      description: description.trim() || null,
+      priority: priority,
+      due_date: dueDate ? new Date(dueDate + 'T12:00:00Z').toISOString() : null,
       is_done: false,
       inserted_at: new Date().toISOString()
     };
@@ -283,11 +339,18 @@ export default function TodosClient({ userId }: { userId: string, username?: str
     // Optimistic Update
     setTodos(prev => [newTodo, ...prev]);
     setTitle("");
+    setDescription("");
+    setPriority(null);
+    setDueDate(null);
+    setIsCreatorExpanded(false);
 
     const { error } = await supabase.from("todos").insert({
       user_id: userId,
       list_id: listId,
       title: newTodo.title,
+      description: newTodo.description,
+      priority: newTodo.priority,
+      due_date: newTodo.due_date,
       is_done: false,
     });
 
@@ -299,7 +362,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
       return;
     }
     toast.success("Todo added!");
-  }, [supabase, listId, title, userId, loadTodos]);
+  }, [supabase, listId, title, description, priority, dueDate, userId, loadTodos]);
 
   const toggleTodo = useCallback(async (id: string, next: boolean) => {
     if (!listId) return;
@@ -336,6 +399,33 @@ export default function TodosClient({ userId }: { userId: string, username?: str
     }
   }, [supabase, listId, loadTodos]);
 
+  const updateTodoDetails = useCallback(async (id: string, updates: Partial<TodoRow>) => {
+    if (!listId) return;
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    const { error } = await supabase.from("todos").update(updates).eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      void loadTodos(listId);
+    }
+  }, [supabase, listId, loadTodos]);
+
+  const handleExpandTodo = useCallback((t: TodoRow) => {
+    if (expandedTodoId === t.id) return;
+    setExpandedTodoId(t.id);
+    setEditDesc(t.description || "");
+    setEditPriority(t.priority as "high" | "medium" | "low" | null);
+    setEditDate(t.due_date ? t.due_date.split('T')[0] || null : null);
+  }, [expandedTodoId]);
+
+  const handleSaveExpandedTodo = useCallback((id: string) => {
+    setExpandedTodoId(null);
+    void updateTodoDetails(id, {
+      description: editDesc.trim() || null,
+      priority: editPriority,
+      due_date: editDate ? new Date(editDate + 'T12:00:00Z').toISOString() : null
+    });
+  }, [editDesc, editPriority, editDate, updateTodoDetails]);
+
   const delTodo = useCallback(async (id: string) => {
     if (!listId) return;
 
@@ -361,6 +451,19 @@ export default function TodosClient({ userId }: { userId: string, username?: str
   const progress = useMemo(() => todos.length > 0 ? (completedCount / todos.length) * 100 : 0, [todos.length, completedCount]);
 
   const currentList = useMemo(() => lists.find(l => l.id === listId), [lists, listId]);
+
+  const filteredTodos = useMemo(() => {
+    return todos.filter(t => {
+      // Status
+      if (statusFilter === "active" && t.is_done) return false;
+      if (statusFilter === "done" && !t.is_done) return false;
+
+      // Priority
+      if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
+
+      return true;
+    });
+  }, [todos, statusFilter, priorityFilter]);
 
   return (
     <div className="flex min-h-screen bg-transparent">
@@ -451,32 +554,122 @@ export default function TodosClient({ userId }: { userId: string, username?: str
             )}
           </div>
 
+          <div className="flex flex-wrap items-center gap-3 mb-2 animate-in fade-in slide-in-from-top-2 duration-500">
+            <div className="flex items-center p-0.5 bg-muted/40 rounded-full border border-border/50">
+              {(["all", "active", "done"] as StatusFilter[]).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-3 py-1 text-xs font-semibold rounded-full capitalize transition-all duration-300 ${statusFilter === s ? 'bg-background shadow-sm text-foreground scale-100 ring-1 ring-border/50' : 'text-muted-foreground hover:text-foreground scale-95 hover:bg-muted/50'}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center p-0.5 bg-muted/40 rounded-full border border-border/50">
+              {(["all", "high", "medium", "low"] as PriorityFilter[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPriorityFilter(p)}
+                  className={`px-3 py-1 text-xs font-semibold rounded-full capitalize transition-all duration-300 ${priorityFilter === p ? 'bg-background shadow-sm text-foreground scale-100 ring-1 ring-border/50' : 'text-muted-foreground hover:text-foreground scale-95 hover:bg-muted/50'}`}
+                >
+                  {p === "all" ? "All Priority" : p}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Sprint Mode Focus Timer */}
           <FocusTimer />
 
           {/* Add Todo Section */}
           <div className="relative group/add mb-6">
-            <div className="flex items-center gap-3 p-1 rounded-xl transition-all border border-transparent focus-within:border-border/60 focus-within:bg-muted/20 focus-within:shadow-sm">
-              <Plus className="w-5 h-5 text-muted-foreground/40 ml-2 group-focus-within/add:text-primary transition-colors" />
-              <Input
-                className="h-10 text-[15px] p-0 font-medium border-none bg-transparent dark:bg-transparent focus-visible:ring-0 shadow-none outline-none placeholder:text-muted-foreground/50 placeholder:font-normal"
-                placeholder="New To-Do"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && void addTodo()}
-              />
-              {title.trim() && (
-                <Button
-                  onClick={() => void addTodo()}
-                  disabled={!title.trim() || !listId || isSubmitting}
-                  size="sm"
-                  className="h-8 mr-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-all rounded-[8px]"
-                >
-                  Save
-                </Button>
-              )}
+            <div className={`flex flex-col gap-2 p-1 rounded-2xl transition-all border ${isCreatorExpanded ? 'border-border/60 bg-muted/20 shadow-sm p-3' : 'border-transparent focus-within:border-border/60 focus-within:bg-muted/20 focus-within:shadow-sm'}`}>
+              <div className="flex items-center gap-3">
+                <Plus className={`w-5 h-5 transition-colors ml-2 ${isCreatorExpanded ? 'text-primary' : 'text-muted-foreground/40 group-focus-within/add:text-primary'}`} />
+                <Input
+                  className="h-10 text-[16px] p-0 font-semibold border-none bg-transparent dark:bg-transparent focus-visible:ring-0 shadow-none outline-none placeholder:text-muted-foreground/50 placeholder:font-medium"
+                  placeholder="New To-Do"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onFocus={() => setIsCreatorExpanded(true)}
+                  onKeyDown={(e) => e.key === "Enter" && void addTodo()}
+                />
+                {title.trim() && !isCreatorExpanded && (
+                  <Button
+                    onClick={() => void addTodo()}
+                    disabled={!title.trim() || !listId || isSubmitting}
+                    size="sm"
+                    className="h-8 mr-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-all rounded-[8px]"
+                  >
+                    Save
+                  </Button>
+                )}
+              </div>
+
+              <AnimatePresence>
+                {isCreatorExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden pl-10 pr-2 pb-1 space-y-3 mt-1"
+                  >
+                    <textarea
+                      placeholder="Notes"
+                      className="w-full bg-transparent text-[15px] resize-none outline-none text-muted-foreground placeholder:text-muted-foreground/50"
+                      rows={2}
+                      value={description}
+                      onChange={e => setDescription(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          setIsCreatorExpanded(false);
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+
+                    <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                      <div className="flex items-center gap-3">
+                        {/* Priority Picker */}
+                        <div className="flex items-center gap-1 bg-background/50 p-1 rounded-lg border border-border/50">
+                          <button onClick={() => setPriority(priority === 'low' ? null : 'low')} className={`p-1.5 rounded-md transition-colors ${priority === 'low' ? 'bg-blue-500/20 text-blue-500 ring-1 ring-blue-500/30' : 'text-blue-500/50 hover:bg-blue-500/10 hover:text-blue-500'}`}><Flag className="w-4 h-4" /></button>
+                          <button onClick={() => setPriority(priority === 'medium' ? null : 'medium')} className={`p-1.5 rounded-md transition-colors ${priority === 'medium' ? 'bg-yellow-500/20 text-yellow-500 ring-1 ring-yellow-500/30' : 'text-yellow-500/50 hover:bg-yellow-500/10 hover:text-yellow-500'}`}><Flag className="w-4 h-4" /></button>
+                          <button onClick={() => setPriority(priority === 'high' ? null : 'high')} className={`p-1.5 rounded-md transition-colors ${priority === 'high' ? 'bg-red-500/20 text-red-500 ring-1 ring-red-500/30' : 'text-red-500/50 hover:bg-red-500/10 hover:text-red-500'}`}><Flag className="w-4 h-4" /></button>
+                        </div>
+
+                        {/* Due Date Picker */}
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button type="button" variant="outline" size="sm" className={`h-9 gap-2 border-border/50 bg-background/50 font-medium ${dueDate ? 'text-primary border-primary/30' : 'text-muted-foreground'}`}>
+                              <CalendarIcon className="w-4 h-4" />
+                              {dueDate ? format(new Date(dueDate + 'T12:00:00'), 'MMM d, yyyy') : 'Today'}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={dueDate ? new Date(dueDate + 'T12:00:00') : undefined}
+                              onSelect={(date) => {
+                                setDueDate(date ? format(date, 'yyyy-MM-dd') : null);
+                              }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                        <Button variant="ghost" size="sm" onClick={() => { setIsCreatorExpanded(false); setTitle(""); setDescription(""); setPriority(null); setDueDate(null); }}>Cancel</Button>
+                        <Button size="sm" onClick={() => void addTodo()} disabled={!title.trim() || isSubmitting} className="font-semibold bg-primary text-primary-foreground min-w-[80px]">Save</Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-            <Separator className="mt-2 bg-border/50" />
+            {!isCreatorExpanded && <Separator className="mt-2 bg-border/50" />}
           </div>
 
           {/* Todo List */}
@@ -501,7 +694,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
             ) : (
               <ul className="flex flex-col">
                 <AnimatePresence mode="popLayout" initial={false}>
-                  {todos.map((t) => (
+                  {filteredTodos.map((t) => (
                     <motion.li
                       key={t.id}
                       layout
@@ -517,7 +710,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                             onClick={() => void toggleTodo(t.id, !t.is_done)}
                             className={`mt-[3px] h-5 w-5 rounded-full border-[1.5px] flex-shrink-0 flex items-center justify-center transition-all duration-200 ${t.is_done
                               ? 'bg-primary border-primary text-primary-foreground'
-                              : 'border-muted-foreground/30 hover:border-primary/60'
+                              : 'border-border/80 hover:border-primary/60'
                               }`}
                           >
                             {t.is_done && <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={3} />}
@@ -526,14 +719,89 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                           <div className="flex-1 min-w-0 space-y-2">
                             <input
                               key={t.title}
-                              className={`w-full bg-transparent text-[15px] outline-none transition-all truncate block ${t.is_done ? 'text-muted-foreground/60 line-through font-normal' : 'text-foreground font-medium'
+                              className={`w-full bg-transparent text-[16px] outline-none transition-all truncate block cursor-text ${t.is_done ? 'text-muted-foreground/50 line-through font-normal' : 'text-foreground font-semibold'
                                 }`}
                               defaultValue={t.title}
+                              onFocus={() => handleExpandTodo(t)}
                               onBlur={(e) => void updateTitle(t.id, e.target.value)}
                               onKeyDown={(e) => e.key === "Enter" && (e.currentTarget.blur())}
                             />
 
-                            <div className="flex items-center gap-2">
+                            {/* Short Preview (when collapsed) */}
+                            {expandedTodoId !== t.id && (t.description || t.due_date || t.priority) && (
+                              <div className="flex flex-wrap items-center gap-3 text-[13px] text-muted-foreground/80 mt-1 cursor-text -ml-0.5" onClick={() => handleExpandTodo(t)}>
+                                {t.priority && (
+                                  <span className="flex items-center gap-1.5 capitalize font-medium">
+                                    <Flag className={`w-3.5 h-3.5 ${t.priority === 'high' ? 'text-red-500' : t.priority === 'medium' ? 'text-yellow-500' : 'text-blue-500'}`} />
+                                    {t.priority}
+                                  </span>
+                                )}
+                                {t.due_date && (
+                                  <span className={`flex items-center gap-1.5 ${differenceInCalendarDays(new Date(t.due_date), new Date()) < 0 && !t.is_done ? 'text-red-500 font-medium' : ''}`}>
+                                    <CalendarIcon className="w-3.5 h-3.5" />
+                                    {getRelativeDueDateLabel(t.due_date)}
+                                  </span>
+                                )}
+                                {t.description && (
+                                  <span className="truncate max-w-[220px] sm:max-w-xs">{t.description}</span>
+                                )}
+                              </div>
+                            )}
+
+                            <AnimatePresence>
+                              {expandedTodoId === t.id && (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="overflow-hidden pr-2 pb-1 space-y-3 mt-3"
+                                >
+                                  <textarea
+                                    placeholder="Notes"
+                                    className="w-full bg-transparent text-[14px] resize-none outline-none text-muted-foreground placeholder:text-muted-foreground/50 border border-border/40 rounded-xl p-3 focus:border-border/80 focus:bg-muted/10 transition-all shadow-sm"
+                                    rows={2}
+                                    value={editDesc}
+                                    onChange={e => setEditDesc(e.target.value)}
+                                  />
+                                  <div className="flex items-center justify-between pt-1">
+                                    <div className="flex items-center gap-3">
+                                      {/* Inline Priority Picker */}
+                                      <div className="flex items-center gap-1 bg-background/50 p-1 rounded-lg border border-border/50 shadow-sm">
+                                        <button onClick={() => setEditPriority(editPriority === 'low' ? null : 'low')} className={`p-1.5 rounded-md transition-colors ${editPriority === 'low' ? 'bg-blue-500/20 text-blue-500 ring-1 ring-blue-500/30' : 'text-blue-500/50 hover:bg-blue-500/10 hover:text-blue-500'}`}><Flag className="w-4 h-4" /></button>
+                                        <button onClick={() => setEditPriority(editPriority === 'medium' ? null : 'medium')} className={`p-1.5 rounded-md transition-colors ${editPriority === 'medium' ? 'bg-yellow-500/20 text-yellow-500 ring-1 ring-yellow-500/30' : 'text-yellow-500/50 hover:bg-yellow-500/10 hover:text-yellow-500'}`}><Flag className="w-4 h-4" /></button>
+                                        <button onClick={() => setEditPriority(editPriority === 'high' ? null : 'high')} className={`p-1.5 rounded-md transition-colors ${editPriority === 'high' ? 'bg-red-500/20 text-red-500 ring-1 ring-red-500/30' : 'text-red-500/50 hover:bg-red-500/10 hover:text-red-500'}`}><Flag className="w-4 h-4" /></button>
+                                      </div>
+
+                                      {/* Due Date Picker */}
+                                      <Popover>
+                                        <PopoverTrigger asChild>
+                                          <Button type="button" variant="outline" size="sm" className={`h-9 gap-2 shadow-sm border-border/50 bg-background/50 font-medium ${editDate ? 'text-primary border-primary/30' : 'text-muted-foreground'}`}>
+                                            <CalendarIcon className="w-4 h-4" />
+                                            {editDate ? format(new Date(editDate + 'T12:00:00'), 'MMM d, yyyy') : 'Due Date'}
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                          <Calendar
+                                            mode="single"
+                                            selected={editDate ? new Date(editDate + 'T12:00:00') : undefined}
+                                            onSelect={(date) => {
+                                              setEditDate(date ? format(date, 'yyyy-MM-dd') : null);
+                                            }}
+                                            initialFocus
+                                          />
+                                        </PopoverContent>
+                                      </Popover>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Button variant="ghost" size="sm" onClick={() => setExpandedTodoId(null)} className="hidden sm:inline-flex text-muted-foreground">Close</Button>
+                                      <Button size="sm" onClick={() => handleSaveExpandedTodo(t.id)} className="font-semibold bg-primary text-primary-foreground min-w-[80px] shadow-md shadow-primary/20">Save</Button>
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+
+                            <div className="flex items-center gap-2 mt-1">
                               {/* Interaction Icons that appear on hover */}
                               <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
                                 <TodoImageUpload
