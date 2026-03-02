@@ -1,46 +1,52 @@
-# Study Sprint 🚀
-(Formerly a simple Todo App, now a gamified productivity platform)
+# Study Sprint
+A gamified productivity platform for students.
 
-Built with **Next.js (App Router)**, **TypeScript**, **Supabase**, **Tailwind CSS**, and **shadcn/ui**.
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://todo-supabase-t3.vercel.app)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Profile-blue?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/rudhresh-r/)
 
-> **The Problem:** Students can create to-do lists, but still struggle to actually start studying and stay consistent. Without session tracking, daily goals, and progress insights, studying becomes irregular and stressful.
-> **The Solution:** A platform that combines advanced task management with Pomodoro-style focus sprints, gamified leaderboards, and detailed analytics to keep you motivated.
+## The Vision
+Students often have clear to-do lists but struggle to bridge the gap between "planning" and "doing." Without session tracking, daily feedback, and accountability, studying remains irregular and stressful.
 
----
+**Study Sprint** solves this by merging advanced task management with Pomodoro-style focus sprints and social gamification. It turns the solitary grind of studying into a measurable, shared experience.
 
-## ✨ Features
+## Core Features
 
-### 🎯 Study & Focus
-- **Study Sprint Mode:** A dedicated Pomodoro-style timer that records focus sessions to the database.
-- **Dashboard Insights:** Visual motivation through real-time interactive progress charts and study streak tracking.
-- **Global Study Hall & Leaderboard:** A weekly arena to rank students by focus time, featuring a live real-time Activity Feed to see when others complete sessions.
+### 🎯 Deep Focus & Analytics
+- **Sprint Mode:** A dedicated Pomodoro timer that synchronizes focus blocks directly to your database, allowing you to track and analyze your study habits over time.
+- **Insights Dashboard:** Real-time visualization of your progress through interactive charts, session history, and study streak tracking.
+- **Global Study Hall:** A weekly leaderboard to rank focus time among peers, featuring a live activity feed so you never study alone.
 
-### ✅ Advanced Task Management (Things 3 / Todoist Style)
-- **Multi-List Management:** Organize tasks by subject or project with a dedicated sidebar.
-- **Inline Task Expansion:** Clean minimalist design by default, expanding to reveal descriptions, due dates, and priority levels when clicked.
-- **Rich Task Metadata:** Set Due Dates, Priorities (High/Medium/Low), and detailed markdown descriptions.
-- **Smart Filtering:** Filter tasks by Status (All/Active/Done) and Priority tags.
-- **Real-time Sync & Collaboration:** Share lists with other users; tasks sync instantly across all devices.
+### ✅ Modern Task Management
+- **Fluid Interaction Model:** Minimalist design that uses inline expansion for task details, eliminating heavy modal dialogs for a fluid UX.
+- **Intelligent Filtering:** Instantly pivot your view by status (All/Active/Done) or priority (High/Medium/Low) pill-shaped toggles.
+- **Real-time Collaboration:** Share and edit project lists with peers with instant device synchronization via Supabase Realtime.
 
-### 🎨 Modern UI & UX
-- **Beautiful Components:** Built with `shadcn/ui` and `Tailwind CSS`.
-- **Smooth Animations:** Powered by `framer-motion` for page transitions, list animations, and micro-interactions.
-- **Dark Mode:** System-aware theme switching.
-- **Confetti Celebrations:** Satisfying feedback when you complete a focus session (`canvas-confetti`).
+### 🚀 Technical Foundation
+- **Optimized Performance:** Leverages parallel fetching, a global state provider, and fully optimistic UI updates for a responsive experience.
+- **Robust Security:** Every table is protected by granular Row Level Security (RLS) policies, ensuring users only access what they own or were invited to.
+- **Modern Stack:** Built with Next.js 14, TypeScript, Tailwind CSS, and shadcn/ui.
 
 ---
 
-## 🛠️ Tech Stack
-- **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS, shadcn/ui, framer-motion, Recharts
-- **Backend/BaaS:** Supabase (PostgreSQL, Auth, Row Level Security, Realtime, Storage)
+## 🖼️ Visual Gallery
+
+| Authentication | Insights Dashboard |
+| :---: | :---: |
+| ![Auth](screenshots/auth.png) | ![Insights](screenshots/insights.png) |
+
+| Global Study Hall | Task Management |
+| :---: | :---: |
+| ![Study Hall](screenshots/study-hall.png) | ![Tasks](screenshots/tasks.png) |
 
 ---
 
-## 🚀 Getting Started
+## Tech Stack
+- **Frontend:** Next.js 14, React, TypeScript, Tailwind CSS, Recharts
+- **Backend/BaaS:** Supabase (PostgreSQL, Auth, RLS, Realtime, Storage)
 
-### Prerequisites
-- Node.js **18+**
-- A Supabase project
+---
+
+## Getting Started
 
 ### 1) Environment Variables
 Create a file named **`.env.local`** in the project root:
@@ -50,8 +56,11 @@ NEXT_PUBLIC_SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
 ```
 
-### 2) Supabase Setup (SQL Editor)
-Run the following SQL blocks in your Supabase **SQL Editor** to set up the database.
+> [!IMPORTANT]
+> **Security:** Add `.env.local` to your `.gitignore` file and never commit it to GitHub.
+
+### 2) Supabase Setup
+Run the following SQL blocks in your Supabase **SQL Editor**.
 
 #### A. Tables & Relations
 ```sql
@@ -140,7 +149,7 @@ alter table public.todo_lists enable row level security;
 alter table public.todo_list_members enable row level security;
 alter table public.focus_sessions enable row level security;
 
--- Helper functions
+-- Granular access control
 create or replace function public.is_list_owner(lid uuid) returns boolean 
 language sql security definer set search_path = public as $$
   select exists (select 1 from public.todo_lists where id = lid and owner_id = auth.uid());
@@ -156,21 +165,35 @@ language sql security definer set search_path = public as $$
   select exists (select 1 from public.todo_list_members where list_id = lid and user_id = auth.uid() and role in ('owner','editor'));
 $$;
 
--- Policies for todos
+-- Policies
+create policy "Anyone can view profiles" on public.profiles for select using (true);
+create policy "Users can update their own profile" on public.profiles for update using (auth.uid() = id);
+
+create policy "Members can view lists" on public.todo_lists for select using (public.is_list_member(id));
+create policy "Authenticated users can create lists" on public.todo_lists for insert with check (auth.uid() = owner_id);
+create policy "Owners can update lists" on public.todo_lists for update using (public.is_list_owner(id));
+create policy "Owners can delete lists" on public.todo_lists for delete using (public.is_list_owner(id));
+
+create policy "Members can view list members" on public.todo_list_members for select using (public.is_list_member(list_id));
+create policy "Owners can manage list members" on public.todo_list_members for all using (public.is_list_owner(list_id));
+
 create policy "Users can view todos in their lists" on public.todos for select using (public.is_list_member(list_id));
 create policy "Editors can insert todos" on public.todos for insert with check (public.can_edit_list(list_id));
 create policy "Editors can update todos" on public.todos for update using (public.can_edit_list(list_id));
 create policy "Editors can delete todos" on public.todos for delete using (public.can_edit_list(list_id));
 
--- (Add similar policies for todo_images, focus_sessions, etc.)
+create policy "Users can view their own focus sessions" on public.focus_sessions for select using (auth.uid() = user_id);
+create policy "Users can insert their own focus sessions" on public.focus_sessions for insert with check (auth.uid() = user_id);
+
+create policy "Users can view images in their lists" on public.todo_images for select using (public.is_list_member(list_id));
+create policy "Editors can insert images" on public.todo_images for insert with check (public.can_edit_list(list_id));
+create policy "Editors can delete images" on public.todo_images for delete using (public.can_edit_list(list_id));
 ```
 
 #### C. Realtime Enablement
 ```sql
 alter publication supabase_realtime set (publish = 'insert, update, delete');
-alter publication supabase_realtime add table public.todos;
-alter publication supabase_realtime add table public.todo_images;
-alter publication supabase_realtime add table public.focus_sessions;
+alter publication supabase_realtime add table public.todos, public.todo_images, public.focus_sessions;
 
 alter table public.todos replica identity full;
 alter table public.todo_images replica identity full;
@@ -178,22 +201,13 @@ alter table public.focus_sessions replica identity full;
 ```
 
 ### 3) Storage Bucket
-1. Create a **Public** bucket named `todo-images` (or `mission-attachments` depending on your code).
-2. Ensure the path in the code matches your bucket name.
+1. Create a **Public** bucket named `todo-images` in the Supabase Dashboard.
+2. Under the **Policies** tab for the bucket, add RLS policies for:
+   - **Select:** `(select exists (select 1 from public.todos where id = (storage.foldername(name))[2]::uuid and public.is_list_member(list_id)))`
+   - **Insert/Delete:** `(select exists (select 1 from public.todos where id = (storage.foldername(name))[2]::uuid and public.can_edit_list(list_id)))`
 
 ---
 
-## 💻 Running Locally
-
-```bash
-npm install
-npm run dev
-```
-
----
-
-## 🗺️ Roadmap
-- **Focus XP:** Points per session, Levels, and Ranks.
-- **Streak Shield:** Earn freezes for consistent study streaks.
-- **Planning Hub:** Calendar View & Weekly Planner.
-- **Productivity Heatmaps:** Visualizing your best hours.
+## Roadmap (Actively Maintained)
+- **[Planned] Planning Hub:** Calendar and weekly overview.
+- **[Completed] Global Study Hall:** Real-time social leaderboard.

@@ -453,16 +453,21 @@ export default function TodosClient({ userId }: { userId: string, username?: str
   const currentList = useMemo(() => lists.find(l => l.id === listId), [lists, listId]);
 
   const filteredTodos = useMemo(() => {
-    return todos.filter(t => {
-      // Status
-      if (statusFilter === "active" && t.is_done) return false;
-      if (statusFilter === "done" && !t.is_done) return false;
+    return todos
+      .filter(t => {
+        // Status
+        if (statusFilter === "active" && t.is_done) return false;
+        if (statusFilter === "done" && !t.is_done) return false;
 
-      // Priority
-      if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
+        // Priority
+        if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
 
-      return true;
-    });
+        return true;
+      })
+      .sort((a, b) => {
+        if (a.is_done !== b.is_done) return a.is_done ? 1 : -1;
+        return (b.inserted_at || "").localeCompare(a.inserted_at || "");
+      });
   }, [todos, statusFilter, priorityFilter]);
 
   return (
@@ -704,7 +709,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                       transition={{ type: "spring", stiffness: 500, damping: 30 }}
                       className="group relative"
                     >
-                      <div className={`flex flex-col py-2.5 transition-all outline-none rounded-xl hover:bg-muted/40 px-2 -mx-2 ${t.is_done ? 'opacity-60' : ''}`}>
+                      <div className={`flex flex-col py-2.5 outline-none rounded-xl hover:bg-muted/40 px-2 -mx-2 transition-opacity duration-300 ${t.is_done ? 'opacity-60' : ''}`}>
                         <div className="flex items-start gap-3 w-full">
                           <button
                             onClick={() => void toggleTodo(t.id, !t.is_done)}
@@ -718,12 +723,15 @@ export default function TodosClient({ userId }: { userId: string, username?: str
 
                           <div className="flex-1 min-w-0 space-y-2">
                             <input
-                              key={t.title}
                               className={`w-full bg-transparent text-[16px] outline-none transition-all truncate block cursor-text ${t.is_done ? 'text-muted-foreground/50 line-through font-normal' : 'text-foreground font-semibold'
                                 }`}
                               defaultValue={t.title}
                               onFocus={() => handleExpandTodo(t)}
-                              onBlur={(e) => void updateTitle(t.id, e.target.value)}
+                              onBlur={(e) => {
+                                if (e.target.value !== t.title) {
+                                  void updateTitle(t.id, e.target.value);
+                                }
+                              }}
                               onKeyDown={(e) => e.key === "Enter" && (e.currentTarget.blur())}
                             />
 
