@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus, Hash, Inbox, ChevronRight, MoreHorizontal, Trash2, FolderPlus, LogOut, User, LayoutDashboard, Trophy, Share2, Users, List, Star, CheckSquare, GripVertical } from "lucide-react";
+import { Plus, Hash, Inbox, ChevronRight, MoreHorizontal, Trash2, FolderPlus, LogOut, User, BarChart2, Trophy, Share2, Users, List, Star, CheckSquare, GripVertical } from "lucide-react";
 import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -103,7 +103,7 @@ export const ListSidebar = React.memo(function ListSidebar({
                                     : "hover:bg-sidebar-accent/50 text-sidebar-foreground/80 hover:text-sidebar-foreground"
                                     }`}
                             >
-                                <LayoutDashboard className="h-[18px] w-[18px] text-amber-500" />
+                                <BarChart2 className="h-[18px] w-[18px] text-amber-500" />
                                 Insights
                             </Button>
                         </Link>
@@ -183,7 +183,7 @@ export const ListSidebar = React.memo(function ListSidebar({
                                                             >
                                                                 <div
                                                                     onClick={() => onListSelect(list.id)}
-                                                                    className={`flex-1 flex items-center gap-3 rounded-lg font-medium px-3 py-2 cursor-pointer transition-all ${activeListId === list.id
+                                                                    className={`flex-1 flex items-center gap-3 rounded-lg text-sm font-medium px-3 py-2 cursor-pointer transition-all ${activeListId === list.id
                                                                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                                                                         : "hover:bg-sidebar-accent/50 text-sidebar-foreground/80 hover:text-sidebar-foreground"
                                                                         }`}

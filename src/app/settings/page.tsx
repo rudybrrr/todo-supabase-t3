@@ -30,7 +30,7 @@ export default async function SettingsPage() {
                     <Link href="/dashboard">
                         <Button variant="outline" className="rounded-xl gap-2 font-bold shadow-sm">
                             <ArrowLeft className="w-4 h-4" />
-                            Back to Dashboard
+                            Back to Insights
                         </Button>
                     </Link>
                 </header>

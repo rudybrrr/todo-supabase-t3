@@ -50,3 +50,6 @@ todo.md
 
 # documents
 *.pdf
+
+# system architecture
+system_architecture.md

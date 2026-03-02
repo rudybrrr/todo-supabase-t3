@@ -1,44 +1,48 @@
-# T3 + Supabase Todo (Auth • Realtime • Images • Collaboration)
+# Study Sprint 🚀
+(Formerly a simple Todo App, now a gamified productivity platform)
 
-A minimal Todo app built with **Create T3 App (Next.js + TypeScript)** and **Supabase**.
+Built with **Next.js (App Router)**, **TypeScript**, **Supabase**, **Tailwind CSS**, and **shadcn/ui**.
 
-> Built by me, mainly to understand T3, Supabase, Next.js and TypeScript! 
-
-## Features
-
-### Standard
-- **Auth**: Register + Login + Logout (Supabase Auth)
-- **Todos**: Create, read, update (title + done), delete
-- **Images**: Upload an image per todo (Supabase Storage) + show thumbnails
-
-### Advanced (kept simple)
-- **Realtime**: Todos + images update instantly across tabs/devices
-- **Collaboration**: Share a list with another user (shared tasks) via list membership
+> **The Problem:** Students can create to-do lists, but still struggle to actually start studying and stay consistent. Without session tracking, daily goals, and progress insights, studying becomes irregular and stressful.
+> **The Solution:** A platform that combines advanced task management with Pomodoro-style focus sprints, gamified leaderboards, and detailed analytics to keep you motivated.
 
 ---
 
-## Tech Stack
-- Next.js (App Router) + TypeScript
-- Supabase (Auth, Postgres, Row Level Security, Realtime, Storage)
+## ✨ Features
+
+### 🎯 Study & Focus
+- **Study Sprint Mode:** A dedicated Pomodoro-style timer that records focus sessions to the database.
+- **Dashboard Insights:** Visual motivation through real-time interactive progress charts and study streak tracking.
+- **Global Study Hall & Leaderboard:** A weekly arena to rank students by focus time, featuring a live real-time Activity Feed to see when others complete sessions.
+
+### ✅ Advanced Task Management (Things 3 / Todoist Style)
+- **Multi-List Management:** Organize tasks by subject or project with a dedicated sidebar.
+- **Inline Task Expansion:** Clean minimalist design by default, expanding to reveal descriptions, due dates, and priority levels when clicked.
+- **Rich Task Metadata:** Set Due Dates, Priorities (High/Medium/Low), and detailed markdown descriptions.
+- **Smart Filtering:** Filter tasks by Status (All/Active/Done) and Priority tags.
+- **Real-time Sync & Collaboration:** Share lists with other users; tasks sync instantly across all devices.
+
+### 🎨 Modern UI & UX
+- **Beautiful Components:** Built with `shadcn/ui` and `Tailwind CSS`.
+- **Smooth Animations:** Powered by `framer-motion` for page transitions, list animations, and micro-interactions.
+- **Dark Mode:** System-aware theme switching.
+- **Confetti Celebrations:** Satisfying feedback when you complete a focus session (`canvas-confetti`).
 
 ---
 
-## Prerequisites
+## 🛠️ Tech Stack
+- **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS, shadcn/ui, framer-motion, Recharts
+- **Backend/BaaS:** Supabase (PostgreSQL, Auth, Row Level Security, Realtime, Storage)
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
 - Node.js **18+**
 - A Supabase project
 
----
-
-## 1) Supabase setup
-
-### A. Create a Supabase project
-Create a project in Supabase, then note:
-- **Project URL**
-- **Anon key**
-
-Supabase → **Settings → API**
-
-### B. Environment variables
+### 1) Environment Variables
 Create a file named **`.env.local`** in the project root:
 
 ```bash
@@ -46,44 +50,26 @@ NEXT_PUBLIC_SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
 ```
 
-Restart dev server after changing env vars.
+### 2) Supabase Setup (SQL Editor)
+Run the following SQL blocks in your Supabase **SQL Editor** to set up the database.
 
-### C. Database tables (SQL)
-In Supabase → **SQL Editor**, run the schema below.
-
-> This creates: `todos`, `todo_images`, `todo_lists`, `todo_list_members` and enables collaboration via `list_id`.
-
+#### A. Tables & Relations
 ```sql
--- TODOS
-create table if not exists public.todos (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  title text not null,
-  is_done boolean not null default false,
-  inserted_at timestamptz not null default now(),
-  list_id uuid
+-- PROFILES
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text unique,
+  full_name text,
+  avatar_url text,
+  updated_at timestamptz default now()
 );
 
-alter table public.todos replica identity full;
-
--- IMAGES (metadata)
-create table if not exists public.todo_images (
-  id uuid primary key default gen_random_uuid(),
-  todo_id uuid not null references public.todos(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  path text not null,
-  inserted_at timestamptz not null default now(),
-  list_id uuid
-);
-
-alter table public.todo_images replica identity full;
-
--- LISTS (boards)
+-- LISTS
 create table if not exists public.todo_lists (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
-  name text not null default 'My List',
-  inserted_at timestamptz not null default now()
+  name text not null,
+  inserted_at timestamptz default now()
 );
 
 -- MEMBERSHIP
@@ -91,228 +77,123 @@ create table if not exists public.todo_list_members (
   list_id uuid not null references public.todo_lists(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
   role text not null default 'editor',
-  inserted_at timestamptz not null default now(),
+  inserted_at timestamptz default now(),
   primary key (list_id, user_id),
   constraint todo_list_members_role_valid check (role in ('owner','editor','viewer'))
 );
 
--- Add FKs for list_id now that lists exist
-alter table public.todos
-  add constraint if not exists todos_list_id_fk
-  foreign key (list_id) references public.todo_lists(id) on delete cascade;
+-- TODOS
+create table if not exists public.todos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  list_id uuid references public.todo_lists(id) on delete cascade,
+  title text not null,
+  description text,
+  due_date timestamptz,
+  priority text, -- 'high', 'medium', 'low'
+  is_done boolean not null default false,
+  inserted_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
 
-alter table public.todo_images
-  add constraint if not exists todo_images_list_id_fk
-  foreign key (list_id) references public.todo_lists(id) on delete cascade;
+-- FOCUS SESSIONS
+create table if not exists public.focus_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  list_id uuid references public.todo_lists(id) on delete cascade,
+  duration_seconds int not null,
+  mode text not null, -- 'focus', 'shortBreak', 'longBreak'
+  inserted_at timestamptz default now()
+);
+
+-- IMAGES
+create table if not exists public.todo_images (
+  id uuid primary key default gen_random_uuid(),
+  todo_id uuid not null references public.todos(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  list_id uuid references public.todo_lists(id) on delete cascade,
+  path text not null,
+  inserted_at timestamptz default now()
+);
+
+-- WEEKLY LEADERBOARD VIEW
+create or replace view public.weekly_leaderboard as
+  select 
+    p.id as user_id,
+    p.username,
+    p.avatar_url,
+    coalesce(sum(fs.duration_seconds), 0) / 60 as total_minutes
+  from public.profiles p
+  left join public.focus_sessions fs on fs.user_id = p.id
+    and fs.mode = 'focus'
+    and fs.inserted_at >= date_trunc('week', now())
+  group by p.id, p.username, p.avatar_url;
 ```
 
-### D. Realtime (SQL)
-Enable realtime for `todos` and `todo_images`:
-
-```sql
-alter publication supabase_realtime set (publish = 'insert, update, delete');
-alter publication supabase_realtime add table public.todos;
-alter publication supabase_realtime add table public.todo_images;
-```
-
-(If it says “already a member”, that’s fine.)
-
-### E. Storage bucket
-Supabase → **Storage** → **New bucket**
-- Name: `todo-images`
-- **Public**: ON
-
-### F. RLS policies (Collaboration-safe)
-This project uses **Row Level Security**. Policies are defined via helper functions to avoid recursive policy issues.
-
-Run in Supabase → **SQL Editor**:
-
+#### B. Row Level Security & Helpers
 ```sql
 -- Enable RLS
+alter table public.profiles enable row level security;
 alter table public.todos enable row level security;
 alter table public.todo_images enable row level security;
 alter table public.todo_lists enable row level security;
 alter table public.todo_list_members enable row level security;
+alter table public.focus_sessions enable row level security;
 
--- Helper functions (break circular RLS dependencies)
-create or replace function public.is_list_owner(lid uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.todo_lists l
-    where l.id = lid and l.owner_id = auth.uid()
-  );
+-- Helper functions
+create or replace function public.is_list_owner(lid uuid) returns boolean 
+language sql security definer set search_path = public as $$
+  select exists (select 1 from public.todo_lists where id = lid and owner_id = auth.uid());
 $$;
 
-create or replace function public.is_list_member(lid uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.todo_list_members m
-    where m.list_id = lid and m.user_id = auth.uid()
-  );
+create or replace function public.is_list_member(lid uuid) returns boolean
+language sql security definer set search_path = public as $$
+  select exists (select 1 from public.todo_list_members where list_id = lid and user_id = auth.uid());
 $$;
 
-create or replace function public.can_edit_list(lid uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.todo_list_members m
-    where m.list_id = lid
-      and m.user_id = auth.uid()
-      and m.role in ('owner','editor')
-  );
+create or replace function public.can_edit_list(lid uuid) returns boolean
+language sql security definer set search_path = public as $$
+  select exists (select 1 from public.todo_list_members where list_id = lid and user_id = auth.uid() and role in ('owner','editor'));
 $$;
 
--- Drop existing policies on these tables (safe reset)
-do $$
-declare r record;
-begin
-  for r in
-    select schemaname, tablename, policyname
-    from pg_policies
-    where schemaname='public'
-      and tablename in ('todo_lists','todo_list_members','todos','todo_images')
-  loop
-    execute format('drop policy if exists %I on %I.%I;', r.policyname, r.schemaname, r.tablename);
-  end loop;
-end $$;
+-- Policies for todos
+create policy "Users can view todos in their lists" on public.todos for select using (public.is_list_member(list_id));
+create policy "Editors can insert todos" on public.todos for insert with check (public.can_edit_list(list_id));
+create policy "Editors can update todos" on public.todos for update using (public.can_edit_list(list_id));
+create policy "Editors can delete todos" on public.todos for delete using (public.can_edit_list(list_id));
 
--- todo_lists: members can read; owner can create
-create policy todo_lists_select_member
-on public.todo_lists for select
-using (public.is_list_member(id));
-
-create policy todo_lists_insert_owner
-on public.todo_lists for insert
-with check (owner_id = auth.uid());
-
--- todo_list_members: self can read row; owner can read all members + manage membership
-create policy tlm_select_self_or_owner
-on public.todo_list_members for select
-using (
-  user_id = auth.uid()
-  or public.is_list_owner(list_id)
-);
-
-create policy tlm_insert_owner_only
-on public.todo_list_members for insert
-with check (public.is_list_owner(list_id));
-
-create policy tlm_delete_owner_only
-on public.todo_list_members for delete
-using (public.is_list_owner(list_id));
-
--- todos: member read; editor/owner write
-create policy todos_select_member
-on public.todos for select
-using (public.is_list_member(list_id));
-
-create policy todos_insert_editor
-on public.todos for insert
-with check (public.can_edit_list(list_id));
-
-create policy todos_update_editor
-on public.todos for update
-using (public.can_edit_list(list_id));
-
-create policy todos_delete_editor
-on public.todos for delete
-using (public.can_edit_list(list_id));
-
--- todo_images: member read; editor/owner write
-create policy todo_images_select_member
-on public.todo_images for select
-using (public.is_list_member(list_id));
-
-create policy todo_images_insert_editor
-on public.todo_images for insert
-with check (public.can_edit_list(list_id));
-
-create policy todo_images_delete_editor
-on public.todo_images for delete
-using (public.can_edit_list(list_id));
+-- (Add similar policies for todo_images, focus_sessions, etc.)
 ```
 
-> Notes:
-> - The app auto-creates a default list (“My List”) and adds the current user as owner on first use.
-> - Sharing adds another user as an **editor** to the same list.
+#### C. Realtime Enablement
+```sql
+alter publication supabase_realtime set (publish = 'insert, update, delete');
+alter publication supabase_realtime add table public.todos;
+alter publication supabase_realtime add table public.todo_images;
+alter publication supabase_realtime add table public.focus_sessions;
+
+alter table public.todos replica identity full;
+alter table public.todo_images replica identity full;
+alter table public.focus_sessions replica identity full;
+```
+
+### 3) Storage Bucket
+1. Create a **Public** bucket named `todo-images` (or `mission-attachments` depending on your code).
+2. Ensure the path in the code matches your bucket name.
 
 ---
 
-## 2) Install & Run
+## 💻 Running Locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open: http://localhost:3000
-
 ---
 
-## 3) How to use the app
-
-### Auth
-1. Go to `/login`
-2. Click **Register** to create an account
-3. Login → you’ll be redirected to `/todos`
-
-> If you previously had “email confirmation required” enabled in Supabase Auth, disable it for local testing:
-> Supabase → Authentication → Providers → Email → turn off “Confirm email”.
-
-### Todos
-- Create a todo with the input + **Add**
-- Toggle done using the checkbox
-- Edit title: click text, change, click out (onBlur saves)
-- Delete: **Delete**
-
-### Images
-- Choose a file under a todo to upload
-- Thumbnails appear below the todo
-- Click a thumbnail to open the full image
-
-### Collaboration (Shared Tasks)
-1. Login as **User A**
-2. Supabase → Authentication → Users → copy **User B**'s UUID
-3. In the app, paste User B UUID into the **Collaborate** box and click **Share**
-4. Login as **User B** → both users see the same list and changes sync in realtime
-
----
-
-## Troubleshooting
-
-### “Bucket not found”
-- Ensure Storage bucket name matches the code: `todo-images`
-- Ensure the bucket is **Public** if using public URLs
-
-### Realtime not updating
-Run:
-```sql
-alter publication supabase_realtime set (publish = 'insert, update, delete');
-alter publication supabase_realtime add table public.todos;
-alter publication supabase_realtime add table public.todo_images;
-alter table public.todos replica identity full;
-alter table public.todo_images replica identity full;
-```
-
-### “Email not confirmed”
-Turn off email confirmations:
-Supabase → Authentication → Providers → Email → disable confirmations.
-
----
-
-## Project Routes
-- `/` redirects to login/todos depending on auth
-- `/login` Auth page (Login/Register)
-- `/todos` Main app (todos + images + collaboration)
-
+## 🗺️ Roadmap
+- **Focus XP:** Points per session, Levels, and Ranks.
+- **Streak Shield:** Earn freezes for consistent study streaks.
+- **Planning Hub:** Calendar View & Weekly Planner.
+- **Productivity Heatmaps:** Visualizing your best hours.
