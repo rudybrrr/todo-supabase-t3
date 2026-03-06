@@ -503,6 +503,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
           onLogout={logout}
           userId={userId}
           username={profile?.username}
+          avatarUrl={profile?.avatar_url}
         />
       </aside>
 
@@ -549,6 +550,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                       }}
                       userId={userId}
                       username={profile?.username}
+                      avatarUrl={profile?.avatar_url}
                     />
                   </SheetContent>
                 </Sheet>

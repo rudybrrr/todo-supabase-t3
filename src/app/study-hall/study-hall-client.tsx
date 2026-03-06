@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 
 import type { LeaderboardEntry, ActivityFeedEvent } from "~/lib/types";
+import { getPublicAvatarUrl } from "~/lib/avatar";
 
 interface WeeklyLeaderboardRow {
     user_id: string;
@@ -82,7 +83,7 @@ export default function StudyHallClient() {
             .map((entry, index) => ({
                 user_id: entry.user_id,
                 username: entry.username ?? "anonymous",
-                avatar_url: entry.avatar_url ?? null,
+                avatar_url: getPublicAvatarUrl(supabase, entry.avatar_url),
                 total_minutes: entry.total_minutes ?? 0,
                 rank: index + 1,
             }));
@@ -130,7 +131,7 @@ export default function StudyHallClient() {
             duration_seconds: item.duration_seconds,
             inserted_at: item.inserted_at,
             username: profilesMap.get(item.user_id)?.username ?? "Anonymous",
-            avatar_url: profilesMap.get(item.user_id)?.avatar_url ?? null,
+            avatar_url: getPublicAvatarUrl(supabase, profilesMap.get(item.user_id)?.avatar_url),
         }));
 
         setActivityFeed(formattedFeed);
@@ -174,7 +175,7 @@ export default function StudyHallClient() {
                             duration_seconds: payload.new.duration_seconds,
                             inserted_at: payload.new.inserted_at,
                             username: profileRow?.username ?? "Anonymous Scholar",
-                            avatar_url: profileRow?.avatar_url ?? null,
+                            avatar_url: getPublicAvatarUrl(supabase, profileRow?.avatar_url),
                         };
 
                         setActivityFeed((prev) => [newEvent, ...prev].slice(0, 5));
@@ -237,6 +238,7 @@ export default function StudyHallClient() {
                     onLogout={handleLogout}
                     userId={userId}
                     username={profile?.username}
+                    avatarUrl={profile?.avatar_url}
                 />
             </aside>
 

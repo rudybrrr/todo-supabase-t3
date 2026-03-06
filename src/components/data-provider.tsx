@@ -16,6 +16,7 @@ interface AppStats {
 interface DataProfile {
     username?: string;
     full_name?: string;
+    avatar_url?: string | null;
 }
 
 interface DataContextType {
@@ -87,7 +88,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         try {
             const [listsRes, profileRes, sessionsRes, todosRes] = await Promise.all([
                 supabase.from("todo_list_members").select("list_id, role, todo_lists(*)").eq("user_id", uid),
-                supabase.from("profiles").select("username, full_name").eq("id", uid).maybeSingle(),
+                supabase.from("profiles").select("username, full_name, avatar_url").eq("id", uid).maybeSingle(),
                 supabase.from("focus_sessions").select("*, todo_lists (name)").eq("user_id", uid).order("inserted_at", { ascending: true }),
                 supabase.from("todos").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("is_done", true),
             ]);

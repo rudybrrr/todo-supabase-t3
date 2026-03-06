@@ -11,7 +11,9 @@ import {
 import { ModeToggle } from "~/components/mode-toggle";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { usePathname } from "next/navigation";
-import { Avatar, AvatarFallback } from "~/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
+import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
+import { getPublicAvatarUrl } from "~/lib/avatar";
 
 import type { TodoList } from "~/lib/types";
 
@@ -25,6 +27,7 @@ interface ListSidebarProps {
     onLogout: () => void;
     userId: string;
     username?: string;
+    avatarUrl?: string | null;
 }
 
 export const ListSidebar = React.memo(function ListSidebar({
@@ -37,9 +40,16 @@ export const ListSidebar = React.memo(function ListSidebar({
     onLogout,
     userId,
     username,
+    avatarUrl,
 }: ListSidebarProps) {
     const pathname = usePathname();
     const inbox = React.useMemo(() => lists.find((list) => list.name === "Inbox"), [lists]);
+
+    const supabase = React.useMemo(() => createSupabaseBrowserClient(), []);
+    const displayAvatarUrl = React.useMemo(
+        () => getPublicAvatarUrl(supabase, avatarUrl),
+        [supabase, avatarUrl]
+    );
 
     const [isMounted, setIsMounted] = React.useState(false);
     const [localLists, setLocalLists] = React.useState<TodoList[]>([]);
@@ -270,6 +280,7 @@ export const ListSidebar = React.memo(function ListSidebar({
                 <Link href="/settings" className="block outline-none group">
                     <div className="flex items-center gap-3 px-3 py-2 rounded-xl transition-all hover:bg-sidebar-accent">
                         <Avatar className="w-8 h-8 group-hover:opacity-90 transition-opacity">
+                            <AvatarImage src={displayAvatarUrl ?? ""} alt={username ?? "User"} />
                             <AvatarFallback className="bg-primary/10 text-primary font-bold">
                                 {username ? username.substring(0, 1).toUpperCase() : <User className="h-4 w-4" />}
                             </AvatarFallback>

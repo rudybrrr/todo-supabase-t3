@@ -69,7 +69,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text unique,
   full_name text,
-  avatar_url text,
+  avatar_url text, -- storage object path in profile-avatars bucket
   updated_at timestamptz default now()
 );
 
@@ -167,7 +167,8 @@ $$;
 
 -- Policies
 create policy "Anyone can view profiles" on public.profiles for select using (true);
-create policy "Users can update their own profile" on public.profiles for update using (auth.uid() = id);
+create policy "Users can insert their own profile" on public.profiles for insert with check (auth.uid() = id);
+create policy "Users can update their own profile" on public.profiles for update using (auth.uid() = id) with check (auth.uid() = id);
 
 create policy "Members can view lists" on public.todo_lists for select using (public.is_list_member(id));
 create policy "Authenticated users can create lists" on public.todo_lists for insert with check (auth.uid() = owner_id);
@@ -227,13 +228,23 @@ alter table public.focus_sessions replica identity full;
 
 ### 3) Storage Bucket
 1. Create a **Public** bucket named `todo-images` in the Supabase Dashboard.
-2. Under the **Policies** tab for the bucket, add RLS policies for:
-   - **Select:** `(select exists (select 1 from public.todos where id = (storage.foldername(name))[2]::uuid and public.is_list_member(list_id)))`
-   - **Insert/Delete:** `(select exists (select 1 from public.todos where id = (storage.foldername(name))[2]::uuid and public.can_edit_list(list_id)))`
+2. Create a **Public** bucket named `profile-avatars` in the Supabase Dashboard.
+3. Under **Policies**, configure:
+   - `todo-images`:
+     - **Select:** Allow members of a list to view task images in that list.
+     - **Insert/Delete:** Allow users with edit rights on the list to upload/delete task images.
+   - `profile-avatars`:
+     - **Select:** Public read for avatars.
+     - **Insert/Delete:** Authenticated users can only upload/delete objects inside their own top-level folder (`<auth.uid()>/...`).
 
+### 4) Settings Data Model Notes
+- `profiles.avatar_url` stores a storage object path (not an external URL).
+- Avatar path format used by the app: `${userId}/${uuid}.${ext}` in `profile-avatars`.
+- Passwords are managed by Supabase Auth; no password column is stored in `public.profiles`.
 ---
 
 ## Roadmap (Actively Maintained)
 - **[Planned] Planning Hub:** Calendar and weekly overview.
 - **[Completed] Global Study Hall:** Real-time social leaderboard.
+
 

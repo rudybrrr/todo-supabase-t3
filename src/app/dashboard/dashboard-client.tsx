@@ -95,6 +95,7 @@ export default function DashboardClient({ userId }: { userId: string }) {
                     onLogout={handleLogout}
                     userId={userId}
                     username={profile?.username}
+                    avatarUrl={profile?.avatar_url}
                 />
             </aside>
 
