@@ -2,6 +2,15 @@
 
 Stride helps students turn plans into progress.
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://todo-supabase-t3.vercel.app)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Profile-blue?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/rudhresh-r/)
+
+## The Vision
+
+Students usually do not struggle with writing tasks down. They struggle with turning plans into consistent execution.
+
+Stride is built around that gap. It combines task management, calendar planning, focus sessions, and lightweight accountability into a single student productivity workflow that is designed to help captured work become scheduled, focused, and finished.
+
 Stride is an execution-first academic planner built on Next.js and Supabase. The current product combines smart task views, project workspaces, a weekly planner, focus sessions, lightweight community progress, and a premium task-first shell.
 
 ## Current Product Shape
@@ -47,6 +56,16 @@ Stride is an execution-first academic planner built on Next.js and Supabase. The
 - Focus timer with persisted sessions
 - Community leaderboard powered by `weekly_leaderboard`
 - Theme system with `light`, `dark`, and `midnight`
+
+## Visual Gallery
+
+| Authentication | Home |
+| :---: | :---: |
+| ![Authentication](screenshots/auth.png) | ![Home](screenshots/dashboard.png) |
+
+| Tasks | Calendar |
+| :---: | :---: |
+| ![Tasks](screenshots/tasks.png) | ![Calendar](screenshots/planner.png) |
 
 ## Stack
 
