@@ -6,6 +6,8 @@ export interface TodoList {
     owner_id: string;
     inserted_at?: string;
     user_role?: string;
+    color_token?: string | null;
+    icon_token?: string | null;
 }
 
 export interface TodoRow {
@@ -18,6 +20,9 @@ export interface TodoRow {
     description?: string | null;
     due_date?: string | null;
     priority?: 'high' | 'medium' | 'low' | null;
+    estimated_minutes?: number | null;
+    completed_at?: string | null;
+    updated_at?: string | null;
 }
 
 export interface TodoImageRow {
@@ -58,6 +63,18 @@ export interface PlannedFocusBlock {
     scheduled_end: string;
     inserted_at: string;
     updated_at: string;
+}
+
+export interface TodoListMember {
+    list_id: string;
+    user_id: string;
+    role: "owner" | "editor" | "viewer";
+    inserted_at?: string;
+    profiles?: {
+        username?: string | null;
+        full_name?: string | null;
+        avatar_url?: string | null;
+    } | null;
 }
 
 export interface LeaderboardEntry {

@@ -34,7 +34,7 @@ export default function LoginPage() {
     }
 
     toast.success(mode === "login" ? "Welcome back!" : "Account created!");
-    router.push("/todos");
+    router.push("/home");
     router.refresh();
   };
 
@@ -66,7 +66,7 @@ export default function LoginPage() {
             </svg>
           </div>
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-zinc-100 to-zinc-400">
-            Study Sprint
+            Stride
           </span>
         </div>
 
@@ -76,7 +76,7 @@ export default function LoginPage() {
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">Accomplish more.</span>
           </h1>
           <p className="text-xl text-zinc-400 font-medium leading-relaxed max-w-md">
-            The next-generation study platform combining focused sprints with beautiful task management.
+            Stride helps students turn plans into progress with focused sessions and clean task management.
           </p>
         </div>
       </div>
@@ -114,7 +114,7 @@ export default function LoginPage() {
 
           <div className="space-y-3">
             <h2 className="text-3xl font-bold tracking-tight text-foreground">
-              {mode === "login" ? "Welcome back" : "Join the sprint"}
+              {mode === "login" ? "Welcome back" : "Create your account"}
             </h2>
             <p className="text-sm text-muted-foreground font-medium">
               {mode === "login" ? "Enter your credentials to continue" : "Setup your account to start organizing"}

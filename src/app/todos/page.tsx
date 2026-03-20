@@ -1,11 +1,5 @@
-import { Suspense } from "react";
-import TodosGate from "./todos-gate";
-import TodosSkeleton from "./todos-skeleton";
+import { redirect } from "next/navigation";
 
-export default function TodosPage() {
-  return (
-    <Suspense fallback={<TodosSkeleton />}>
-      <TodosGate />
-    </Suspense>
-  );
+export default function TodosRedirectPage() {
+    redirect("/tasks");
 }

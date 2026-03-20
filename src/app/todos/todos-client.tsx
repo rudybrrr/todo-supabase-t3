@@ -555,7 +555,7 @@ export default function TodosClient({ userId }: { userId: string, username?: str
                   </SheetContent>
                 </Sheet>
                 <h1 className="text-3xl font-bold tracking-tight text-foreground lg:-ml-1">
-                  {currentList?.name ?? "Study Sprint"}
+                  {currentList?.name ?? "Stride"}
                 </h1>
               </div>
               {currentList?.name === "Inbox" && (

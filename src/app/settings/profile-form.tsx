@@ -424,7 +424,7 @@ export function ProfileForm({ userId }: { userId: string }) {
                                     <div>
                                         <CardTitle className="text-xl font-black tracking-tight">Study Goal</CardTitle>
                                         <CardDescription className="text-muted-foreground font-medium mt-1">
-                                            Set your daily focus target in minutes for the Planning Hub.
+                                            Set your daily focus target in minutes.
                                         </CardDescription>
                                     </div>
                                 </div>
@@ -452,7 +452,7 @@ export function ProfileForm({ userId }: { userId: string }) {
                                             </span>
                                         </div>
                                         <p className="text-[10px] text-muted-foreground font-bold uppercase pl-1">
-                                            Used to power your daily target ring in Planning.
+                                            Used for your daily focus goal across the planner.
                                         </p>
                                     </div>
                                 </CardContent>
@@ -502,7 +502,7 @@ export function ProfileForm({ userId }: { userId: string }) {
 
                                     <div className="space-y-3">
                                         <p className="text-sm text-muted-foreground">
-                                            Your avatar appears in the leaderboard and study hall feed.
+                                            Your avatar appears in progress and community surfaces.
                                         </p>
                                         <Button
                                             type="button"

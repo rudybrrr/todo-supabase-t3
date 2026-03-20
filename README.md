@@ -1,250 +1,522 @@
-# Study Sprint
-A gamified productivity platform for students.
+# Stride
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://todo-supabase-t3.vercel.app)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Profile-blue?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/rudhresh-r/)
+Stride helps students turn plans into progress.
 
-## The Vision
-Students often have clear to-do lists but struggle to bridge the gap between "planning" and "doing." Without session tracking, daily feedback, and accountability, studying remains irregular and stressful.
+Stride is an execution-first academic planner built on Next.js and Supabase. The current product combines smart task views, project workspaces, a weekly planner, focus sessions, lightweight community progress, and a premium task-first shell.
 
-**Study Sprint** solves this by merging advanced task management with Pomodoro-style focus sprints and social gamification. It turns the solitary grind of studying into a measurable, shared experience.
+## Current Product Shape
+
+### Primary routes
+
+- `/home`
+- `/tasks`
+- `/calendar`
+- `/projects`
+
+### Secondary routes
+
+- `/progress`
+- `/community`
+- `/settings`
+
+### Legacy redirects
+
+- `/dashboard` -> `/home`
+- `/todos` -> `/tasks`
+- `/planning` -> `/calendar`
+- `/study-hall` -> `/community`
+
+## Current UX Model
+
+- Collapsible desktop sidebar with smart views, projects, quick add, and account utilities
+- Mobile drawer navigation instead of a bottom tab bar
+- Smart task views for `Today`, `Upcoming`, `Inbox`, and user-facing `Completed`
+- Inline task capture on main task surfaces plus shell-level quick add
+- Row-click task opening with a centered desktop modal and mobile full-height task sheet
+- Project workspaces with inline add, priority filtering, member management, and project settings
+- Calendar planning with persisted `planned_focus_blocks`
+- Focus sessions tied to daily goal tracking and community progress
 
 ## Core Features
 
-### 🎯 Deep Focus & Analytics
-- **Sprint Mode:** A dedicated Pomodoro timer that synchronizes focus blocks directly to your database, allowing you to track and analyze your study habits over time.
-- **Insights Dashboard:** Real-time visualization of your progress through interactive charts, session history, and study streak tracking.
-- **Global Study Hall:** A weekly leaderboard to rank focus time among peers, featuring a live activity feed so you never study alone.
+- Smart task views driven by deterministic rules
+- Deterministic `Next Up` recommendation
+- Task priority, due dates, notes, estimates, attachments, and completion metadata
+- Project icons, color tokens, members, and per-project workspaces
+- Planned focus blocks linked to tasks or standalone project work
+- Focus timer with persisted sessions
+- Community leaderboard powered by `weekly_leaderboard`
+- Theme system with `light`, `dark`, and `midnight`
 
-### ✅ Modern Task Management
-- **Fluid Interaction Model:** Minimalist design that uses inline expansion for task details, eliminating heavy modal dialogs for a fluid UX.
-- **Intelligent Filtering:** Instantly pivot your view by status (All/Active/Done) or priority (High/Medium/Low) pill-shaped toggles.
-- **Real-time Collaboration:** Share and edit project lists with peers with instant device synchronization via Supabase Realtime.
+## Stack
 
-### 🚀 Technical Foundation
-- **Optimized Performance:** Leverages parallel fetching, a global state provider, and fully optimistic UI updates for a responsive experience.
-- **Robust Security:** Every table is protected by granular Row Level Security (RLS) policies, ensuring users only access what they own or were invited to.
-- **Modern Stack:** Built with Next.js 16, TypeScript, Tailwind CSS, and shadcn/ui.
+- Next.js 16 App Router
+- React + TypeScript
+- Tailwind CSS + shadcn/ui + Framer Motion
+- Supabase Postgres + Auth + Realtime + Storage + RLS
 
----
+## Local Setup
 
-## 🖼️ Visual Gallery
+### 1. Install dependencies
 
-| Authentication | Insights Dashboard |
-| :---: | :---: |
-| ![Auth](screenshots/auth.png) | ![Insights](screenshots/insights.png) |
+```bash
+npm install
+```
 
-| Global Study Hall | Task Management |
-| :---: | :---: |
-| ![Study Hall](screenshots/study-hall.png) | ![Tasks](screenshots/tasks.png) |
+### 2. Configure environment variables
 
----
-
-## Tech Stack
-- **Frontend:** Next.js 16, React, TypeScript, Tailwind CSS, Recharts
-- **Backend/BaaS:** Supabase (PostgreSQL, Auth, RLS, Realtime, Storage)
-
----
-
-## Getting Started
-
-### 1) Environment Variables
-Create a file named **`.env.local`** in the project root:
+Create `.env.local`:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
 ```
 
-> [!IMPORTANT]
-> **Security:** Add `.env.local` to your `.gitignore` file and never commit it to GitHub.
+### 3. Set up Supabase
 
-### 2) Supabase Setup
-Run the following SQL blocks in your Supabase **SQL Editor**.
+This repo relies on a core schema plus the checked-in migration files.
 
-#### A. Tables & Relations
+#### 3A. Core schema
+
+Run this once in the Supabase SQL editor if your project is empty.
+
 ```sql
--- PROFILES
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text unique,
   full_name text,
-  avatar_url text, -- storage object path in profile-avatars bucket
-  updated_at timestamptz default now()
+  avatar_url text,
+  daily_focus_goal_minutes integer not null default 120,
+  updated_at timestamptz default now(),
+  constraint profiles_daily_focus_goal_minutes_positive
+    check (daily_focus_goal_minutes > 0)
 );
 
--- LISTS
 create table if not exists public.todo_lists (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
+  color_token text not null default 'cobalt',
+  icon_token text not null default 'book-open',
   inserted_at timestamptz default now()
 );
 
--- MEMBERSHIP
 create table if not exists public.todo_list_members (
   list_id uuid not null references public.todo_lists(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
   role text not null default 'editor',
   inserted_at timestamptz default now(),
   primary key (list_id, user_id),
-  constraint todo_list_members_role_valid check (role in ('owner','editor','viewer'))
+  constraint todo_list_members_role_valid
+    check (role in ('owner', 'editor', 'viewer'))
 );
 
--- TODOS
 create table if not exists public.todos (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  list_id uuid references public.todo_lists(id) on delete cascade,
+  list_id uuid not null references public.todo_lists(id) on delete cascade,
   title text not null,
   description text,
   due_date timestamptz,
-  priority text, -- 'high', 'medium', 'low'
+  priority text,
   is_done boolean not null default false,
-  inserted_at timestamptz default now(),
-  updated_at timestamptz default now()
+  estimated_minutes integer,
+  completed_at timestamptz,
+  inserted_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint todos_priority_valid
+    check (priority in ('high', 'medium', 'low') or priority is null),
+  constraint todos_estimated_minutes_positive
+    check (estimated_minutes is null or estimated_minutes > 0)
 );
 
--- FOCUS SESSIONS
 create table if not exists public.focus_sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  list_id uuid references public.todo_lists(id) on delete cascade,
-  duration_seconds int not null,
-  mode text not null, -- 'focus', 'shortBreak', 'longBreak'
-  inserted_at timestamptz default now()
+  list_id uuid references public.todo_lists(id) on delete set null,
+  duration_seconds integer not null,
+  mode text not null,
+  inserted_at timestamptz not null default now(),
+  constraint focus_sessions_mode_valid
+    check (mode in ('focus', 'shortBreak', 'longBreak'))
 );
 
--- IMAGES
 create table if not exists public.todo_images (
   id uuid primary key default gen_random_uuid(),
   todo_id uuid not null references public.todos(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  list_id uuid references public.todo_lists(id) on delete cascade,
+  list_id uuid not null references public.todo_lists(id) on delete cascade,
   path text not null,
-  inserted_at timestamptz default now()
+  inserted_at timestamptz not null default now()
 );
 
--- WEEKLY LEADERBOARD VIEW
+create table if not exists public.planned_focus_blocks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  list_id uuid not null references public.todo_lists(id) on delete cascade,
+  todo_id uuid references public.todos(id) on delete set null,
+  title text not null,
+  scheduled_start timestamptz not null,
+  scheduled_end timestamptz not null,
+  inserted_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint planned_focus_blocks_time_order
+    check (scheduled_end > scheduled_start)
+);
+
 create or replace view public.weekly_leaderboard as
-  select 
-    p.id as user_id,
-    p.username,
-    p.avatar_url,
-    coalesce(sum(fs.duration_seconds), 0) / 60 as total_minutes
-  from public.profiles p
-  left join public.focus_sessions fs on fs.user_id = p.id
-    and fs.mode = 'focus'
-    and fs.inserted_at >= date_trunc('week', now())
-  group by p.id, p.username, p.avatar_url;
+select
+  p.id as user_id,
+  p.username,
+  p.avatar_url,
+  coalesce(sum(fs.duration_seconds), 0) / 60 as total_minutes
+from public.profiles p
+left join public.focus_sessions fs
+  on fs.user_id = p.id
+ and fs.mode = 'focus'
+ and fs.inserted_at >= date_trunc('week', now())
+group by p.id, p.username, p.avatar_url;
 ```
 
-#### B. Row Level Security & Helpers
+#### 3B. Helper functions, triggers, and RLS
+
 ```sql
--- Enable RLS
-alter table public.profiles enable row level security;
-alter table public.todos enable row level security;
-alter table public.todo_images enable row level security;
-alter table public.todo_lists enable row level security;
-alter table public.todo_list_members enable row level security;
-alter table public.focus_sessions enable row level security;
-
--- Granular access control
-create or replace function public.is_list_owner(lid uuid) returns boolean 
-language sql security definer set search_path = public as $$
-  select exists (select 1 from public.todo_lists where id = lid and owner_id = auth.uid());
+create or replace function public.is_list_owner(lid uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.todo_lists
+    where id = lid and owner_id = auth.uid()
+  );
 $$;
 
-create or replace function public.is_list_member(lid uuid) returns boolean
-language sql security definer set search_path = public as $$
-  select exists (select 1 from public.todo_list_members where list_id = lid and user_id = auth.uid());
+create or replace function public.is_list_member(lid uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.todo_list_members
+    where list_id = lid and user_id = auth.uid()
+  );
 $$;
 
-create or replace function public.can_edit_list(lid uuid) returns boolean
-language sql security definer set search_path = public as $$
-  select exists (select 1 from public.todo_list_members where list_id = lid and user_id = auth.uid() and role in ('owner','editor'));
+create or replace function public.can_edit_list(lid uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.todo_list_members
+    where list_id = lid
+      and user_id = auth.uid()
+      and role in ('owner', 'editor')
+  );
 $$;
 
--- Policies
-create policy "Anyone can view profiles" on public.profiles for select using (true);
-create policy "Users can insert their own profile" on public.profiles for insert with check (auth.uid() = id);
-create policy "Users can update their own profile" on public.profiles for update using (auth.uid() = id) with check (auth.uid() = id);
-
-create policy "Members can view lists" on public.todo_lists for select using (public.is_list_member(id));
-create policy "Authenticated users can create lists" on public.todo_lists for insert with check (auth.uid() = owner_id);
-create policy "Owners can update lists" on public.todo_lists for update using (public.is_list_owner(id));
-create policy "Owners can delete lists" on public.todo_lists for delete using (public.is_list_owner(id));
-
-create policy "Members can view list members" on public.todo_list_members for select using (public.is_list_member(list_id));
-create policy "Owners can manage list members" on public.todo_list_members for all using (public.is_list_owner(list_id));
-
-create policy "Users can view todos in their lists" on public.todos for select using (public.is_list_member(list_id));
-create policy "Editors can insert todos" on public.todos for insert with check (public.can_edit_list(list_id));
-create policy "Editors can update todos" on public.todos for update using (public.can_edit_list(list_id));
-create policy "Editors can delete todos" on public.todos for delete using (public.can_edit_list(list_id));
-
-create policy "Users can view their own focus sessions" on public.focus_sessions for select using (auth.uid() = user_id);
-create policy "Users can insert their own focus sessions" on public.focus_sessions for insert with check (auth.uid() = user_id);
-
-create policy "Users can view images in their lists" on public.todo_images for select using (public.is_list_member(list_id));
-create policy "Editors can insert images" on public.todo_images for insert with check (public.can_edit_list(list_id));
-create policy "Editors can delete images" on public.todo_images for delete using (public.can_edit_list(list_id));
-```
-
-#### B2. Atomic List Creation RPC (Recommended)
-```sql
-create or replace function public.create_list_with_owner(list_name text)
-returns table (id uuid, name text, owner_id uuid, inserted_at timestamptz)
-language plpgsql security definer set search_path = public as $$
-declare new_list public.todo_lists;
+create or replace function public.set_profiles_updated_at()
+returns trigger
+language plpgsql
+as $$
 begin
-  if auth.uid() is null then raise exception 'Not authenticated'; end if;
-  if list_name is null or btrim(list_name) = '' then raise exception 'List name cannot be empty'; end if;
-
-  insert into public.todo_lists (owner_id, name)
-  values (auth.uid(), btrim(list_name))
-  returning * into new_list;
-
-  insert into public.todo_list_members (list_id, user_id, role)
-  values (new_list.id, auth.uid(), 'owner')
-  on conflict (list_id, user_id) do update set role = excluded.role;
-
-  return query select new_list.id, new_list.name, new_list.owner_id, new_list.inserted_at;
+  new.updated_at = now();
+  return new;
 end;
 $$;
 
-grant execute on function public.create_list_with_owner(text) to authenticated;
+drop trigger if exists trg_profiles_updated_at on public.profiles;
+create trigger trg_profiles_updated_at
+before update on public.profiles
+for each row
+execute function public.set_profiles_updated_at();
+
+create or replace function public.set_planned_focus_blocks_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_planned_focus_blocks_updated_at on public.planned_focus_blocks;
+create trigger trg_planned_focus_blocks_updated_at
+before update on public.planned_focus_blocks
+for each row
+execute function public.set_planned_focus_blocks_updated_at();
+
+alter table public.profiles enable row level security;
+alter table public.todo_lists enable row level security;
+alter table public.todo_list_members enable row level security;
+alter table public.todos enable row level security;
+alter table public.focus_sessions enable row level security;
+alter table public.todo_images enable row level security;
+alter table public.planned_focus_blocks enable row level security;
+
+drop policy if exists "Anyone can view profiles" on public.profiles;
+create policy "Anyone can view profiles"
+on public.profiles
+for select
+using (true);
+
+drop policy if exists "Users can insert their own profile" on public.profiles;
+create policy "Users can insert their own profile"
+on public.profiles
+for insert
+to authenticated
+with check (auth.uid() = id);
+
+drop policy if exists "Users can update their own profile" on public.profiles;
+create policy "Users can update their own profile"
+on public.profiles
+for update
+to authenticated
+using (auth.uid() = id)
+with check (auth.uid() = id);
+
+drop policy if exists "Members can view lists" on public.todo_lists;
+create policy "Members can view lists"
+on public.todo_lists
+for select
+to authenticated
+using (public.is_list_member(id));
+
+drop policy if exists "Authenticated users can create lists" on public.todo_lists;
+create policy "Authenticated users can create lists"
+on public.todo_lists
+for insert
+to authenticated
+with check (auth.uid() = owner_id);
+
+drop policy if exists "Owners can update lists" on public.todo_lists;
+create policy "Owners can update lists"
+on public.todo_lists
+for update
+to authenticated
+using (public.is_list_owner(id));
+
+drop policy if exists "Owners can delete lists" on public.todo_lists;
+create policy "Owners can delete lists"
+on public.todo_lists
+for delete
+to authenticated
+using (public.is_list_owner(id));
+
+drop policy if exists "Members can view list members" on public.todo_list_members;
+create policy "Members can view list members"
+on public.todo_list_members
+for select
+to authenticated
+using (public.is_list_member(list_id));
+
+drop policy if exists "Owners can manage list members" on public.todo_list_members;
+create policy "Owners can manage list members"
+on public.todo_list_members
+for all
+to authenticated
+using (public.is_list_owner(list_id))
+with check (public.is_list_owner(list_id));
+
+drop policy if exists "Users can view todos in their lists" on public.todos;
+create policy "Users can view todos in their lists"
+on public.todos
+for select
+to authenticated
+using (public.is_list_member(list_id));
+
+drop policy if exists "Editors can insert todos" on public.todos;
+create policy "Editors can insert todos"
+on public.todos
+for insert
+to authenticated
+with check (public.can_edit_list(list_id));
+
+drop policy if exists "Editors can update todos" on public.todos;
+create policy "Editors can update todos"
+on public.todos
+for update
+to authenticated
+using (public.can_edit_list(list_id))
+with check (public.can_edit_list(list_id));
+
+drop policy if exists "Editors can delete todos" on public.todos;
+create policy "Editors can delete todos"
+on public.todos
+for delete
+to authenticated
+using (public.can_edit_list(list_id));
+
+drop policy if exists "Users can view their own focus sessions" on public.focus_sessions;
+create policy "Users can view their own focus sessions"
+on public.focus_sessions
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert their own focus sessions" on public.focus_sessions;
+create policy "Users can insert their own focus sessions"
+on public.focus_sessions
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can view images in their lists" on public.todo_images;
+create policy "Users can view images in their lists"
+on public.todo_images
+for select
+to authenticated
+using (public.is_list_member(list_id));
+
+drop policy if exists "Editors can insert images" on public.todo_images;
+create policy "Editors can insert images"
+on public.todo_images
+for insert
+to authenticated
+with check (public.can_edit_list(list_id));
+
+drop policy if exists "Editors can delete images" on public.todo_images;
+create policy "Editors can delete images"
+on public.todo_images
+for delete
+to authenticated
+using (public.can_edit_list(list_id));
+
+drop policy if exists "Users can view own planned focus blocks" on public.planned_focus_blocks;
+create policy "Users can view own planned focus blocks"
+on public.planned_focus_blocks
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert own planned focus blocks" on public.planned_focus_blocks;
+create policy "Users can insert own planned focus blocks"
+on public.planned_focus_blocks
+for insert
+to authenticated
+with check (
+  auth.uid() = user_id
+  and public.is_list_member(list_id)
+);
+
+drop policy if exists "Users can update own planned focus blocks" on public.planned_focus_blocks;
+create policy "Users can update own planned focus blocks"
+on public.planned_focus_blocks
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (
+  auth.uid() = user_id
+  and public.is_list_member(list_id)
+);
+
+drop policy if exists "Users can delete own planned focus blocks" on public.planned_focus_blocks;
+create policy "Users can delete own planned focus blocks"
+on public.planned_focus_blocks
+for delete
+to authenticated
+using (auth.uid() = user_id);
 ```
 
-#### C. Realtime Enablement
+#### 3C. Apply checked-in migrations
+
+Run these in order after the core schema exists:
+
+1. `supabase/migrations/20260306_create_list_with_owner.sql`
+2. `supabase/migrations/20260307_settings_profile_avatar_security.sql`
+3. `supabase/migrations/20260319_planning_hub_v1.sql`
+4. `supabase/migrations/20260320_execution_first_redesign_metadata.sql`
+
+If you use the Supabase CLI:
+
+```bash
+supabase db push
+```
+
+#### 3D. Realtime
+
 ```sql
 alter publication supabase_realtime set (publish = 'insert, update, delete');
-alter publication supabase_realtime add table public.todos, public.todo_images, public.focus_sessions;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.todos;
+exception when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.todo_images;
+exception when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.focus_sessions;
+exception when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.planned_focus_blocks;
+exception when duplicate_object then null;
+end;
+$$;
 
 alter table public.todos replica identity full;
 alter table public.todo_images replica identity full;
 alter table public.focus_sessions replica identity full;
+alter table public.planned_focus_blocks replica identity full;
 ```
 
-### 3) Storage Bucket
-1. Create a **Public** bucket named `todo-images` in the Supabase Dashboard.
-2. Create a **Public** bucket named `profile-avatars` in the Supabase Dashboard.
-3. Under **Policies**, configure:
-   - `todo-images`:
-     - **Select:** Allow members of a list to view task images in that list.
-     - **Insert/Delete:** Allow users with edit rights on the list to upload/delete task images.
-   - `profile-avatars`:
-     - **Select:** Public read for avatars.
-     - **Insert/Delete:** Authenticated users can only upload/delete objects inside their own top-level folder (`<auth.uid()>/...`).
+### 4. Storage buckets
 
-### 4) Settings Data Model Notes
-- `profiles.avatar_url` stores a storage object path (not an external URL).
-- Avatar path format used by the app: `${userId}/${uuid}.${ext}` in `profile-avatars`.
-- Passwords are managed by Supabase Auth; no password column is stored in `public.profiles`.
----
+Create two public buckets:
 
-## Roadmap (Actively Maintained)
-- **[Planned] Planning Hub:** Calendar and weekly overview.
-- **[Completed] Global Study Hall:** Real-time social leaderboard.
+- `todo-images`
+- `profile-avatars`
 
+Recommended storage policies:
 
+- `todo-images`
+  - `select`: list members can view images in accessible lists
+  - `insert` / `delete`: editors can manage images in lists they can edit
+- `profile-avatars`
+  - `select`: public read
+  - `insert` / `delete`: authenticated users can only manage objects in their own top-level folder
+
+The checked-in `20260307_settings_profile_avatar_security.sql` migration already creates the `profile-avatars` bucket policies.
+
+## Smart View Rules
+
+- `Today`: incomplete overdue tasks and incomplete tasks due today
+- `Upcoming`: incomplete tasks due after today, sorted soonest first
+- `Inbox`: incomplete tasks with no due date and no planned focus block
+- Internal key `done`: surfaced to users as `Completed` or `Completed Tasks`, sorted by `completed_at` descending
+
+## Current Database Notes
+
+- `todo_lists.color_token` and `todo_lists.icon_token` drive project presentation
+- `todos.estimated_minutes` supports planning and next-task selection
+- `todos.completed_at` is used for correct completed-task ordering
+- `profiles.daily_focus_goal_minutes` powers Home and Calendar goal progress
+- `planned_focus_blocks.todo_id` is optional, so a planned block can exist without a linked task
+
+## Verification
+
+```bash
+npx tsc --noEmit
+npm run lint
+npm.cmd run build
+```

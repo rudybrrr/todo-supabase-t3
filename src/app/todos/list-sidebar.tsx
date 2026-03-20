@@ -98,7 +98,7 @@ export const ListSidebar = React.memo(function ListSidebar({
     return (
         <div className="flex flex-col h-full bg-sidebar border-r border-sidebar-border">
             <div className="p-6 pb-2">
-                <h1 className="font-bold tracking-tight text-lg text-sidebar-foreground">Study Sprint</h1>
+                <h1 className="font-bold tracking-tight text-lg text-sidebar-foreground">Stride</h1>
             </div>
 
             <div className="flex-1 px-3 overflow-y-auto overflow-x-hidden">

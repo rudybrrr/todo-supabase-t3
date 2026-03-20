@@ -128,13 +128,15 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
             setIsActive(false);
             void saveSession();
 
-            // Celebratory Confetti Blast!
-            void confetti({
-                particleCount: 150,
-                spread: 70,
-                origin: { y: 0.6 },
-                colors: ['#6366f1', '#10b981', '#f59e0b']
-            });
+            const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            if (!prefersReducedMotion) {
+                void confetti({
+                    particleCount: 120,
+                    spread: 60,
+                    origin: { y: 0.6 },
+                    colors: ["#3155d6", "#0f8b74", "#c6801d"],
+                });
+            }
 
             toast.success(
                 mode === "focus"

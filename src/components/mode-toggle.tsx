@@ -1,24 +1,37 @@
 "use client"
 
 import * as React from "react"
-import { Moon, Sun } from "lucide-react"
+import { Moon, MoonStar, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 
 import { Button } from "~/components/ui/button"
+import { resolveThemeSelection } from "~/lib/theme-options"
 
 export function ModeToggle() {
-    const { theme, setTheme } = useTheme()
+    const { resolvedTheme, setTheme, theme } = useTheme()
+    const activeTheme = resolveThemeSelection(theme, resolvedTheme)
 
     return (
         <Button
             variant="outline"
             size="icon"
-            className="rounded-xl border-slate-200 dark:border-slate-800"
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            className="rounded-xl"
+            onClick={() => {
+                if (activeTheme === "light") {
+                    setTheme("dark")
+                    return
+                }
+                if (activeTheme === "dark") {
+                    setTheme("midnight")
+                    return
+                }
+                setTheme("light")
+            }}
         >
-            <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-            <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-            <span className="sr-only">Toggle theme</span>
+            {activeTheme === "light" ? <Sun className="h-[1.2rem] w-[1.2rem]" /> : null}
+            {activeTheme === "dark" ? <Moon className="h-[1.2rem] w-[1.2rem]" /> : null}
+            {activeTheme === "midnight" ? <MoonStar className="h-[1.2rem] w-[1.2rem]" /> : null}
+            <span className="sr-only">Cycle theme</span>
         </Button>
     )
 }
