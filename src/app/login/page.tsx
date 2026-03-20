@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
+import { ArrowRight, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
-import { Mail, Lock, ArrowRight } from "lucide-react";
 
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 
 export default function LoginPage() {
   const supabase = createSupabaseBrowserClient();
@@ -39,16 +39,13 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen w-full lg:grid lg:grid-cols-2 bg-background relative selection:bg-primary/30">
+    <main className="relative min-h-screen w-full bg-background selection:bg-primary/30 lg:grid lg:grid-cols-2">
+      <div className="relative hidden overflow-hidden border-r border-border/60 bg-card/50 text-foreground lg:flex lg:flex-col lg:p-12">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(124,167,255,0.13),transparent_56%),linear-gradient(180deg,rgba(124,167,255,0.06)_0%,rgba(124,167,255,0.02)_24%,transparent_58%)]" />
+        <div className="pointer-events-none absolute bottom-0 left-0 h-32 w-32 rounded-full bg-primary/6 blur-[72px]" />
 
-      {/* Left Pane - Immersive Branding (Hidden on mobile) */}
-      <div className="hidden lg:flex flex-col bg-zinc-950 text-zinc-50 p-12 relative overflow-hidden">
-        {/* Ambient Background Glows */}
-        <div className="absolute top-0 right-0 -mt-32 -mr-32 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] opacity-60 pointer-events-none" />
-        <div className="absolute bottom-0 left-0 -mb-32 -ml-32 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[100px] opacity-50 pointer-events-none" />
-
-        <div className="relative z-10 flex items-center gap-3 font-bold text-xl tracking-tight">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/20">
+        <div className="relative z-10 flex items-center gap-3 text-xl font-bold tracking-tight">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/50 bg-primary/10 text-primary">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               width="24"
@@ -65,50 +62,48 @@ export default function LoginPage() {
               <path d="m9 12 2 2 4-4" />
             </svg>
           </div>
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-zinc-100 to-zinc-400">
-            Stride
-          </span>
+          <span>Stride</span>
         </div>
 
-        <div className="relative z-10 flex-1 flex flex-col justify-center max-w-lg space-y-8">
-          <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1]">
-            Focus deeper. <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">Accomplish more.</span>
+        <div className="relative z-10 flex max-w-lg flex-1 flex-col justify-center space-y-8">
+          <h1 className="text-balance text-5xl font-extrabold leading-[1.02] tracking-tight md:text-6xl">
+            Turn plans
+            <br />
+            into progress.
           </h1>
-          <p className="text-xl text-zinc-400 font-medium leading-relaxed max-w-md">
-            Stride helps students turn plans into progress with focused sessions and clean task management.
+          <p className="max-w-md text-lg font-medium leading-relaxed text-muted-foreground">
+            Stride helps students organize tasks, protect focus, and keep momentum across classes and deadlines.
           </p>
         </div>
       </div>
 
-      {/* Right Pane - Auth Form Container */}
-      <div className="flex items-center justify-center p-6 sm:p-12 relative z-10 bg-muted/10">
-        <div className="w-full max-w-[420px] space-y-8 p-8 sm:p-10 bg-card rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-border/50">
-
-          {/* Custom Animated Mode Switcher */}
-          <div className="relative flex p-1.5 bg-muted/60 rounded-2xl">
+      <div className="relative z-10 flex items-center justify-center bg-muted/10 p-6 sm:p-12">
+        <div className="w-full max-w-[420px] space-y-8 rounded-[2rem] border border-border/60 bg-card/95 p-8 shadow-[0_12px_28px_rgba(15,23,42,0.05)] sm:p-10">
+          <div className="relative flex rounded-2xl border border-border/50 bg-muted/60 p-1.5">
             <button
-              className={`relative z-10 flex-1 flex items-center justify-center gap-2 px-3 py-3 text-sm font-semibold transition-all rounded-xl ${mode === "login"
+              className={`relative z-10 flex-1 rounded-xl px-3 py-3 text-sm font-semibold transition-colors ${
+                mode === "login"
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground"
-                }`}
+              }`}
               onClick={() => setMode("login")}
             >
-              Sign In
+              Sign in
             </button>
             <button
-              className={`relative z-10 flex-1 flex items-center justify-center gap-2 px-3 py-3 text-sm font-semibold transition-all rounded-xl ${mode === "register"
+              className={`relative z-10 flex-1 rounded-xl px-3 py-3 text-sm font-semibold transition-colors ${
+                mode === "register"
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground"
-                }`}
+              }`}
               onClick={() => setMode("register")}
             >
-              Create Account
+              Create account
             </button>
-            {/* Sliding highlight */}
             <div
-              className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-background rounded-xl shadow-sm border border-border/20 transition-all duration-300 ease-out-expo ${mode === "login" ? "left-1.5" : "left-[calc(50%+1.5px)]"
-                }`}
+              className={`absolute bottom-1.5 top-1.5 w-[calc(50%-6px)] rounded-xl border border-border/50 bg-card shadow-[0_8px_22px_rgba(15,23,42,0.05)] transition-all duration-300 ease-out ${
+                mode === "login" ? "left-1.5" : "left-[calc(50%+1.5px)]"
+              }`}
             />
           </div>
 
@@ -116,18 +111,22 @@ export default function LoginPage() {
             <h2 className="text-3xl font-bold tracking-tight text-foreground">
               {mode === "login" ? "Welcome back" : "Create your account"}
             </h2>
-            <p className="text-sm text-muted-foreground font-medium">
-              {mode === "login" ? "Enter your credentials to continue" : "Setup your account to start organizing"}
+            <p className="text-sm font-medium leading-6 text-muted-foreground">
+              {mode === "login"
+                ? "Sign in to continue today's work."
+                : "Start organizing tasks, focus blocks, and deadlines."}
             </p>
           </div>
 
           <div className="space-y-5">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-1">Email Address</label>
-              <div className="relative group">
-                <Mail className="absolute left-3.5 top-3.5 w-[18px] h-[18px] text-muted-foreground/70 group-focus-within:text-primary transition-colors" />
+              <label className="ml-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Email address
+              </label>
+              <div className="group relative">
+                <Mail className="absolute left-3.5 top-3.5 h-[18px] w-[18px] text-muted-foreground/70 transition-colors group-focus-within:text-primary" />
                 <Input
-                  className="pl-11 h-12 bg-transparent border-input/80 hover:border-border focus:border-primary transition-all rounded-xl text-base shadow-sm"
+                  className="h-12 rounded-xl border-input/80 bg-transparent pl-11 text-base shadow-none transition-all hover:border-border focus:border-primary"
                   placeholder="name@example.com"
                   type="email"
                   value={email}
@@ -136,13 +135,15 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="space-y-2 flex flex-col">
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-1">Password</label>
-              <div className="relative group">
-                <Lock className="absolute left-3.5 top-3.5 w-[18px] h-[18px] text-muted-foreground/70 group-focus-within:text-primary transition-colors" />
+            <div className="flex flex-col space-y-2">
+              <label className="ml-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Password
+              </label>
+              <div className="group relative">
+                <Lock className="absolute left-3.5 top-3.5 h-[18px] w-[18px] text-muted-foreground/70 transition-colors group-focus-within:text-primary" />
                 <Input
-                  className="pl-11 h-12 bg-transparent border-input/80 hover:border-border focus:border-primary transition-all rounded-xl text-base shadow-sm"
-                  placeholder="••••••••"
+                  className="h-12 rounded-xl border-input/80 bg-transparent pl-11 text-base shadow-none transition-all hover:border-border focus:border-primary"
+                  placeholder="Enter your password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -152,23 +153,25 @@ export default function LoginPage() {
             </div>
 
             <Button
-              className="w-full h-12 text-base font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 rounded-xl mt-6 flex items-center justify-center gap-2 group"
+              className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl text-base font-semibold"
               disabled={loading || !email || !password}
               onClick={submit}
             >
               {loading ? (
-                <div className="h-5 w-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
               ) : mode === "login" ? (
-                <>Sign In <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>
+                <>
+                  Sign in <ArrowRight className="h-5 w-5" />
+                </>
               ) : (
-                <>Create Account <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>
+                <>
+                  Create account <ArrowRight className="h-5 w-5" />
+                </>
               )}
             </Button>
           </div>
-
         </div>
       </div>
     </main>
   );
 }
-
