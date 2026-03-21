@@ -82,7 +82,7 @@ function HomeContent() {
                 updated_at: optimisticUpdatedAt,
             });
             const updatedTask = await setTaskCompletion(supabase, taskId, nextIsDone);
-            upsertTask(updatedTask);
+            upsertTask(updatedTask, { suppressRealtimeEcho: true });
             toast.success(nextIsDone ? "Task completed." : "Task reopened.");
         } catch (error) {
             upsertTask(existingTask);

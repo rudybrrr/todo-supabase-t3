@@ -14,16 +14,22 @@ export function TaskList({
     tasks,
     lists,
     selectedTaskId,
+    selectedTaskIds,
+    selectionMode = false,
     onSelect,
     onToggle,
+    onSelectionToggle,
     showProject = false,
     emptyMessage = "No tasks here yet.",
 }: {
     tasks: TaskDatasetRecord[];
     lists: TodoList[];
     selectedTaskId?: string | null;
+    selectedTaskIds?: Set<string>;
+    selectionMode?: boolean;
     onSelect: (task: TaskDatasetRecord) => void;
     onToggle: (task: TaskDatasetRecord, nextIsDone: boolean) => void;
+    onSelectionToggle?: (task: TaskDatasetRecord) => void;
     showProject?: boolean;
     emptyMessage?: string;
 }) {
@@ -42,6 +48,7 @@ export function TaskList({
                     const project = lists.find((list) => list.id === task.list_id);
                     const dueLabel = formatTaskDueLabel(task);
                     const palette = getProjectColorClasses(project?.color_token);
+                    const bulkSelected = selectedTaskIds?.has(task.id) ?? false;
 
                     return (
                         <motion.div
@@ -54,9 +61,31 @@ export function TaskList({
                             className={cn(
                                 "group flex items-start gap-3 px-4 py-4 transition-[background-color]",
                                 index !== tasks.length - 1 ? "border-b border-border/50" : "",
-                                task.id === selectedTaskId ? "bg-accent/55" : "hover:bg-muted/70",
+                                selectionMode
+                                    ? bulkSelected
+                                        ? "bg-primary/10"
+                                        : "hover:bg-muted/70"
+                                    : task.id === selectedTaskId
+                                        ? "bg-accent/55"
+                                        : "hover:bg-muted/70",
                             )}
                         >
+                            {selectionMode ? (
+                                <button
+                                    type="button"
+                                    aria-label={bulkSelected ? `Deselect ${task.title}` : `Select ${task.title}`}
+                                    onClick={() => onSelectionToggle?.(task)}
+                                    className={cn(
+                                        "mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                                        bulkSelected
+                                            ? "border-primary bg-primary text-primary-foreground"
+                                            : "border-border/80 bg-background/70 text-transparent hover:border-primary/60",
+                                    )}
+                                >
+                                    <Check className="h-3 w-3" />
+                                </button>
+                            ) : null}
+
                             <button
                                 type="button"
                                 aria-label={task.is_done ? "Mark task incomplete" : "Mark task complete"}
@@ -73,9 +102,15 @@ export function TaskList({
 
                             <button
                                 type="button"
-                                onClick={() => onSelect(task)}
+                                onClick={() => {
+                                    if (selectionMode) {
+                                        onSelectionToggle?.(task);
+                                        return;
+                                    }
+                                    onSelect(task);
+                                }}
                                 className="min-w-0 flex-1 cursor-pointer rounded-xl px-1 py-0.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                                aria-label={`Open details for ${task.title}`}
+                                aria-label={selectionMode ? `Select ${task.title}` : `Open details for ${task.title}`}
                             >
                                 <div className="space-y-2">
                                     <div className="min-w-0">

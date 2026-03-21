@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import { useData } from "~/components/data-provider";
@@ -16,7 +17,7 @@ import {
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
-import { createProject, updateProject } from "~/lib/project-actions";
+import { createProject, deleteOrLeaveProject, updateProject } from "~/lib/project-actions";
 import {
     getProjectColorClasses,
     getProjectIcon,
@@ -25,16 +26,25 @@ import {
 } from "~/lib/project-appearance";
 import type { TodoList } from "~/lib/types";
 
+function formatProjectOptionLabel(token: string) {
+    return token
+        .split("-")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+}
+
 export function ProjectDialog({
     open,
     onOpenChange,
     initialProject,
     onSaved,
+    onRemoved,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     initialProject?: TodoList | null;
     onSaved?: (projectId: string) => void;
+    onRemoved?: () => void;
 }) {
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const { userId, refreshData } = useData();
@@ -42,6 +52,7 @@ export function ProjectDialog({
     const [colorToken, setColorToken] = useState<(typeof PROJECT_COLOR_TOKENS)[number]>("cobalt");
     const [iconToken, setIconToken] = useState<(typeof PROJECT_ICON_TOKENS)[number]>("book-open");
     const [saving, setSaving] = useState(false);
+    const [removing, setRemoving] = useState(false);
 
     useEffect(() => {
         if (!open) return;
@@ -79,8 +90,27 @@ export function ProjectDialog({
         }
     }
 
+    async function handleDeleteOrLeave() {
+        if (!userId || !initialProject || isInbox) return;
+
+        try {
+            setRemoving(true);
+            await deleteOrLeaveProject(supabase, initialProject.id, userId, initialProject.owner_id);
+            await refreshData();
+            toast.success(isOwner ? "Project deleted." : "You left the project.");
+            onOpenChange(false);
+            onRemoved?.();
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Unable to update the project.");
+        } finally {
+            setRemoving(false);
+        }
+    }
+
     const PreviewIcon = getProjectIcon(iconToken);
     const previewPalette = getProjectColorClasses(colorToken);
+    const isOwner = initialProject?.owner_id === userId;
+    const isInbox = initialProject?.name.trim().toLowerCase() === "inbox";
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,27 +177,62 @@ export function ProjectDialog({
                             {PROJECT_ICON_TOKENS.map((token) => {
                                 const Icon = getProjectIcon(token);
                                 const active = iconToken === token;
+                                const label = formatProjectOptionLabel(token);
                                 return (
                                     <button
                                         key={token}
                                         type="button"
                                         onClick={() => setIconToken(token)}
-                                        className={`rounded-2xl border px-3 py-4 text-xs font-semibold capitalize transition-colors ${active ? `${previewPalette.soft} ${previewPalette.border} ${previewPalette.text}` : "border-border/60 bg-background/70 text-muted-foreground hover:bg-secondary/60"}`}
+                                        title={label}
+                                        aria-label={label}
+                                        className={`aspect-square rounded-2xl border p-4 transition-colors ${active ? `${previewPalette.soft} ${previewPalette.border} ${previewPalette.text}` : "border-border/60 bg-background/70 text-muted-foreground hover:bg-secondary/60"}`}
                                     >
-                                        <Icon className="mx-auto mb-2 h-5 w-5" />
-                                        {token.replace("-", " ")}
+                                        <Icon className="mx-auto h-5 w-5" />
+                                        <span className="sr-only">{label}</span>
                                     </button>
                                 );
                             })}
                         </div>
                     </div>
+
+                    {initialProject ? (
+                        isInbox ? (
+                            <div className="surface-muted flex items-start gap-3 px-4 py-4 text-sm text-muted-foreground">
+                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                                <p>Inbox is permanent and cannot be deleted or left.</p>
+                            </div>
+                        ) : (
+                            <div className="rounded-[1.25rem] border border-destructive/25 bg-destructive/5 p-4">
+                                <div className="space-y-2">
+                                    <p className="eyebrow text-destructive">Danger zone</p>
+                                    <h3 className="text-base font-semibold tracking-[-0.02em] text-foreground">
+                                        {isOwner ? "Delete this project" : "Leave this project"}
+                                    </h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        {isOwner
+                                            ? "This removes the project for all members."
+                                            : "You will lose access to this shared project."}
+                                    </p>
+                                </div>
+                                <div className="mt-4">
+                                    <Button
+                                        variant="destructive"
+                                        onClick={() => void handleDeleteOrLeave()}
+                                        disabled={removing}
+                                    >
+                                        {removing ? "Working..." : isOwner ? "Delete project" : "Leave project"}
+                                    </Button>
+                                </div>
+                            </div>
+                        )
+                    ) : null}
                 </div>
 
                 <DialogFooter className="border-t border-border/50 p-6">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>
                         Cancel
                     </Button>
-                    <Button onClick={() => void handleSubmit()} disabled={saving || !name.trim()}>
+                    <Button onClick={() => void handleSubmit()} disabled={saving || removing || !name.trim()}>
                         {saving ? "Saving..." : initialProject ? "Save project" : "Create project"}
                     </Button>
                 </DialogFooter>

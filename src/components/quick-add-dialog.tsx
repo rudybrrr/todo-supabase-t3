@@ -85,7 +85,7 @@ export function QuickAddDialog({
                 await uploadTaskImages(supabase, userId, createdTask.id, listId, attachments);
             }
 
-            upsertTask(createdTask);
+            upsertTask(createdTask, { suppressRealtimeEcho: true });
             toast.success("Task added.");
             onOpenChange(false);
         } catch (error) {

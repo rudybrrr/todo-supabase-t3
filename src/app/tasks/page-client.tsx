@@ -1,16 +1,32 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Filter, Plus, Search } from "lucide-react";
+import { CheckSquare2, Filter, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { AppShell, useShellActions } from "~/components/app-shell";
-import { EmptyState, PageHeader, SectionCard } from "~/components/app-primitives";
+import { EmptyState, PageHeader } from "~/components/app-primitives";
 import { TaskDetailPanel } from "~/components/task-detail-panel";
+import { TaskBulkEditDialog, type TaskBulkEditChanges } from "~/components/task-bulk-edit-dialog";
 import { TaskList } from "~/components/task-list";
+import { TaskSelectionBar } from "~/components/task-selection-bar";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "~/components/ui/dialog";
+import {
+    Popover,
+    PopoverContent,
+    PopoverHeader,
+    PopoverTitle,
+    PopoverTrigger,
+} from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import {
     Sheet,
@@ -20,15 +36,15 @@ import {
     SheetTitle,
     SheetTrigger,
 } from "~/components/ui/sheet";
+import type { TaskDatasetRecord } from "~/hooks/use-task-dataset";
 import { useTaskDataset } from "~/hooks/use-task-dataset";
 import { mergeBufferedTasks, useTaskTransitionBuffer } from "~/hooks/use-task-transition-buffer";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
-import { createTask, setTaskCompletion } from "~/lib/task-actions";
+import { deleteTask, setTaskCompletion, updateTask } from "~/lib/task-actions";
 import {
     getSmartViewTasks,
     isTaskDueToday,
     isTaskOverdue,
-    taskMatchesSearch,
     type TaskPriority,
     type SmartView,
 } from "~/lib/task-views";
@@ -40,11 +56,14 @@ const VIEW_OPTIONS: Array<{ value: SmartView; label: string }> = [
     { value: "done", label: "Completed" },
 ];
 
-const PRIORITY_OPTIONS: Array<{ value: "all" | TaskPriority; label: string }> = [
+type PriorityFilterValue = "all" | "none" | TaskPriority;
+
+const PRIORITY_OPTIONS: Array<{ value: PriorityFilterValue; label: string }> = [
     { value: "all", label: "All Priority" },
     { value: "high", label: "High" },
     { value: "medium", label: "Medium" },
     { value: "low", label: "Low" },
+    { value: "none", label: "No Priority" },
 ];
 
 function getRouteView(value: string | null): SmartView {
@@ -52,6 +71,15 @@ function getRouteView(value: string | null): SmartView {
         return value;
     }
     return "today";
+}
+
+function dedupeTasks(tasks: TaskDatasetRecord[]) {
+    const seen = new Set<string>();
+    return tasks.filter((task) => {
+        if (seen.has(task.id)) return false;
+        seen.add(task.id);
+        return true;
+    });
 }
 
 export default function TasksClient() {
@@ -65,7 +93,7 @@ export default function TasksClient() {
 function TasksContent() {
     const searchParams = useSearchParams();
     const { openQuickAdd } = useShellActions();
-    const { applyTaskPatch, upsertTask, userId, tasks, lists, imagesByTodo, loading } = useTaskDataset();
+    const { applyTaskPatch, removeTask, upsertTask, userId, tasks, lists, imagesByTodo, loading } = useTaskDataset();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const { bufferedTasks, queueBufferedTask } = useTaskTransitionBuffer();
 
@@ -74,31 +102,44 @@ function TasksContent() {
 
     const [view, setView] = useState<SmartView>(routeView);
     const [projectFilter, setProjectFilter] = useState("all");
-    const [priorityFilter, setPriorityFilter] = useState<"all" | TaskPriority>("all");
-    const [search, setSearch] = useState("");
+    const [priorityFilter, setPriorityFilter] = useState<PriorityFilterValue>("all");
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(routeTaskId);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-    const [inlineTitle, setInlineTitle] = useState("");
-    const [addingInline, setAddingInline] = useState(false);
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+    const [bulkDeletingOpen, setBulkDeletingOpen] = useState(false);
+    const [bulkEditOpen, setBulkEditOpen] = useState(false);
+    const [bulkCompleting, setBulkCompleting] = useState(false);
+    const [bulkDeleting, setBulkDeleting] = useState(false);
+    const [bulkEditing, setBulkEditing] = useState(false);
 
     useEffect(() => {
         setView(routeView);
     }, [routeView]);
 
     useEffect(() => {
+        if (selectionMode) return;
         setSelectedTaskId(routeTaskId);
-    }, [routeTaskId]);
+    }, [routeTaskId, selectionMode]);
+
+    useEffect(() => {
+        if (!selectionMode) {
+            setSelectedTaskIds([]);
+            return;
+        }
+
+        setSelectedTaskId(null);
+    }, [selectionMode]);
 
     const projectScopedTasks = useMemo(() => {
-        return tasks.filter((task) => {
-            const matchesProject = projectFilter === "all" || task.list_id === projectFilter;
-            const matchesQuery = taskMatchesSearch(task, search);
-            return matchesProject && matchesQuery;
-        });
-    }, [projectFilter, search, tasks]);
+        return tasks.filter((task) => projectFilter === "all" || task.list_id === projectFilter);
+    }, [projectFilter, tasks]);
 
     const priorityScopedTasks = useMemo(() => {
         if (priorityFilter === "all") return projectScopedTasks;
+        if (priorityFilter === "none") {
+            return projectScopedTasks.filter((task) => !task.priority);
+        }
         return projectScopedTasks.filter((task) => task.priority === priorityFilter);
     }, [priorityFilter, projectScopedTasks]);
 
@@ -115,6 +156,11 @@ function TasksContent() {
             : (lists.find((list) => list.name === "Inbox")?.id ?? lists[0]?.id ?? null),
         [lists, projectFilter],
     );
+    const currentViewLabel = VIEW_OPTIONS.find((option) => option.value === view)?.label ?? "Tasks";
+    const activeFilterCount = Number(projectFilter !== "all") + Number(priorityFilter !== "all");
+    const activeProjectName = projectFilter === "all"
+        ? null
+        : (lists.find((list) => list.id === projectFilter)?.name ?? "Project");
 
     const overdueDisplayTasks = useMemo(
         () => mergeBufferedTasks(overdueTasks, bufferedTasks.filter((item) => item.bucket === "today-overdue")),
@@ -129,6 +175,26 @@ function TasksContent() {
         [bufferedTasks, view, visibleTasks],
     );
     const hasTodayDisplayTasks = overdueDisplayTasks.length > 0 || dueTodayDisplayTasks.length > 0;
+    const selectableTasks = useMemo(
+        () => view === "today"
+            ? dedupeTasks([...overdueDisplayTasks, ...dueTodayDisplayTasks])
+            : dedupeTasks(visibleDisplayTasks),
+        [dueTodayDisplayTasks, overdueDisplayTasks, view, visibleDisplayTasks],
+    );
+    const selectableTaskIds = useMemo(() => new Set(selectableTasks.map((task) => task.id)), [selectableTasks]);
+    const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
+    const selectedVisibleTasks = useMemo(
+        () => selectableTasks.filter((task) => selectedTaskIdSet.has(task.id)),
+        [selectableTasks, selectedTaskIdSet],
+    );
+    const allVisibleSelected = selectableTasks.length > 0 && selectedVisibleTasks.length === selectableTasks.length;
+
+    useEffect(() => {
+        setSelectedTaskIds((current) => {
+            const next = current.filter((taskId) => selectableTaskIds.has(taskId));
+            return next.length === current.length ? current : next;
+        });
+    }, [selectableTaskIds]);
 
     async function handleToggle(taskId: string, nextIsDone: boolean) {
         const existingTask = tasks.find((task) => task.id === taskId);
@@ -168,7 +234,7 @@ function TasksContent() {
                 updated_at: optimisticUpdatedAt,
             });
             const updatedTask = await setTaskCompletion(supabase, taskId, nextIsDone);
-            upsertTask(updatedTask);
+            upsertTask(updatedTask, { suppressRealtimeEcho: true });
             toast.success(nextIsDone ? "Task completed." : "Task reopened.");
         } catch (error) {
             upsertTask(existingTask);
@@ -176,24 +242,215 @@ function TasksContent() {
         }
     }
 
-    async function handleInlineAdd() {
-        if (!userId || !defaultListId || !inlineTitle.trim()) return;
+    function handleToggleTaskSelection(task: TaskDatasetRecord) {
+        setSelectedTaskIds((current) => current.includes(task.id)
+            ? current.filter((taskId) => taskId !== task.id)
+            : [...current, task.id]);
+    }
 
-        try {
-            setAddingInline(true);
-            const createdTask = await createTask(supabase, {
-                userId,
-                listId: defaultListId,
-                title: inlineTitle,
-            });
-            upsertTask(createdTask);
-            setInlineTitle("");
-            toast.success("Task added.");
-        } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Unable to add task.");
-        } finally {
-            setAddingInline(false);
+    function handleToggleSelectionMode() {
+        setSelectionMode((current) => !current);
+    }
+
+    function handleToggleSelectAll() {
+        if (allVisibleSelected) {
+            setSelectedTaskIds([]);
+            return;
         }
+
+        setSelectedTaskIds(selectableTasks.map((task) => task.id));
+    }
+
+    async function handleCompleteSelected() {
+        const tasksToComplete = selectedVisibleTasks.filter((task) => !task.is_done);
+        if (tasksToComplete.length === 0) return;
+
+        setBulkCompleting(true);
+        const optimisticUpdatedAt = new Date().toISOString();
+
+        for (const task of tasksToComplete) {
+            const optimisticTask = {
+                ...task,
+                is_done: true,
+                completed_at: optimisticUpdatedAt,
+                updated_at: optimisticUpdatedAt,
+            };
+
+            if (view === "today") {
+                const overdueIndex = overdueTasks.findIndex((item) => item.id === task.id);
+                const dueTodayIndex = dueTodayTasks.findIndex((item) => item.id === task.id);
+
+                if (overdueIndex !== -1) {
+                    queueBufferedTask(optimisticTask, "today-overdue", overdueIndex);
+                } else if (dueTodayIndex !== -1) {
+                    queueBufferedTask(optimisticTask, "today-due", dueTodayIndex);
+                }
+            } else if (view !== "done") {
+                const visibleIndex = visibleTasks.findIndex((item) => item.id === task.id);
+                if (visibleIndex !== -1) {
+                    queueBufferedTask(optimisticTask, `view:${view}`, visibleIndex);
+                }
+            }
+
+            applyTaskPatch(task.id, {
+                is_done: true,
+                completed_at: optimisticUpdatedAt,
+                updated_at: optimisticUpdatedAt,
+            });
+        }
+
+        const results = await Promise.allSettled(
+            tasksToComplete.map((task) => setTaskCompletion(supabase, task.id, true)),
+        );
+
+        let successCount = 0;
+        const failedTaskIds: string[] = [];
+
+        results.forEach((result, index) => {
+            const originalTask = tasksToComplete[index];
+            if (!originalTask) return;
+
+            if (result.status === "fulfilled") {
+                upsertTask(result.value, { suppressRealtimeEcho: true });
+                successCount += 1;
+                return;
+            }
+
+            upsertTask(originalTask);
+            failedTaskIds.push(originalTask.id);
+        });
+
+        if (successCount > 0) {
+            toast.success(`${successCount} task${successCount === 1 ? "" : "s"} completed.`);
+        }
+        if (failedTaskIds.length > 0) {
+            toast.error(`${failedTaskIds.length} task${failedTaskIds.length === 1 ? "" : "s"} failed to update.`);
+        }
+
+        setSelectedTaskIds(failedTaskIds);
+        if (failedTaskIds.length === 0) {
+            setSelectionMode(false);
+        }
+        setBulkCompleting(false);
+    }
+
+    async function handleDeleteSelected() {
+        if (selectedVisibleTasks.length === 0) return;
+
+        setBulkDeleting(true);
+
+        const results = await Promise.allSettled(
+            selectedVisibleTasks.map((task) => deleteTask(supabase, task.id)),
+        );
+
+        let successCount = 0;
+        const failedTaskIds: string[] = [];
+
+        results.forEach((result, index) => {
+            const task = selectedVisibleTasks[index];
+            if (!task) return;
+
+            if (result.status === "fulfilled") {
+                removeTask(task.id, { suppressRealtimeEcho: true });
+                successCount += 1;
+                if (selectedTaskId === task.id) {
+                    setSelectedTaskId(null);
+                }
+                return;
+            }
+
+            failedTaskIds.push(task.id);
+        });
+
+        if (successCount > 0) {
+            toast.success(`${successCount} task${successCount === 1 ? "" : "s"} deleted.`);
+        }
+        if (failedTaskIds.length > 0) {
+            toast.error(`${failedTaskIds.length} task${failedTaskIds.length === 1 ? "" : "s"} failed to delete.`);
+        }
+
+        setBulkDeletingOpen(false);
+        setSelectedTaskIds(failedTaskIds);
+        if (failedTaskIds.length === 0) {
+            setSelectionMode(false);
+        }
+        setBulkDeleting(false);
+    }
+
+    async function handleEditSelected(changes: TaskBulkEditChanges) {
+        if (selectedVisibleTasks.length === 0) return;
+
+        setBulkEditing(true);
+        const optimisticUpdatedAt = new Date().toISOString();
+        const tasksToUpdate = selectedVisibleTasks.map((task) => {
+            const nextDueDate = changes.dueDate.mode === "keep"
+                ? task.due_date ?? null
+                : changes.dueDate.mode === "clear"
+                    ? null
+                    : (changes.dueDate.value ?? null);
+            const nextPriority = changes.priority.mode === "keep"
+                ? task.priority ?? null
+                : changes.priority.mode === "clear"
+                    ? null
+                    : (changes.priority.value ?? null);
+            const nextListId = changes.list.mode === "keep"
+                ? task.list_id
+                : (changes.list.value ?? task.list_id);
+
+            return { originalTask: task, nextDueDate, nextPriority, nextListId };
+        });
+
+        for (const { originalTask, nextDueDate, nextPriority, nextListId } of tasksToUpdate) {
+            applyTaskPatch(originalTask.id, {
+                due_date: nextDueDate,
+                priority: nextPriority,
+                list_id: nextListId,
+                updated_at: optimisticUpdatedAt,
+            });
+        }
+
+        const results = await Promise.allSettled(
+            tasksToUpdate.map(({ originalTask, nextDueDate, nextPriority, nextListId }) => updateTask(supabase, {
+                id: originalTask.id,
+                title: originalTask.title,
+                description: originalTask.description ?? null,
+                dueDate: nextDueDate,
+                priority: nextPriority,
+                estimatedMinutes: originalTask.estimated_minutes ?? null,
+                listId: nextListId,
+            })),
+        );
+
+        let successCount = 0;
+        const failedTaskIds: string[] = [];
+
+        results.forEach((result, index) => {
+            const taskUpdate = tasksToUpdate[index];
+            if (!taskUpdate) return;
+
+            if (result.status === "fulfilled") {
+                upsertTask(result.value, { suppressRealtimeEcho: true });
+                successCount += 1;
+                return;
+            }
+
+            upsertTask(taskUpdate.originalTask);
+            failedTaskIds.push(taskUpdate.originalTask.id);
+        });
+
+        if (successCount > 0) {
+            toast.success(`${successCount} task${successCount === 1 ? "" : "s"} updated.`);
+        }
+        if (failedTaskIds.length > 0) {
+            toast.error(`${failedTaskIds.length} task${failedTaskIds.length === 1 ? "" : "s"} failed to update.`);
+        }
+
+        setBulkEditOpen(false);
+        setSelectedTaskIds(failedTaskIds);
+        if (failedTaskIds.length === 0) {
+            setSelectionMode(false);
+        }
+        setBulkEditing(false);
     }
 
     const taskContent = loading ? (
@@ -211,6 +468,9 @@ function TasksContent() {
                         lists={lists}
                         showProject
                         selectedTaskId={selectedTaskId}
+                        selectedTaskIds={selectedTaskIdSet}
+                        selectionMode={selectionMode}
+                        onSelectionToggle={handleToggleTaskSelection}
                         onSelect={(task) => setSelectedTaskId((current) => current === task.id ? null : task.id)}
                         onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
                         emptyMessage="Nothing overdue."
@@ -227,6 +487,9 @@ function TasksContent() {
                         lists={lists}
                         showProject
                         selectedTaskId={selectedTaskId}
+                        selectedTaskIds={selectedTaskIdSet}
+                        selectionMode={selectionMode}
+                        onSelectionToggle={handleToggleTaskSelection}
                         onSelect={(task) => setSelectedTaskId((current) => current === task.id ? null : task.id)}
                         onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
                         emptyMessage="Nothing else due today."
@@ -237,14 +500,14 @@ function TasksContent() {
             <EmptyState
                 title="No tasks"
                 description="Adjust filters or add a task."
-                action={<Button onClick={() => openQuickAdd()}>Add task</Button>}
+                action={<Button onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>Add task</Button>}
             />
         )
     ) : visibleDisplayTasks.length === 0 ? (
         <EmptyState
             title="No tasks"
             description="Adjust filters or add a task."
-            action={<Button onClick={() => openQuickAdd()}>Add task</Button>}
+            action={<Button onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>Add task</Button>}
         />
     ) : (
         <TaskList
@@ -252,204 +515,256 @@ function TasksContent() {
             lists={lists}
             showProject={projectFilter === "all"}
             selectedTaskId={selectedTaskId}
+            selectedTaskIds={selectedTaskIdSet}
+            selectionMode={selectionMode}
+            onSelectionToggle={handleToggleTaskSelection}
             onSelect={(task) => setSelectedTaskId((current) => current === task.id ? null : task.id)}
             onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
         />
     );
 
     return (
-        <div className="page-container">
-            <PageHeader
-                title="Tasks"
-                actions={
-                    <>
-                        <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
-                            <SheetTrigger asChild>
-                                <Button variant="outline" className="sm:hidden">
-                                    <Filter className="h-4 w-4" />
-                                    Filters
-                                </Button>
-                            </SheetTrigger>
-                            <SheetContent side="bottom" className="rounded-t-[2rem] border-x-0 border-t border-border/70">
-                                <SheetHeader>
-                                    <SheetTitle>Filters</SheetTitle>
-                                    <SheetDescription>Search and project filter.</SheetDescription>
-                                </SheetHeader>
-                                <div className="space-y-4 p-4">
-                                    <div className="space-y-2">
-                                        <p className="eyebrow">Search</p>
-                                        <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <p className="eyebrow">Project</p>
-                                        <Select value={projectFilter} onValueChange={setProjectFilter}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="All projects" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All projects</SelectItem>
-                                                {lists.map((list) => (
-                                                    <SelectItem key={list.id} value={list.id}>
-                                                        {list.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <p className="eyebrow">Priority</p>
-                                        <Select
-                                            value={priorityFilter}
-                                            onValueChange={(value) => setPriorityFilter(value as "all" | TaskPriority)}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="All Priority" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {PRIORITY_OPTIONS.map((option) => (
-                                                    <SelectItem key={option.value} value={option.value}>
-                                                        {option.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-                            </SheetContent>
-                        </Sheet>
-                        <Button onClick={() => openQuickAdd()}>
-                            Add task
-                        </Button>
-                    </>
-                }
-            />
+        <>
+            <div className="page-container">
+                <PageHeader
+                    title={currentViewLabel}
+                    actions={
+                        <>
+                            <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+                                <SheetTrigger asChild>
+                                    <Button variant="outline" size="icon-sm" className="relative sm:hidden">
+                                        <Filter className="h-4 w-4" />
+                                        {activeFilterCount > 0 ? (
+                                            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                                                {activeFilterCount}
+                                            </span>
+                                        ) : null}
+                                        <span className="sr-only">Open filters</span>
+                                    </Button>
+                                </SheetTrigger>
+                                <SheetContent side="bottom" className="rounded-t-[2rem] border-x-0 border-t border-border/70">
+                                    <SheetHeader>
+                                        <SheetTitle>Filters</SheetTitle>
+                                        <SheetDescription>Refine this task view by project or priority.</SheetDescription>
+                                    </SheetHeader>
+                                    <TasksFilterPanel
+                                        lists={lists}
+                                        projectFilter={projectFilter}
+                                        priorityFilter={priorityFilter}
+                                        onProjectFilterChange={setProjectFilter}
+                                        onPriorityFilterChange={setPriorityFilter}
+                                    />
+                                </SheetContent>
+                            </Sheet>
 
-            <SectionCard title="Workspace">
-                <div className="space-y-4">
-                    <div className="surface-muted flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center">
-                        <div className="flex min-w-0 flex-1 items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                                <Plus className="h-4 w-4" />
-                            </div>
-                            <Input
-                                value={inlineTitle}
-                                onChange={(event) => setInlineTitle(event.target.value)}
-                                placeholder={
-                                    projectFilter === "all"
-                                        ? "Add a task"
-                                        : `Add a task to ${lists.find((list) => list.id === projectFilter)?.name ?? "this project"}`
-                                }
-                                className="h-10 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                                onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                        event.preventDefault();
-                                        void handleInlineAdd();
-                                    }
-                                }}
-                            />
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm" onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>
-                                More details
-                            </Button>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button variant="outline" size="icon-sm" className="relative hidden sm:flex">
+                                        <Filter className="h-4 w-4" />
+                                        {activeFilterCount > 0 ? (
+                                            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                                                {activeFilterCount}
+                                            </span>
+                                        ) : null}
+                                        <span className="sr-only">Open filters</span>
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent align="end" className="w-80">
+                                    <PopoverHeader>
+                                        <PopoverTitle>Filters</PopoverTitle>
+                                    </PopoverHeader>
+                                    <TasksFilterPanel
+                                        lists={lists}
+                                        projectFilter={projectFilter}
+                                        priorityFilter={priorityFilter}
+                                        onProjectFilterChange={setProjectFilter}
+                                        onPriorityFilterChange={setPriorityFilter}
+                                    />
+                                </PopoverContent>
+                            </Popover>
+
                             <Button
-                                size="sm"
-                                onClick={() => void handleInlineAdd()}
-                                disabled={addingInline || !inlineTitle.trim() || !defaultListId}
+                                variant={selectionMode ? "tonal" : "outline"}
+                                size="icon-sm"
+                                onClick={handleToggleSelectionMode}
+                                aria-pressed={selectionMode}
+                                title={selectionMode ? "Exit selection mode" : "Select tasks"}
                             >
-                                {addingInline ? "Adding..." : "Add"}
+                                <CheckSquare2 className="h-4 w-4" />
+                                <span className="sr-only">{selectionMode ? "Exit selection mode" : "Select tasks"}</span>
                             </Button>
-                        </div>
-                    </div>
 
-                    <div className="space-y-3">
-                        <div className="flex flex-wrap gap-2 lg:hidden">
-                            {VIEW_OPTIONS.map((option) => (
-                                <button
-                                    key={option.value}
-                                    type="button"
-                                    onClick={() => setView(option.value)}
-                                    className={cnTaskView(view === option.value)}
-                                >
-                                    {option.label}
-                                </button>
-                            ))}
-                        </div>
+                            {!selectionMode ? (
+                                <Button onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>
+                                    Add task
+                                </Button>
+                            ) : null}
+                        </>
+                    }
+                />
 
-                        <div className="flex flex-col gap-3 sm:flex-row">
-                            <div className="relative flex-1">
-                                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                <Input
-                                    value={search}
-                                    onChange={(event) => setSearch(event.target.value)}
-                                    placeholder="Search tasks"
-                                    className="pl-10"
-                                />
-                            </div>
-                            <div className="hidden min-w-56 sm:block">
-                                <Select value={projectFilter} onValueChange={setProjectFilter}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="All projects" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All projects</SelectItem>
-                                        {lists.map((list) => (
-                                            <SelectItem key={list.id} value={list.id}>
-                                                {list.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
+                {selectionMode ? (
+                    <TaskSelectionBar
+                        selectedCount={selectedVisibleTasks.length}
+                        totalVisibleCount={selectableTasks.length}
+                        allVisibleSelected={allVisibleSelected}
+                        editing={bulkEditing}
+                        completing={bulkCompleting}
+                        deleting={bulkDeleting}
+                        onToggleSelectAll={handleToggleSelectAll}
+                        onClearSelection={() => setSelectedTaskIds([])}
+                        onEditSelected={() => setBulkEditOpen(true)}
+                        onCompleteSelected={() => void handleCompleteSelected()}
+                        onDeleteSelected={() => setBulkDeletingOpen(true)}
+                    />
+                ) : null}
 
-                        <div className="hidden flex-wrap gap-2 sm:flex">
-                            {PRIORITY_OPTIONS.map((option) => (
-                                <button
-                                    key={option.value}
-                                    type="button"
-                                    onClick={() => setPriorityFilter(option.value)}
-                                    className={cnTaskFilter(priorityFilter === option.value)}
-                                >
-                                    {option.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="grid gap-5 lg:flex lg:items-start lg:gap-0">
-                        <div className="min-w-0 flex-1">{taskContent}</div>
-                        {userId ? (
-                            <TaskDetailPanel
-                                task={selectedTask}
-                                lists={lists}
-                                images={selectedTask ? imagesByTodo[selectedTask.id] ?? [] : []}
-                                userId={userId}
-                                open={!!selectedTask}
-                                onOpenChange={(open) => {
-                                    if (!open) setSelectedTaskId(null);
-                                }}
-                                onClose={() => setSelectedTaskId(null)}
-                                onSaved={() => undefined}
-                                onDeleted={() => {
-                                    setSelectedTaskId(null);
-                                }}
-                            />
+                {activeFilterCount > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                        {activeProjectName ? (
+                            <button
+                                type="button"
+                                onClick={() => setProjectFilter("all")}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/90 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                            >
+                                {activeProjectName}
+                                <X className="h-3.5 w-3.5" />
+                            </button>
+                        ) : null}
+                        {priorityFilter !== "all" ? (
+                            <button
+                                type="button"
+                                onClick={() => setPriorityFilter("all")}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/90 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                            >
+                                {PRIORITY_OPTIONS.find((option) => option.value === priorityFilter)?.label}
+                                <X className="h-3.5 w-3.5" />
+                            </button>
                         ) : null}
                     </div>
+                ) : null}
+
+                <div className="grid gap-5 lg:flex lg:items-start lg:gap-0">
+                    <div className="min-w-0 flex-1">{taskContent}</div>
+                    {userId ? (
+                        <TaskDetailPanel
+                            task={selectedTask}
+                            lists={lists}
+                            images={selectedTask ? imagesByTodo[selectedTask.id] ?? [] : []}
+                            userId={userId}
+                            open={!selectionMode && !!selectedTask}
+                            onOpenChange={(open) => {
+                                if (!open) setSelectedTaskId(null);
+                            }}
+                            onClose={() => setSelectedTaskId(null)}
+                            onSaved={() => undefined}
+                            onDeleted={() => {
+                                setSelectedTaskId(null);
+                            }}
+                        />
+                    ) : null}
                 </div>
-            </SectionCard>
+            </div>
+
+            <Dialog open={bulkDeletingOpen} onOpenChange={setBulkDeletingOpen}>
+                <DialogContent className="max-w-md rounded-[1.5rem]">
+                    <DialogHeader>
+                        <DialogTitle>Delete selected tasks?</DialogTitle>
+                        <DialogDescription>
+                            Delete {selectedVisibleTasks.length} selected task{selectedVisibleTasks.length === 1 ? "" : "s"}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setBulkDeletingOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={() => void handleDeleteSelected()} disabled={bulkDeleting}>
+                            {bulkDeleting ? "Deleting..." : "Delete"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <TaskBulkEditDialog
+                open={bulkEditOpen}
+                onOpenChange={setBulkEditOpen}
+                selectedCount={selectedVisibleTasks.length}
+                lists={lists}
+                submitting={bulkEditing}
+                onSubmit={(changes) => void handleEditSelected(changes)}
+            />
+        </>
+    );
+}
+
+function TasksFilterPanel({
+    lists,
+    projectFilter,
+    priorityFilter,
+    onProjectFilterChange,
+    onPriorityFilterChange,
+}: {
+    lists: { id: string; name: string }[];
+    projectFilter: string;
+    priorityFilter: PriorityFilterValue;
+    onProjectFilterChange: (value: string) => void;
+    onPriorityFilterChange: (value: PriorityFilterValue) => void;
+}) {
+    const hasActiveFilters = projectFilter !== "all" || priorityFilter !== "all";
+
+    return (
+        <div className="space-y-4 p-1 pt-4">
+            <div className="space-y-2">
+                <p className="eyebrow">Project</p>
+                <Select value={projectFilter} onValueChange={onProjectFilterChange}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="All projects" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All projects</SelectItem>
+                        {lists.map((list) => (
+                            <SelectItem key={list.id} value={list.id}>
+                                {list.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+
+            <div className="space-y-2">
+                <p className="eyebrow">Priority</p>
+                <div className="flex flex-wrap gap-2">
+                    {PRIORITY_OPTIONS.map((option) => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => onPriorityFilterChange(option.value)}
+                            className={cnFilterChip(priorityFilter === option.value)}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {hasActiveFilters ? (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-center"
+                    onClick={() => {
+                        onProjectFilterChange("all");
+                        onPriorityFilterChange("all");
+                    }}
+                >
+                    Clear filters
+                </Button>
+            ) : null}
         </div>
     );
 }
 
-function cnTaskView(active: boolean) {
-    return active
-        ? "rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
-        : "rounded-full bg-secondary px-4 py-2 text-sm font-semibold text-muted-foreground";
-}
-
-function cnTaskFilter(active: boolean) {
+function cnFilterChip(active: boolean) {
     return active
         ? "rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary"
         : "rounded-full border border-border/70 bg-background/70 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:border-border hover:text-foreground";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarRange, Check, ChevronRight, Paperclip, Play, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -20,7 +20,7 @@ import { DatePickerField } from "~/components/ui/date-picker-field";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
-import { Sheet, SheetContent } from "~/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "~/components/ui/sheet";
 import { Textarea } from "~/components/ui/textarea";
 import { useTaskDataset } from "~/hooks/use-task-dataset";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
@@ -62,18 +62,28 @@ function TaskDetailForm({
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [showNotes, setShowNotes] = useState(false);
     const [showAttachments, setShowAttachments] = useState(false);
+    const initializedTaskIdRef = useRef<string | null>(null);
+
+    const syncFormState = useCallback((
+        nextTask: Pick<TaskDatasetRecord, "title" | "description" | "priority" | "due_date" | "estimated_minutes" | "list_id" | "is_done">,
+    ) => {
+        setTitle(nextTask.title);
+        setDescription(nextTask.description ?? "");
+        setPriority(nextTask.priority ?? "");
+        setDueDate(getDateInputValue(nextTask.due_date));
+        setEstimatedMinutes(nextTask.estimated_minutes ? String(nextTask.estimated_minutes) : "");
+        setListId(nextTask.list_id);
+        setIsDone(nextTask.is_done);
+    }, []);
 
     useEffect(() => {
-        setTitle(task.title);
-        setDescription(task.description ?? "");
-        setPriority(task.priority ?? "");
-        setDueDate(getDateInputValue(task.due_date));
-        setEstimatedMinutes(task.estimated_minutes ? String(task.estimated_minutes) : "");
-        setListId(task.list_id);
-        setIsDone(task.is_done);
+        if (initializedTaskIdRef.current === task.id) return;
+
+        initializedTaskIdRef.current = task.id;
+        syncFormState(task);
         setShowNotes(false);
         setShowAttachments(false);
-    }, [task]);
+    }, [syncFormState, task]);
 
     const isDirty =
         title !== task.title
@@ -84,21 +94,39 @@ function TaskDetailForm({
         || listId !== task.list_id;
 
     async function handleSave() {
+        const normalizedTitle = title.trim();
+        const normalizedDescription = description.trim() ? description.trim() : null;
+        const normalizedDueDate = dueDate || null;
+        const normalizedPriority = priority || null;
+        const normalizedEstimatedMinutes = estimatedMinutes ? Number.parseInt(estimatedMinutes, 10) : null;
+        const optimisticUpdatedAt = new Date().toISOString();
+
         try {
             setSaving(true);
+            applyTaskPatch(task.id, {
+                title: normalizedTitle,
+                description: normalizedDescription,
+                due_date: normalizedDueDate,
+                priority: normalizedPriority,
+                estimated_minutes: normalizedEstimatedMinutes,
+                list_id: listId,
+                updated_at: optimisticUpdatedAt,
+            });
             const updatedTask = await updateTask(supabase, {
                 id: task.id,
-                title,
-                description,
-                dueDate: dueDate || null,
-                priority: priority || null,
-                estimatedMinutes: estimatedMinutes ? Number.parseInt(estimatedMinutes, 10) : null,
+                title: normalizedTitle,
+                description: normalizedDescription,
+                dueDate: normalizedDueDate,
+                priority: normalizedPriority,
+                estimatedMinutes: normalizedEstimatedMinutes,
                 listId,
             });
-            upsertTask(updatedTask);
+            upsertTask(updatedTask, { suppressRealtimeEcho: true });
+            syncFormState(updatedTask);
             toast.success("Task updated.");
             onSaved();
         } catch (error) {
+            upsertTask(task);
             toast.error(error instanceof Error ? error.message : "Unable to update task.");
         } finally {
             setSaving(false);
@@ -117,7 +145,7 @@ function TaskDetailForm({
                 updated_at: optimisticUpdatedAt,
             });
             const updatedTask = await setTaskCompletion(supabase, task.id, nextIsDone);
-            upsertTask(updatedTask);
+            upsertTask(updatedTask, { suppressRealtimeEcho: true });
             toast.success(nextIsDone ? "Task completed." : "Task reopened.");
             onSaved();
         } catch (error) {
@@ -130,7 +158,7 @@ function TaskDetailForm({
     async function handleDelete() {
         try {
             await deleteTask(supabase, task.id);
-            removeTask(task.id);
+            removeTask(task.id, { suppressRealtimeEcho: true });
             toast.success("Task deleted.");
             setDeleteOpen(false);
             onDeleted();
@@ -436,6 +464,10 @@ export function TaskDetailPanel({
                         className,
                     )}
                 >
+                    <DialogHeader className="sr-only">
+                        <DialogTitle>Task details</DialogTitle>
+                        <DialogDescription>Review and edit the selected task.</DialogDescription>
+                    </DialogHeader>
                     {task ? (
                         <div className="task-detail-scroll max-h-[min(82vh,760px)] overflow-y-auto p-5 sm:p-6">
                             <TaskDetailForm
@@ -458,6 +490,10 @@ export function TaskDetailPanel({
                     showCloseButton={false}
                     className="w-full max-w-none border-0 bg-background p-0 lg:hidden"
                 >
+                    <SheetHeader className="sr-only">
+                        <SheetTitle>Task details</SheetTitle>
+                        <SheetDescription>Review and edit the selected task.</SheetDescription>
+                    </SheetHeader>
                     {task ? (
                         <div className="task-detail-scroll h-[100dvh] overflow-y-auto px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))]">
                             <TaskDetailForm

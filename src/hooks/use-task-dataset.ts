@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { addDays, startOfDay } from "date-fns";
 
@@ -44,9 +44,9 @@ interface TaskDatasetValue {
     todayFocusMinutes: number;
     loading: boolean;
     applyTaskPatch: (taskId: string, patch: Partial<TaskDatasetRecord>) => void;
-    removeTask: (taskId: string) => void;
+    removeTask: (taskId: string, options?: { suppressRealtimeEcho?: boolean }) => void;
     saveProjectOrder: (nextProjectIds: string[]) => void;
-    upsertTask: (task: TodoRow) => void;
+    upsertTask: (task: TodoRow, options?: { suppressRealtimeEcho?: boolean }) => void;
     refresh: (options?: { silent?: boolean }) => Promise<void>;
 }
 
@@ -67,6 +67,22 @@ function sortTasksByInsertedAt(tasks: TaskDatasetRecord[]) {
     return [...tasks].sort((a, b) => (a.inserted_at ?? "").localeCompare(b.inserted_at ?? ""));
 }
 
+function areTaskRecordsEqual(a: TaskDatasetRecord, b: TaskDatasetRecord) {
+    return a.id === b.id
+        && a.user_id === b.user_id
+        && a.list_id === b.list_id
+        && a.title === b.title
+        && a.is_done === b.is_done
+        && a.inserted_at === b.inserted_at
+        && (a.description ?? null) === (b.description ?? null)
+        && (a.due_date ?? null) === (b.due_date ?? null)
+        && (a.priority ?? null) === (b.priority ?? null)
+        && (a.estimated_minutes ?? null) === (b.estimated_minutes ?? null)
+        && (a.completed_at ?? null) === (b.completed_at ?? null)
+        && (a.updated_at ?? null) === (b.updated_at ?? null)
+        && a.has_planned_block === b.has_planned_block;
+}
+
 function upsertNormalizedTaskRecord(
     currentTasks: TaskDatasetRecord[],
     task: TodoRow,
@@ -82,6 +98,10 @@ function upsertNormalizedTaskRecord(
 
     if (!existingTask) {
         return sortTasksByInsertedAt([...currentTasks, nextTask]);
+    }
+
+    if (areTaskRecordsEqual(existingTask, nextTask)) {
+        return currentTasks;
     }
 
     return sortTasksByInsertedAt(currentTasks.map((item) => item.id === task.id ? nextTask : item));
@@ -168,8 +188,27 @@ function useTaskDatasetState(): TaskDatasetValue {
     const [todayFocusMinutes, setTodayFocusMinutes] = useState(0);
     const [loading, setLoading] = useState(true);
     const [projectOrder, setProjectOrder] = useState<string[]>([]);
+    const pendingRealtimeEchoCountsRef = useRef<Map<string, number>>(new Map());
 
     const listIds = useMemo(() => lists.map((list) => list.id), [lists]);
+
+    const markPendingRealtimeEcho = useCallback((taskId: string) => {
+        const currentCount = pendingRealtimeEchoCountsRef.current.get(taskId) ?? 0;
+        pendingRealtimeEchoCountsRef.current.set(taskId, currentCount + 1);
+    }, []);
+
+    const shouldSuppressRealtimeEcho = useCallback((taskId: string) => {
+        const currentCount = pendingRealtimeEchoCountsRef.current.get(taskId) ?? 0;
+        if (currentCount <= 0) return false;
+
+        if (currentCount === 1) {
+            pendingRealtimeEchoCountsRef.current.delete(taskId);
+        } else {
+            pendingRealtimeEchoCountsRef.current.set(taskId, currentCount - 1);
+        }
+
+        return true;
+    }, []);
 
     const loadDataset = useCallback(async (options?: { silent?: boolean }) => {
         const silent = options?.silent ?? false;
@@ -294,8 +333,12 @@ function useTaskDatasetState(): TaskDatasetValue {
                 if (payload.eventType === "DELETE") {
                     const deletedId = typeof payload.old.id === "string" ? payload.old.id : null;
                     if (!deletedId) return;
+                    if (shouldSuppressRealtimeEcho(deletedId)) return;
 
-                    setTasks((currentTasks) => currentTasks.filter((task) => task.id !== deletedId));
+                    setTasks((currentTasks) => {
+                        if (!currentTasks.some((task) => task.id === deletedId)) return currentTasks;
+                        return currentTasks.filter((task) => task.id !== deletedId);
+                    });
                     setImagesByTodo((currentImages) => {
                         if (!(deletedId in currentImages)) return currentImages;
 
@@ -307,6 +350,7 @@ function useTaskDatasetState(): TaskDatasetValue {
                 }
 
                 const nextTask = normalizeTodoRow(payload.new as TodoRow);
+                if (shouldSuppressRealtimeEcho(nextTask.id)) return;
                 const taskListId = nextTask.list_id;
                 if (typeof taskListId !== "string") return;
 
@@ -326,7 +370,7 @@ function useTaskDatasetState(): TaskDatasetValue {
         return () => {
             void supabase.removeChannel(channel);
         };
-    }, [listIds, loadDataset, plannedBlocks, supabase, userId]);
+    }, [listIds, loadDataset, plannedBlocks, shouldSuppressRealtimeEcho, supabase, userId]);
 
     const projectSummaries = useMemo<ProjectSummary[]>(() => {
         return lists.map((list) => {
@@ -384,22 +428,46 @@ function useTaskDatasetState(): TaskDatasetValue {
     }, [userId]);
 
     const applyTaskPatch = useCallback((taskId: string, patch: Partial<TaskDatasetRecord>) => {
-        setTasks((currentTasks) => sortTasksByInsertedAt(currentTasks.map((task) => {
-            if (task.id !== taskId) return task;
-            return {
-                ...task,
-                ...patch,
-            };
-        })));
+        setTasks((currentTasks) => {
+            let changed = false;
+            const nextTasks = currentTasks.map((task) => {
+                if (task.id !== taskId) return task;
+
+                const nextTask = {
+                    ...task,
+                    ...patch,
+                };
+
+                if (areTaskRecordsEqual(task, nextTask)) {
+                    return task;
+                }
+
+                changed = true;
+                return nextTask;
+            });
+
+            return changed ? sortTasksByInsertedAt(nextTasks) : currentTasks;
+        });
     }, []);
 
-    const upsertTask = useCallback((task: TodoRow) => {
+    const upsertTask = useCallback((task: TodoRow, options?: { suppressRealtimeEcho?: boolean }) => {
+        if (options?.suppressRealtimeEcho) {
+            markPendingRealtimeEcho(task.id);
+        }
+
         const normalizedTask = normalizeTodoRow(task);
         setTasks((currentTasks) => upsertNormalizedTaskRecord(currentTasks, normalizedTask, plannedBlocks));
-    }, [plannedBlocks]);
+    }, [markPendingRealtimeEcho, plannedBlocks]);
 
-    const removeTask = useCallback((taskId: string) => {
-        setTasks((currentTasks) => currentTasks.filter((task) => task.id !== taskId));
+    const removeTask = useCallback((taskId: string, options?: { suppressRealtimeEcho?: boolean }) => {
+        if (options?.suppressRealtimeEcho) {
+            markPendingRealtimeEcho(taskId);
+        }
+
+        setTasks((currentTasks) => {
+            if (!currentTasks.some((task) => task.id === taskId)) return currentTasks;
+            return currentTasks.filter((task) => task.id !== taskId);
+        });
         setImagesByTodo((currentImages) => {
             if (!(taskId in currentImages)) return currentImages;
 
@@ -407,7 +475,7 @@ function useTaskDatasetState(): TaskDatasetValue {
             delete nextImages[taskId];
             return nextImages;
         });
-    }, []);
+    }, [markPendingRealtimeEcho]);
 
     const smartViewCounts = useMemo<SmartViewCounts>(() => ({
         today: getSmartViewTasks(tasks, "today").length,
