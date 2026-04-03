@@ -54,7 +54,11 @@ todo.md
 # system architecture
 system_architecture.md
 
+# other docs
+linkedin_post.md
+
 # supabase
 /supabase/
+
 # Sentry Config File
 .env.sentry-build-plugin

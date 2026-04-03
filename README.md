@@ -69,6 +69,7 @@ Stride is an execution-first academic planner built on Next.js and Supabase. The
 - React + TypeScript
 - Tailwind CSS + shadcn/ui + Framer Motion
 - Supabase Postgres + Auth + Realtime + Storage + RLS
+- Sentry + Vercel Speed Insights + PostHog
 
 ## Local Setup
 
@@ -80,12 +81,16 @@ npm install
 
 ### 2. Configure environment variables
 
-Create `.env.local`:
+Create `.env.local` or `.env`:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_KEY"
+NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN="phc_your_project_token"
+NEXT_PUBLIC_POSTHOG_HOST="https://us.i.posthog.com"
 ```
+
+If the PostHog variables are omitted in a local environment, analytics initialization is skipped.
 
 ### 3. Set up Supabase
 
@@ -452,6 +457,8 @@ Run these in order after the core schema exists:
 2. `supabase/migrations/20260307_settings_profile_avatar_security.sql`
 3. `supabase/migrations/20260319_planning_hub_v1.sql`
 4. `supabase/migrations/20260320_execution_first_redesign_metadata.sql`
+5. `supabase/migrations/20260322_attachment_metadata.sql`
+6. `supabase/migrations/20260403_baseline_indexes.sql`
 
 If you use the Supabase CLI:
 
@@ -515,7 +522,7 @@ Recommended storage policies:
   - `insert` / `delete`: authenticated users can only manage objects in their own top-level folder
 
 The checked-in `20260307_settings_profile_avatar_security.sql` migration already creates the `profile-avatars` bucket policies.
-Apply `20260322_attachment_metadata.sql` as well so task attachments persist original filenames, MIME types, and file sizes.
+The checked-in migration list above already includes `20260322_attachment_metadata.sql`, which persists original filenames, MIME types, and file sizes for task attachments.
 
 ## Smart View Rules
 
@@ -533,6 +540,15 @@ Apply `20260322_attachment_metadata.sql` as well so task attachments persist ori
 - the `todo-images` bucket still holds all task attachments, even though the legacy name mentions images
 - `profiles.daily_focus_goal_minutes` powers Today and Calendar goal progress
 - `planned_focus_blocks.todo_id` is optional, so a planned block can exist without a linked task
+- `20260403_baseline_indexes.sql` adds baseline indexes for common foreign-key and high-frequency query paths across `todo_lists`, `todo_list_members`, `todos`, `focus_sessions`, `todo_images`, and `planned_focus_blocks`
+
+## Observability And Ops
+
+- Sentry is integrated through Next.js instrumentation, server and edge config, and the global app error boundary for runtime error tracking. The setup was verified successfully.
+- Vercel Speed Insights is mounted in the root app layout for frontend performance and page-load monitoring.
+- PostHog is initialized client-side for product analytics. Capture was verified locally and in production, but privacy-heavy browsers or blockers may suppress events.
+- Supabase Query Performance was reviewed, but query logging and slow-query verification are still deferred and should not be treated as a completed capability yet.
+- Supavisor and connection pooling are intentionally not used in the current architecture because the app uses `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, not a direct Postgres connection string. Revisit this only if direct server-side database access is introduced later through `DATABASE_URL`, Prisma, Drizzle, `pg`, or similar tooling.
 
 ## Verification
 
