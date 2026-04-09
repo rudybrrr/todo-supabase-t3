@@ -529,7 +529,7 @@ function CalendarContent() {
                 <div className="flex flex-wrap items-center gap-2">
                     <div className="min-w-44">
                         <Select value={selectedListId} onValueChange={setSelectedListId}>
-                            <SelectTrigger className="h-9 rounded-lg bg-card/96 text-sm">
+                            <SelectTrigger className="h-10 rounded-lg bg-card/96 text-sm">
                                 <SelectValue placeholder="All projects" />
                             </SelectTrigger>
                             <SelectContent>
@@ -584,7 +584,7 @@ function CalendarContent() {
 
     function renderLoadingState() {
         return (
-            <div className="rounded-[1.1rem] border border-border/70 bg-card/96 p-5">
+            <div className="rounded-xl border border-border/70 bg-card/96 p-4">
                 <div className="space-y-3">
                     <div className="h-9 w-60 animate-pulse rounded-lg bg-muted/70" />
                     <div className="h-[31rem] animate-pulse rounded-[1rem] bg-muted/55" />
@@ -595,7 +595,7 @@ function CalendarContent() {
 
     function renderWeekGrid() {
         return (
-            <div className="overflow-hidden rounded-[1.1rem] border border-border/70 bg-card/98">
+            <div className="overflow-hidden rounded-xl border border-border/70 bg-card/98">
                 <div className="overflow-x-auto">
                     <div className="min-w-[980px]">
                         <div className="grid grid-cols-[76px_repeat(7,minmax(140px,1fr))] border-b border-border/70">
@@ -790,7 +790,7 @@ function CalendarContent() {
                 <div>{renderWeekGrid()}</div>
 
                 <div className="space-y-3 xl:sticky xl:top-24">
-                    <div className="rounded-[1rem] border border-border/70 bg-card/96 p-4">
+                    <div className="rounded-xl border border-border/70 bg-card/96 p-4">
                         <div className="mb-3 flex items-center justify-between gap-3">
                             <div>
                                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -838,15 +838,13 @@ function CalendarContent() {
                         </div>
                     </div>
 
-                    <div className="rounded-[1rem] border border-border/70 bg-card/96 p-4">
+                    <div className="rounded-xl border border-border/70 bg-card/96 p-4">
                         <div className="mb-3 flex items-center justify-between gap-3">
                             <div>
                                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                     Due soon
                                 </p>
-                                <h3 className="mt-1 text-sm font-semibold tracking-[-0.02em] text-foreground">
-                                    Upcoming coursework
-                                </h3>
+                                <h3 className="mt-1 text-sm font-semibold tracking-[-0.02em] text-foreground">Upcoming</h3>
                             </div>
                             <span className="text-[11px] text-muted-foreground">{selectedScopeLabel}</span>
                         </div>
@@ -880,7 +878,7 @@ function CalendarContent() {
                         </div>
                     </div>
 
-                    <div className="rounded-[1rem] border border-border/70 bg-card/96 p-4">
+                    <div className="rounded-xl border border-border/70 bg-card/96 p-4">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                             Focus goal
                         </p>
@@ -914,7 +912,7 @@ function CalendarContent() {
     function renderMonthView() {
         return (
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_19rem] xl:items-start">
-                <div className="overflow-hidden rounded-[1.1rem] border border-border/70 bg-card/98">
+                <div className="overflow-hidden rounded-xl border border-border/70 bg-card/98">
                     <Calendar
                         mode="single"
                         selected={selectedDate}
@@ -952,7 +950,7 @@ function CalendarContent() {
                     />
                 </div>
 
-                <div className="rounded-[1rem] border border-border/70 bg-card/96 p-4">
+                <div className="rounded-xl border border-border/70 bg-card/96 p-4">
                     <div className="space-y-4">
                         <div>
                             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -962,8 +960,8 @@ function CalendarContent() {
                                 {format(selectedDate, "EEEE, MMM d")}
                             </h3>
                             <p className="mt-1.5 text-sm text-muted-foreground">
-                                {selectedDayTasks.length} due task{selectedDayTasks.length === 1 ? "" : "s"} and{" "}
-                                {selectedDayBlocks.length} planned block{selectedDayBlocks.length === 1 ? "" : "s"}.
+                                {selectedDayTasks.length} task{selectedDayTasks.length === 1 ? "" : "s"} /{" "}
+                                {selectedDayBlocks.length} block{selectedDayBlocks.length === 1 ? "" : "s"}.
                             </p>
                         </div>
 
@@ -1058,15 +1056,15 @@ function CalendarContent() {
     function renderBlockDialog() {
         return (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="max-w-xl rounded-[1.75rem] border-border/60 p-0">
-                    <DialogHeader className="border-b border-border/60 px-6 py-5">
+                <DialogContent className="max-w-xl rounded-[1.5rem] border-border/60 p-0">
+                    <DialogHeader className="border-b border-border/60 px-5 py-4">
                         <DialogTitle>{form.id ? "Edit focus block" : "Plan focus block"}</DialogTitle>
                         <DialogDescription>
                             Add time for a task or project.
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-5 px-6 py-6">
+                    <div className="space-y-4 px-5 py-5">
                         <div className="space-y-2">
                             <Label htmlFor="blockTitle" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                 Title
@@ -1158,7 +1156,7 @@ function CalendarContent() {
                         </div>
                     </div>
 
-                    <DialogFooter className="justify-between border-t border-border/60 px-6 py-5 sm:justify-between">
+                    <DialogFooter className="justify-between border-t border-border/60 px-5 py-4 sm:justify-between">
                         {form.id ? (
                             <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void handleDeleteBlock()}>
                                 Delete
@@ -1184,7 +1182,7 @@ function CalendarContent() {
                 <PageHeader
                     eyebrow="Calendar"
                     title="Upcoming"
-                    description="Create a project before planning time on the calendar."
+                    description="Create a project before planning."
                 />
                 <EmptyState
                     title="Create a project before planning"
@@ -1198,19 +1196,11 @@ function CalendarContent() {
     return (
         <>
             <div className="page-container gap-4">
-                <header className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="space-y-1">
-                        <p className="eyebrow">Calendar</p>
-                        <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
-                            <h1 className="text-[2rem] font-semibold tracking-[-0.05em] text-foreground sm:text-[2.15rem]">
-                                Upcoming
-                            </h1>
-                            <p className="pb-1 text-sm text-muted-foreground">
-                                {plannerRangeLabel} · {filteredTasks.length} open tasks · {filteredBlocks.length} planned blocks
-                            </p>
-                        </div>
-                    </div>
-                </header>
+                <PageHeader
+                    eyebrow="Calendar"
+                    title="Upcoming"
+                    description={`${plannerRangeLabel} / ${filteredTasks.length} open tasks / ${filteredBlocks.length} planned blocks`}
+                />
 
                 {renderToolbar()}
                 {loading ? renderLoadingState() : view === "week" ? renderWeekView() : renderMonthView()}

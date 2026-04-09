@@ -35,7 +35,7 @@ export function TaskList({
 }) {
     if (tasks.length === 0) {
         return (
-            <div className="surface-muted px-4 py-8 text-center text-sm text-muted-foreground">
+            <div className="surface-muted px-4 py-7 text-center text-sm text-muted-foreground">
                 {emptyMessage}
             </div>
         );
@@ -59,7 +59,7 @@ export function TaskList({
                             exit={{ opacity: 0, y: -6, scale: 0.98 }}
                             transition={{ duration: 0.18, ease: "easeOut" }}
                             className={cn(
-                                "group flex items-start gap-3 px-4 py-4 transition-colors sm:px-5",
+                                "group flex items-start gap-3 px-3.5 py-3.5 transition-colors sm:px-4",
                                 index !== tasks.length - 1 ? "border-b border-border/70" : "",
                                 selectionMode
                                     ? bulkSelected
@@ -75,7 +75,7 @@ export function TaskList({
                                 aria-label={task.is_done ? "Mark task incomplete" : "Mark task complete"}
                                 onClick={() => onToggle(task, !task.is_done)}
                                 className={cn(
-                                    "mt-1 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors",
+                                    "mt-0.5 flex h-5.5 w-5.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border transition-colors",
                                     task.is_done
                                         ? "border-primary bg-primary text-primary-foreground"
                                         : "border-border bg-card text-transparent hover:border-primary/60",
@@ -100,22 +100,22 @@ export function TaskList({
                                     <div className="min-w-0">
                                         <p
                                             className={cn(
-                                                "truncate text-[15px] font-medium tracking-[-0.01em] text-foreground transition-opacity",
+                                                "truncate text-[14px] font-medium tracking-[-0.01em] text-foreground transition-opacity sm:text-[14.5px]",
                                                 task.is_done ? "text-muted-foreground line-through" : "",
                                             )}
                                         >
                                             {task.title}
                                         </p>
                                         {task.description ? (
-                                            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                                            <p className="mt-0.5 line-clamp-1 text-[13px] text-muted-foreground">
                                                 {task.description}
                                             </p>
                                         ) : null}
                                     </div>
 
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
                                         {showProject && project ? (
-                                            <span className="inline-flex items-center gap-2">
+                                            <span className="inline-flex items-center gap-1.5">
                                                 <span className={cn("h-1.5 w-1.5 rounded-sm", palette.accent)} />
                                                 {project.name}
                                             </span>
@@ -136,7 +136,7 @@ export function TaskList({
                                         {dueLabel ? (
                                             <span
                                                 className={cn(
-                                                    "inline-flex items-center gap-1.5",
+                                                    "inline-flex items-center gap-1",
                                                     isTaskOverdue(task) ? "text-destructive" : "",
                                                 )}
                                             >

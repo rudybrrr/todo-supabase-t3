@@ -152,18 +152,18 @@ export default function CommunityClient() {
                     title="Community"
                 />
 
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                     <SectionCard title="Weekly leaderboard">
                         {loading ? (
-                            <div className="surface-muted px-4 py-8 text-sm text-muted-foreground">Loading leaderboard...</div>
+                            <div className="surface-muted px-3 py-6 text-sm text-muted-foreground">Loading leaderboard...</div>
                         ) : leaderboard.length > 0 ? (
-                            <div className="overflow-hidden rounded-[1.25rem] border border-border/60 bg-background/60">
+                            <div className="overflow-hidden rounded-xl border border-border/60 bg-background/60">
                                 {leaderboard.map((entry, index) => (
-                                    <div key={entry.user_id} className={`flex items-center gap-4 px-4 py-4 ${index !== leaderboard.length - 1 ? "border-b border-border/50" : ""}`}>
-                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary/70 text-sm font-semibold text-foreground">
+                                    <div key={entry.user_id} className={`flex items-center gap-3 px-3.5 py-3 ${index !== leaderboard.length - 1 ? "border-b border-border/50" : ""}`}>
+                                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary/70 text-sm font-semibold text-foreground">
                                             {entry.rank === 1 ? <Trophy className="h-5 w-5 text-amber-500" /> : entry.rank}
                                         </div>
-                                        <Avatar className="h-10 w-10 border border-border/60">
+                                        <Avatar className="h-9 w-9 border border-border/60">
                                             <AvatarImage src={entry.avatar_url ?? ""} alt={entry.username} />
                                             <AvatarFallback className="bg-primary/12 text-primary">
                                                 {entry.username.slice(0, 1).toUpperCase()}
@@ -175,8 +175,8 @@ export default function CommunityClient() {
                                             </p>
                                         </div>
                                         <div className="text-right">
-                                            <p className="font-mono text-lg font-semibold text-foreground">{entry.total_minutes}m</p>
-                                            <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">focus</p>
+                                            <p className="font-mono text-base font-semibold text-foreground">{entry.total_minutes}m</p>
+                                            <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">focus</p>
                                         </div>
                                     </div>
                                 ))}
@@ -184,7 +184,7 @@ export default function CommunityClient() {
                         ) : (
                             <EmptyState
                                 title="No sessions yet"
-                                description="No focus sessions yet."
+                                description="Focus sessions will show up here."
                                 icon={<Trophy className="h-8 w-8" />}
                             />
                         )}
@@ -192,13 +192,13 @@ export default function CommunityClient() {
 
                     <SectionCard title="Live feed">
                         {loading ? (
-                            <div className="surface-muted px-4 py-8 text-sm text-muted-foreground">Loading activity...</div>
+                            <div className="surface-muted px-3 py-6 text-sm text-muted-foreground">Loading activity...</div>
                         ) : activityFeed.length > 0 ? (
-                            <div className="space-y-3">
+                            <div className="space-y-2.5">
                                 {activityFeed.map((event) => (
-                                    <div key={event.id} className="rounded-[1.1rem] border border-border/60 bg-background/70 px-4 py-4">
-                                        <div className="flex items-start gap-3">
-                                            <Avatar className="h-10 w-10 border border-border/60">
+                                    <div key={event.id} className="rounded-xl border border-border/60 bg-background/70 px-3.5 py-3">
+                                        <div className="flex items-start gap-2.5">
+                                            <Avatar className="h-9 w-9 border border-border/60">
                                                 <AvatarImage src={event.avatar_url ?? ""} alt={event.username} />
                                                 <AvatarFallback className="bg-primary/12 text-primary">
                                                     {event.username.slice(0, 1).toUpperCase()}
@@ -209,7 +209,7 @@ export default function CommunityClient() {
                                                     <span className="font-semibold">@{event.username}</span> completed a{" "}
                                                     <span className="font-semibold text-primary">{Math.round(event.duration_seconds / 60)}m</span> focus session.
                                                 </p>
-                                                <div className="mt-2 flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                                                <div className="mt-1.5 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                                                     <Clock3 className="h-3.5 w-3.5" />
                                                     {formatDistanceToNow(new Date(event.inserted_at), { addSuffix: true })}
                                                 </div>

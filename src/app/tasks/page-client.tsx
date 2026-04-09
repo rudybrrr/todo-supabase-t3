@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckSquare2, Filter, X } from "lucide-react";
+import { CheckSquare2, Filter, Plus, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
 import { AppShell, useShellActions } from "~/components/app-shell";
@@ -22,8 +22,6 @@ import {
 import {
     Popover,
     PopoverContent,
-    PopoverHeader,
-    PopoverTitle,
     PopoverTrigger,
 } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
@@ -63,6 +61,19 @@ const PRIORITY_OPTIONS: Array<{ value: PriorityFilterValue; label: string }> = [
     { value: "low", label: "Low" },
     { value: "none", label: "No Priority" },
 ];
+
+interface PendingTaskLeaveAction {
+    run: () => void;
+}
+
+function isTaskNavigationBlockedTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.isContentEditable) return true;
+
+    return Boolean(target.closest(
+        "input, textarea, select, [contenteditable='true'], #detailDue, [data-slot='select-trigger'], [data-slot='select-content'], [data-slot='select-item'], [data-slot='popover-content']",
+    ));
+}
 
 function getRouteView(value: string | null): SmartView {
     if (value === "upcoming" || value === "inbox" || value === "done") {
@@ -106,6 +117,8 @@ function TasksContent({
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTaskId ?? null);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const [bulkDeletingOpen, setBulkDeletingOpen] = useState(false);
+    const [detailDirty, setDetailDirty] = useState(false);
+    const [pendingTaskLeaveAction, setPendingTaskLeaveAction] = useState<PendingTaskLeaveAction | null>(null);
 
     useEffect(() => {
         setView(routeView);
@@ -161,6 +174,15 @@ function TasksContent({
             : dedupeTasks(visibleDisplayTasks),
         [dueTodayDisplayTasks, overdueDisplayTasks, view, visibleDisplayTasks],
     );
+    const selectedTaskIndex = useMemo(
+        () => selectableTasks.findIndex((task) => task.id === selectedTaskId),
+        [selectableTasks, selectedTaskId],
+    );
+    const previousTask = selectedTaskIndex > 0 ? selectableTasks[selectedTaskIndex - 1] ?? null : null;
+    const nextTask = selectedTaskIndex !== -1 && selectedTaskIndex < selectableTasks.length - 1
+        ? (selectableTasks[selectedTaskIndex + 1] ?? null)
+        : null;
+    const taskPositionLabel = selectedTaskIndex === -1 ? null : `${selectedTaskIndex + 1} of ${selectableTasks.length}`;
     const getBufferPlacement = useCallback((task: TaskDatasetRecord, nextIsDone: boolean) => {
         if (view === "today" && nextIsDone) {
             const overdueIndex = overdueTasks.findIndex((item) => item.id === task.id);
@@ -214,11 +236,33 @@ function TasksContent({
         setBulkDeletingOpen(false);
     }
 
-    const enterSelectionMode = useCallback(() => {
+    const requestTaskLeave = useCallback((action: () => void) => {
+        if (detailDirty && selectedTaskId) {
+            setPendingTaskLeaveAction({ run: action });
+            return;
+        }
+
+        action();
+    }, [detailDirty, selectedTaskId]);
+
+    const activateSelectionMode = useCallback(() => {
         if (selectionMode) return;
         enterPrimaryActivity("tasks:selection");
         handleToggleSelectionMode();
     }, [enterPrimaryActivity, handleToggleSelectionMode, selectionMode]);
+
+    const handleConfirmTaskLeave = useCallback(() => {
+        if (!pendingTaskLeaveAction) return;
+
+        const { run } = pendingTaskLeaveAction;
+        setPendingTaskLeaveAction(null);
+        setDetailDirty(false);
+        run();
+    }, [pendingTaskLeaveAction]);
+
+    const handleCancelTaskLeave = useCallback(() => {
+        setPendingTaskLeaveAction(null);
+    }, []);
 
     const requestSelectionModeExit = useCallback(() => {
         if (!selectionMode || bulkEditing || bulkCompleting || bulkDeleting) return;
@@ -230,21 +274,43 @@ function TasksContent({
             requestSelectionModeExit();
             return;
         }
-        enterSelectionMode();
-    }, [enterSelectionMode, requestSelectionModeExit, selectionMode]);
+        requestTaskLeave(() => {
+            setSelectedTaskId(null);
+            setDetailDirty(false);
+            activateSelectionMode();
+        });
+    }, [activateSelectionMode, requestSelectionModeExit, requestTaskLeave, selectionMode]);
 
     const handleTaskSelect = useCallback((task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => {
         if (options?.shiftKey) {
-            enterPrimaryActivity("tasks:selection");
-            handleToggleTaskSelection(task, { shiftKey: true, enterSelectionMode: true });
+            requestTaskLeave(() => {
+                setSelectedTaskId(null);
+                setDetailDirty(false);
+                enterPrimaryActivity("tasks:selection");
+                handleToggleTaskSelection(task, { shiftKey: true, enterSelectionMode: true });
+            });
             return;
         }
 
-        if (selectedTaskId !== task.id) {
+        const nextTaskId = selectedTaskId === task.id ? null : task.id;
+        requestTaskLeave(() => {
+            if (nextTaskId) {
+                enterPrimaryActivity("tasks:detail");
+            }
+            setSelectedTaskId(nextTaskId);
+            setDetailDirty(false);
+        });
+    }, [enterPrimaryActivity, handleToggleTaskSelection, requestTaskLeave, selectedTaskId]);
+
+    const handleTaskPanelNavigate = useCallback((taskId: string) => {
+        if (taskId === selectedTaskId) return;
+
+        requestTaskLeave(() => {
             enterPrimaryActivity("tasks:detail");
-        }
-        setSelectedTaskId((current) => current === task.id ? null : task.id);
-    }, [enterPrimaryActivity, handleToggleTaskSelection, selectedTaskId]);
+            setSelectedTaskId(taskId);
+            setDetailDirty(false);
+        });
+    }, [enterPrimaryActivity, requestTaskLeave, selectedTaskId]);
 
     const handleTaskSelection = useCallback((task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => {
         handleToggleTaskSelection(task, { shiftKey: options?.shiftKey });
@@ -252,10 +318,14 @@ function TasksContent({
 
     useEffect(() => registerPrimaryActivityReset("tasks:selection", () => {
         setBulkDeletingOpen(false);
+        setPendingTaskLeaveAction(null);
+        setDetailDirty(false);
         handleCancelSelectionMode();
     }), [handleCancelSelectionMode, registerPrimaryActivityReset]);
 
     useEffect(() => registerPrimaryActivityReset("tasks:detail", () => {
+        setPendingTaskLeaveAction(null);
+        setDetailDirty(false);
         setSelectedTaskId(null);
     }), [registerPrimaryActivityReset]);
 
@@ -270,7 +340,51 @@ function TasksContent({
     useEffect(() => {
         if (!selectionMode) return;
         setSelectedTaskId(null);
+        setDetailDirty(false);
     }, [selectionMode]);
+
+    useEffect(() => {
+        if (selectedTask) return;
+        setDetailDirty(false);
+        setPendingTaskLeaveAction(null);
+    }, [selectedTask]);
+
+    useEffect(() => {
+        if (!selectedTask || selectionMode) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+            if (pendingTaskLeaveAction || bulkDeletingOpen || mobileFiltersOpen) return;
+            if (isTaskNavigationBlockedTarget(event.target)) return;
+
+            if (event.key === "ArrowLeft") {
+                if (!previousTask) return;
+                event.preventDefault();
+                handleTaskPanelNavigate(previousTask.id);
+                return;
+            }
+
+            if (event.key === "ArrowRight") {
+                if (!nextTask) return;
+                event.preventDefault();
+                handleTaskPanelNavigate(nextTask.id);
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, [
+        bulkDeletingOpen,
+        handleTaskPanelNavigate,
+        mobileFiltersOpen,
+        nextTask,
+        pendingTaskLeaveAction,
+        previousTask,
+        selectedTask,
+        selectionMode,
+    ]);
 
     useEffect(() => {
         if (!selectionMode) return;
@@ -290,15 +404,15 @@ function TasksContent({
     }, [bulkDeletingOpen, requestSelectionModeExit, selectionMode]);
 
     const taskContent = loading ? (
-        <div className="surface-muted px-4 py-6 text-sm text-muted-foreground">Loading tasks...</div>
+        <div className="surface-muted px-3 py-4 text-sm text-muted-foreground">Loading tasks...</div>
     ) : view === "today" ? (
         hasTodayDisplayTasks ? (
-            <div className="space-y-5">
+            <div className="space-y-4">
                 {overdueDisplayTasks.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
                             <p className="eyebrow">Overdue</p>
-                            <span className="text-sm text-muted-foreground">{overdueTasks.length}</span>
+                            <span className="text-xs text-muted-foreground">{overdueTasks.length}</span>
                         </div>
                         <TaskList
                             tasks={overdueDisplayTasks}
@@ -315,10 +429,10 @@ function TasksContent({
                     </div>
                 ) : null}
 
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                         <p className="eyebrow">Due today</p>
-                        <span className="text-sm text-muted-foreground">{dueTodayTasks.length}</span>
+                        <span className="text-xs text-muted-foreground">{dueTodayTasks.length}</span>
                     </div>
                     <TaskList
                         tasks={dueTodayDisplayTasks}
@@ -337,15 +451,25 @@ function TasksContent({
         ) : (
             <EmptyState
                 title="No tasks"
-                description="Adjust filters or add a task."
-                action={<Button onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>Add task</Button>}
+                description="Adjust filters or add one."
+                action={
+                    <Button size="sm" onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>
+                        <Plus className="h-4 w-4" />
+                        Add
+                    </Button>
+                }
             />
         )
     ) : visibleDisplayTasks.length === 0 ? (
         <EmptyState
             title="No tasks"
-            description="Adjust filters or add a task."
-            action={<Button onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>Add task</Button>}
+            description="Adjust filters or add one."
+            action={
+                <Button size="sm" onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>
+                    <Plus className="h-4 w-4" />
+                    Add
+                </Button>
+            }
         />
     ) : (
         <TaskList
@@ -381,7 +505,7 @@ function TasksContent({
                                     </Button>
                                 </SheetTrigger>
                                 <SheetContent side="bottom" className="rounded-t-xl border-x-0 border-t border-border">
-                                    <SheetHeader>
+                                    <SheetHeader className="sr-only">
                                         <SheetTitle>Filters</SheetTitle>
                                         <SheetDescription>Refine this task view by project or priority.</SheetDescription>
                                     </SheetHeader>
@@ -407,10 +531,7 @@ function TasksContent({
                                         <span className="sr-only">Open filters</span>
                                     </Button>
                                 </PopoverTrigger>
-                                <PopoverContent align="end" className="w-80">
-                                    <PopoverHeader>
-                                        <PopoverTitle>Filters</PopoverTitle>
-                                    </PopoverHeader>
+                                <PopoverContent align="end" className="w-72 p-3">
                                     <TasksFilterPanel
                                         lists={lists}
                                         projectFilter={projectFilter}
@@ -433,8 +554,9 @@ function TasksContent({
                             </Button>
 
                             {!selectionMode ? (
-                                <Button onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>
-                                    Add task
+                                <Button size="sm" onClick={() => openQuickAdd(defaultListId ? { listId: defaultListId } : undefined)}>
+                                    <Plus className="h-4 w-4" />
+                                    Add
                                 </Button>
                             ) : null}
                         </>
@@ -468,20 +590,20 @@ function TasksContent({
                             <button
                                 type="button"
                                 onClick={() => setProjectFilter("all")}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                             >
                                 {activeProjectName}
-                                <X className="h-3.5 w-3.5" />
+                                <X className="h-3 w-3" />
                             </button>
                         ) : null}
                         {priorityFilter !== "all" ? (
                             <button
                                 type="button"
                                 onClick={() => setPriorityFilter("all")}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                             >
                                 {PRIORITY_OPTIONS.find((option) => option.value === priorityFilter)?.label}
-                                <X className="h-3.5 w-3.5" />
+                                <X className="h-3 w-3" />
                             </button>
                         ) : null}
                     </div>
@@ -495,19 +617,59 @@ function TasksContent({
                             lists={lists}
                             images={selectedTask ? imagesByTodo[selectedTask.id] ?? [] : []}
                             userId={userId}
+                            previousTask={previousTask}
+                            nextTask={nextTask}
+                            taskPositionLabel={taskPositionLabel}
                             open={!selectionMode && !!selectedTask}
                             onOpenChange={(open) => {
-                                if (!open) setSelectedTaskId(null);
+                                if (!open) {
+                                    requestTaskLeave(() => {
+                                        setSelectedTaskId(null);
+                                        setDetailDirty(false);
+                                    });
+                                }
                             }}
-                            onClose={() => setSelectedTaskId(null)}
+                            onClose={() => {
+                                requestTaskLeave(() => {
+                                    setSelectedTaskId(null);
+                                    setDetailDirty(false);
+                                });
+                            }}
+                            onNavigateToTask={handleTaskPanelNavigate}
+                            onDirtyChange={setDetailDirty}
                             onSaved={() => undefined}
                             onDeleted={() => {
+                                setPendingTaskLeaveAction(null);
+                                setDetailDirty(false);
                                 setSelectedTaskId(null);
                             }}
                         />
                     ) : null}
                 </div>
             </div>
+
+            <Dialog open={!!pendingTaskLeaveAction} onOpenChange={(open) => {
+                if (!open) {
+                    handleCancelTaskLeave();
+                }
+            }}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Discard unsaved changes?</DialogTitle>
+                        <DialogDescription>
+                            Your edits to {selectedTask?.title ? `"${selectedTask.title}"` : "this task"} haven&apos;t been saved.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={handleCancelTaskLeave}>
+                            Stay
+                        </Button>
+                        <Button variant="destructive" onClick={handleConfirmTaskLeave}>
+                            Discard changes
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={bulkDeletingOpen} onOpenChange={setBulkDeletingOpen}>
                 <DialogContent className="max-w-md">
@@ -547,7 +709,7 @@ function TasksFilterPanel({
     const hasActiveFilters = projectFilter !== "all" || priorityFilter !== "all";
 
     return (
-        <div className="space-y-4 p-1 pt-4">
+        <div className="space-y-4 p-1">
             <div className="space-y-2">
                 <p className="eyebrow">Project</p>
                 <Select value={projectFilter} onValueChange={onProjectFilterChange}>
@@ -585,7 +747,7 @@ function TasksFilterPanel({
                 <Button
                     variant="ghost"
                     size="sm"
-                    className="w-full justify-center"
+                    className="h-9 w-full justify-center"
                     onClick={() => {
                         onProjectFilterChange("all");
                         onPriorityFilterChange("all");
@@ -600,6 +762,6 @@ function TasksFilterPanel({
 
 function cnFilterChip(active: boolean) {
     return active
-        ? "rounded-md border border-primary bg-primary px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary-foreground"
-        : "rounded-md border border-border bg-card px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
+        ? "rounded-full border border-primary bg-primary px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-foreground"
+        : "rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
 }

@@ -1,33 +1,106 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Paperclip, Plus } from "lucide-react";
+import { Flag, Folder, Hourglass, Paperclip, Plus, SendHorizontal } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useData } from "~/components/data-provider";
-import { useTaskDataset } from "~/hooks/use-task-dataset";
+import { TaskDueDatePicker } from "~/components/task-due-date-picker";
 import { Button } from "~/components/ui/button";
 import {
     Dialog,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from "~/components/ui/dialog";
-import { TaskDueDatePicker } from "~/components/task-due-date-picker";
 import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Textarea } from "~/components/ui/textarea";
+import { useTaskDataset } from "~/hooks/use-task-dataset";
+import { parseQuickAddInput, type QuickAddMatchedToken } from "~/lib/quick-add-parser";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { createTask, uploadTaskAttachments } from "~/lib/task-actions";
 import { getDateInputValue } from "~/lib/task-views";
+import { cn } from "~/lib/utils";
 
 interface QuickAddDefaults {
     listId?: string | null;
     title?: string;
     dueDate?: string | null;
+}
+
+const ESTIMATE_PRESETS = [15, 30, 45, 60, 90];
+const ACTION_CHIP_CLASS =
+    "h-10 w-auto max-w-full rounded-full border border-border/70 bg-background px-4 text-sm font-medium shadow-none transition-colors hover:bg-secondary hover:text-foreground focus-visible:border-ring focus-visible:ring-0";
+
+function formatEstimateLabel(minutes: number) {
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+
+    if (hours > 0 && remainder > 0) {
+        return `${hours}h ${remainder}m`;
+    }
+
+    if (hours > 0) {
+        return `${hours}h`;
+    }
+
+    return `${remainder}m`;
+}
+
+function getTokenHighlightClass(kind: QuickAddMatchedToken["kind"]) {
+    if (kind === "project") {
+        return "rounded-[0.35rem] bg-accent/40 text-foreground";
+    }
+
+    if (kind === "date") {
+        return "rounded-[0.35rem] bg-secondary text-foreground";
+    }
+
+    if (kind === "priority") {
+        return "rounded-[0.35rem] bg-destructive/12 text-destructive";
+    }
+
+    return "rounded-[0.35rem] bg-muted text-foreground";
+}
+
+function renderHighlightedComposerText(input: string, tokens: QuickAddMatchedToken[], placeholder: string) {
+    if (!input) {
+        return <span className="text-muted-foreground/75">{placeholder}</span>;
+    }
+
+    const children: ReactNode[] = [];
+    let cursor = 0;
+
+    tokens.forEach((token, index) => {
+        if (token.start > cursor) {
+            children.push(
+                <span key={`text-${index}-${cursor}`}>
+                    {input.slice(cursor, token.start)}
+                </span>,
+            );
+        }
+
+        children.push(
+            <span key={`token-${token.kind}-${token.start}-${token.end}`} className={getTokenHighlightClass(token.kind)}>
+                {input.slice(token.start, token.end)}
+            </span>,
+        );
+
+        cursor = token.end;
+    });
+
+    if (cursor < input.length) {
+        children.push(<span key={`tail-${cursor}`}>{input.slice(cursor)}</span>);
+    }
+
+    if (input.endsWith("\n")) {
+        children.push(<span key="trailing-newline">{"\n"}</span>);
+    }
+
+    return children;
 }
 
 export function QuickAddDialog({
@@ -42,47 +115,86 @@ export function QuickAddDialog({
     const { userId, lists } = useData();
     const { upsertTask } = useTaskDataset();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-    const [title, setTitle] = useState("");
-    const [listId, setListId] = useState("");
-    const [priority, setPriority] = useState<"high" | "medium" | "low" | "">("");
-    const [dueDate, setDueDate] = useState("");
-    const [estimatedMinutes, setEstimatedMinutes] = useState("");
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+    const inputHighlightRef = useRef<HTMLDivElement>(null);
+    const defaultListId = useMemo(() => {
+        const inbox = lists.find((list) => list.name.toLowerCase() === "inbox") ?? lists[0];
+        return defaults?.listId ?? inbox?.id ?? "";
+    }, [defaults?.listId, lists]);
+    const defaultDueDate = useMemo(
+        () => defaults?.dueDate ? getDateInputValue(defaults.dueDate) : "",
+        [defaults?.dueDate],
+    );
+
+    const [inputValue, setInputValue] = useState("");
+    const [manualListId, setManualListId] = useState<string | undefined>(undefined);
+    const [manualPriority, setManualPriority] = useState<"high" | "medium" | "low" | "" | undefined>(undefined);
+    const [manualDueDate, setManualDueDate] = useState<string | undefined>(undefined);
+    const [manualEstimatedMinutes, setManualEstimatedMinutes] = useState<string | undefined>(undefined);
     const [description, setDescription] = useState("");
     const [expanded, setExpanded] = useState(false);
     const [attachments, setAttachments] = useState<File[]>([]);
+    const [estimateOpen, setEstimateOpen] = useState(false);
     const [saving, setSaving] = useState(false);
+    const parsedInput = useMemo(() => parseQuickAddInput(inputValue, lists), [inputValue, lists]);
+    const effectiveListId = manualListId ?? parsedInput.listId ?? defaultListId;
+    const effectivePriority = manualPriority ?? parsedInput.priority ?? "";
+    const effectiveDueDate = manualDueDate ?? parsedInput.dueDate ?? defaultDueDate;
+    const effectiveEstimatedMinutes = manualEstimatedMinutes
+        ?? (parsedInput.estimatedMinutes ? String(parsedInput.estimatedMinutes) : "");
+    const parsedEstimateMinutes = effectiveEstimatedMinutes ? Number.parseInt(effectiveEstimatedMinutes, 10) : null;
+    const cleanedTitle = parsedInput.title.trim();
+    const showEmptyTitleWarning = inputValue.trim() && !cleanedTitle && parsedInput.chips.length > 0;
 
     useEffect(() => {
         if (!open) return;
 
-        const inbox = lists.find((list) => list.name.toLowerCase() === "inbox") ?? lists[0];
-        setTitle(defaults?.title ?? "");
-        setListId(defaults?.listId ?? inbox?.id ?? "");
-        setPriority("");
-        setDueDate(defaults?.dueDate ? getDateInputValue(defaults.dueDate) : "");
-        setEstimatedMinutes("");
+        setInputValue(defaults?.title ?? "");
+        setManualListId(undefined);
+        setManualPriority(undefined);
+        setManualDueDate(undefined);
+        setManualEstimatedMinutes(undefined);
         setDescription("");
         setExpanded(false);
         setAttachments([]);
-    }, [defaults, lists, open]);
+        setEstimateOpen(false);
+        if (inputRef.current) {
+            inputRef.current.scrollTop = 0;
+            inputRef.current.scrollLeft = 0;
+        }
+        if (inputHighlightRef.current) {
+            inputHighlightRef.current.style.transform = "translate(0px, 0px)";
+        }
+    }, [defaults, open]);
+
+    useEffect(() => {
+        if (!open) return;
+
+        const frame = window.requestAnimationFrame(() => {
+            inputRef.current?.focus();
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+    }, [open]);
 
     async function handleSubmit() {
-        if (!userId || !listId || !title.trim()) return;
+        if (!userId || !effectiveListId || !cleanedTitle) return;
 
         try {
             setSaving(true);
             const createdTask = await createTask(supabase, {
                 userId,
-                listId,
-                title,
+                listId: effectiveListId,
+                title: cleanedTitle,
                 description,
-                dueDate: dueDate || null,
-                priority: priority || null,
-                estimatedMinutes: estimatedMinutes ? Number.parseInt(estimatedMinutes, 10) : null,
+                dueDate: effectiveDueDate || null,
+                priority: effectivePriority || null,
+                estimatedMinutes:
+                    parsedEstimateMinutes && !Number.isNaN(parsedEstimateMinutes) ? parsedEstimateMinutes : null,
             });
 
             if (attachments.length > 0) {
-                await uploadTaskAttachments(supabase, userId, createdTask.id, listId, attachments);
+                await uploadTaskAttachments(supabase, userId, createdTask.id, effectiveListId, attachments);
             }
 
             upsertTask(createdTask, { suppressRealtimeEcho: true });
@@ -98,148 +210,246 @@ export function QuickAddDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-xl rounded-[1.75rem] border-border/60 p-0">
-                <div className="border-b border-border/50 p-6">
-                    <DialogHeader className="text-left">
-                        <DialogTitle className="text-2xl font-semibold tracking-[-0.04em]">Quick Add</DialogTitle>
-                        <DialogDescription>
-                            Add a task fast.
-                        </DialogDescription>
-                    </DialogHeader>
-                </div>
+            <DialogContent className="max-w-xl gap-0 rounded-[1.5rem] border-border/60 p-0">
+                <DialogHeader className="sr-only">
+                    <DialogTitle>Quick Add</DialogTitle>
+                    <DialogDescription>Add a task with project, date, priority, and estimate controls.</DialogDescription>
+                </DialogHeader>
 
-                <div className="space-y-5 p-6">
-                    <div className="space-y-2">
-                        <Label htmlFor="quickAddTitle" className="eyebrow">
-                            Task
-                        </Label>
-                        <Input
-                            id="quickAddTitle"
-                            placeholder="Finish chemistry lab outline"
-                            value={title}
-                            onChange={(event) => setTitle(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                    void handleSubmit();
-                                }
-                            }}
-                        />
-                    </div>
+                <div className="p-3 sm:p-4">
+                    <div className="overflow-hidden rounded-[1.2rem] border border-border/70 bg-card/70 shadow-[0_18px_36px_rgba(17,18,15,0.08)]">
+                        <div className="p-3.5 sm:p-4">
+                            <div className="relative">
+                                <div
+                                    aria-hidden="true"
+                                    className="pointer-events-none absolute inset-0 overflow-hidden text-[1.02rem] leading-7"
+                                >
+                                    <div
+                                        ref={inputHighlightRef}
+                                        className="min-h-20 whitespace-pre-wrap break-words text-foreground [word-break:break-word]"
+                                    >
+                                        {renderHighlightedComposerText(
+                                            inputValue,
+                                            parsedInput.tokens,
+                                            "Finish chemistry lab #science tomorrow p1 45m",
+                                        )}
+                                    </div>
+                                </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label htmlFor="quickAddProject" className="eyebrow">
-                                Project
-                            </Label>
-                            <Select value={listId} onValueChange={setListId}>
-                                <SelectTrigger id="quickAddProject">
-                                    <SelectValue placeholder="Choose a project" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {lists.map((list) => (
-                                        <SelectItem key={list.id} value={list.id}>
-                                            {list.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                                <textarea
+                                    ref={inputRef}
+                                    id="quickAddTitle"
+                                    rows={3}
+                                    aria-label="Task"
+                                    spellCheck={false}
+                                    autoCorrect="off"
+                                    autoCapitalize="off"
+                                    value={inputValue}
+                                    onChange={(event) => setInputValue(event.target.value)}
+                                    onScroll={(event) => {
+                                        if (!inputHighlightRef.current) return;
+
+                                        inputHighlightRef.current.style.transform = `translate(${-event.currentTarget.scrollLeft}px, ${-event.currentTarget.scrollTop}px)`;
+                                    }}
+                                    onKeyDown={(event) => {
+                                        if (event.key === "Enter" && !event.shiftKey) {
+                                            event.preventDefault();
+                                            void handleSubmit();
+                                        }
+                                    }}
+                                    className="relative min-h-20 w-full resize-none border-0 bg-transparent p-0 text-[1.02rem] leading-7 text-transparent outline-none focus-visible:ring-0"
+                                    style={{ caretColor: "hsl(var(--foreground))" }}
+                                />
+                            </div>
                         </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="quickAddDue" className="eyebrow">
-                                Due
-                            </Label>
-                            <TaskDueDatePicker
-                                id="quickAddDue"
-                                value={dueDate}
-                                onChange={setDueDate}
-                                placeholder="Choose date"
-                                allowClear
-                            />
-                        </div>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label htmlFor="quickAddPriority" className="eyebrow">
-                                Priority
-                            </Label>
-                            <Select
-                                value={priority || "none"}
-                                onValueChange={(value) => setPriority(value === "none" ? "" : value as typeof priority)}
-                            >
-                                <SelectTrigger id="quickAddPriority">
-                                    <SelectValue placeholder="No priority" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="none">No priority</SelectItem>
-                                    <SelectItem value="high">High</SelectItem>
-                                    <SelectItem value="medium">Medium</SelectItem>
-                                    <SelectItem value="low">Low</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="quickAddEstimate" className="eyebrow">
-                                Estimate
-                            </Label>
-                            <Input
-                                id="quickAddEstimate"
-                                type="number"
-                                min="1"
-                                placeholder="45"
-                                value={estimatedMinutes}
-                                onChange={(event) => setEstimatedMinutes(event.target.value)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3">
-                        <Button variant="tonal" size="sm" onClick={() => setExpanded((current) => !current)}>
-                            <Plus className="h-4 w-4" />
-                            {expanded ? "Hide details" : "More details"}
-                        </Button>
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/70 bg-background/75 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-                            <Paperclip className="h-3.5 w-3.5" />
-                            Attach files
-                            <input
-                                className="hidden"
-                                type="file"
-                                multiple
-                                onChange={(event) => setAttachments(Array.from(event.target.files ?? []))}
-                            />
-                        </label>
-                        {attachments.length > 0 ? (
-                            <span className="text-xs text-muted-foreground">
-                                {attachments.length} file{attachments.length === 1 ? "" : "s"} ready
-                            </span>
+                        {showEmptyTitleWarning ? (
+                            <div className="border-t border-border/60 px-3.5 py-2.5 text-sm text-destructive sm:px-4">
+                                Add a task name.
+                            </div>
                         ) : null}
-                    </div>
 
-                    {expanded ? (
-                        <div className="space-y-2">
-                            <Label htmlFor="quickAddNotes" className="eyebrow">
-                                Notes
-                            </Label>
-                            <Textarea
-                                id="quickAddNotes"
-                                placeholder="Notes"
-                                value={description}
-                                onChange={(event) => setDescription(event.target.value)}
-                            />
+                        {expanded ? (
+                            <div className="space-y-3 border-t border-border/60 px-3.5 py-3.5 sm:px-4">
+                                <Textarea
+                                    id="quickAddNotes"
+                                    placeholder="Description"
+                                    value={description}
+                                    onChange={(event) => setDescription(event.target.value)}
+                                    className="min-h-20 border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
+                                />
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/70 bg-background px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary">
+                                        <Paperclip className="h-4 w-4 text-muted-foreground" />
+                                        Attach
+                                        <input
+                                            className="hidden"
+                                            type="file"
+                                            multiple
+                                            onChange={(event) => setAttachments(Array.from(event.target.files ?? []))}
+                                        />
+                                    </label>
+
+                                    {attachments.map((file) => (
+                                        <span
+                                            key={`${file.name}-${file.size}-${file.lastModified}`}
+                                            className="inline-flex max-w-full items-center rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground"
+                                        >
+                                            <span className="truncate">{file.name}</span>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+
+                        <div className="border-t border-border/60 px-3.5 py-3 sm:px-4">
+                            <div className="flex items-end gap-2">
+                                <div className="flex flex-1 flex-wrap items-center gap-2">
+                                    <Select value={effectiveListId || ""} onValueChange={(value) => setManualListId(value)}>
+                                        <SelectTrigger id="quickAddProject" className={cn(ACTION_CHIP_CLASS, "max-w-[14rem]")}>
+                                            <span className="inline-flex min-w-0 items-center gap-2">
+                                                <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                <SelectValue placeholder="Project" />
+                                            </span>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {lists.map((list) => (
+                                                <SelectItem key={list.id} value={list.id}>
+                                                    {list.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+
+                                    <TaskDueDatePicker
+                                        id="quickAddDue"
+                                        value={effectiveDueDate}
+                                        onChange={(value) => setManualDueDate(value)}
+                                        placeholder="Date"
+                                        allowClear
+                                        className={cn(ACTION_CHIP_CLASS, "w-auto")}
+                                    />
+
+                                    <Select
+                                        value={effectivePriority || "none"}
+                                        onValueChange={(value) => setManualPriority(value === "none" ? "" : value as typeof effectivePriority)}
+                                    >
+                                        <SelectTrigger id="quickAddPriority" className={cn(ACTION_CHIP_CLASS, "max-w-[12rem]")}>
+                                            <span className="inline-flex min-w-0 items-center gap-2">
+                                                <Flag className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                <SelectValue placeholder="Priority" />
+                                            </span>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">No priority</SelectItem>
+                                            <SelectItem value="high">High</SelectItem>
+                                            <SelectItem value="medium">Medium</SelectItem>
+                                            <SelectItem value="low">Low</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Popover open={estimateOpen} onOpenChange={setEstimateOpen}>
+                                        <PopoverTrigger asChild>
+                                            <button
+                                                type="button"
+                                                className={cn(ACTION_CHIP_CLASS, "inline-flex min-w-[8rem] items-center justify-start gap-2")}
+                                            >
+                                                <Hourglass className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                <span className="truncate">
+                                                    {parsedEstimateMinutes && !Number.isNaN(parsedEstimateMinutes)
+                                                        ? formatEstimateLabel(parsedEstimateMinutes)
+                                                        : "Estimate"}
+                                                </span>
+                                            </button>
+                                        </PopoverTrigger>
+                                        <PopoverContent align="start" className="w-[18rem] rounded-[1rem] p-3">
+                                            <div className="space-y-3">
+                                                <div className="flex flex-wrap gap-2">
+                                                    {ESTIMATE_PRESETS.map((minutes) => {
+                                                        const active = effectiveEstimatedMinutes === String(minutes);
+
+                                                        return (
+                                                            <button
+                                                                key={minutes}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setManualEstimatedMinutes(String(minutes));
+                                                                    setEstimateOpen(false);
+                                                                }}
+                                                                className={cn(
+                                                                    "inline-flex items-center rounded-full border px-3 py-1.5 text-sm transition-colors",
+                                                                    active
+                                                                        ? "border-border bg-secondary text-foreground"
+                                                                        : "border-border/70 bg-background text-muted-foreground hover:bg-secondary hover:text-foreground",
+                                                                )}
+                                                            >
+                                                                {formatEstimateLabel(minutes)}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                <div className="flex items-center gap-2">
+                                                    <Input
+                                                        id="quickAddEstimate"
+                                                        type="number"
+                                                        min="1"
+                                                        placeholder="45"
+                                                        value={effectiveEstimatedMinutes}
+                                                        onChange={(event) => setManualEstimatedMinutes(event.target.value)}
+                                                        onKeyDown={(event) => {
+                                                            if (event.key === "Enter") {
+                                                                event.preventDefault();
+                                                                setEstimateOpen(false);
+                                                            }
+                                                        }}
+                                                        className="h-10 rounded-full"
+                                                    />
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            setManualEstimatedMinutes("");
+                                                            setEstimateOpen(false);
+                                                        }}
+                                                    >
+                                                        Clear
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-10 rounded-full border border-transparent px-4 text-sm font-medium text-muted-foreground hover:border-border/60 hover:bg-secondary hover:text-foreground"
+                                        onClick={() => setExpanded((current) => !current)}
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                        {expanded ? "Less" : "More"}
+                                    </Button>
+                                </div>
+
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    className="mb-0.5 ml-auto h-10 w-10 rounded-full"
+                                    onClick={() => void handleSubmit()}
+                                    disabled={saving || !cleanedTitle || !effectiveListId}
+                                    aria-label={saving ? "Saving task" : "Add task"}
+                                    title={saving ? "Saving..." : "Add task"}
+                                >
+                                    <SendHorizontal className="h-4 w-4" />
+                                    <span className="sr-only">{saving ? "Saving..." : "Add task"}</span>
+                                </Button>
+                            </div>
                         </div>
-                    ) : null}
+                    </div>
                 </div>
-
-                <DialogFooter className="border-t border-border/50 p-6">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
-                        Cancel
-                    </Button>
-                    <Button onClick={() => void handleSubmit()} disabled={saving || !title.trim() || !listId}>
-                        {saving ? "Saving..." : "Add task"}
-                    </Button>
-                </DialogFooter>
             </DialogContent>
         </Dialog>
     );

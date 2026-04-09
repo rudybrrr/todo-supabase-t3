@@ -219,7 +219,16 @@ function useTaskDatasetState(): TaskDatasetValue {
     const [projectOrder, setProjectOrder] = useState<string[]>([]);
     const pendingRealtimeEchoCountsRef = useRef<Map<string, number>>(new Map());
 
-    const listIds = useMemo(() => lists.map((list) => list.id), [lists]);
+    const listIdSignature = useMemo(() => {
+        return Array.from(new Set(lists.map((list) => list.id)))
+            .sort((a, b) => a.localeCompare(b))
+            .join("|");
+    }, [lists]);
+    const listIds = useMemo(
+        () => listIdSignature ? listIdSignature.split("|") : [],
+        [listIdSignature],
+    );
+    const listIdSet = useMemo(() => new Set(listIds), [listIds]);
 
     const markPendingRealtimeEcho = useCallback((taskId: string) => {
         const currentCount = pendingRealtimeEchoCountsRef.current.get(taskId) ?? 0;
@@ -379,7 +388,7 @@ function useTaskDatasetState(): TaskDatasetValue {
                 const taskListId = nextTask.list_id;
                 if (typeof taskListId !== "string") return;
 
-                if (!listIds.includes(taskListId)) {
+                if (!listIdSet.has(taskListId)) {
                     setTasks((currentTasks) => currentTasks.filter((task) => task.id !== nextTask.id));
                     return;
                 }
@@ -395,7 +404,7 @@ function useTaskDatasetState(): TaskDatasetValue {
         return () => {
             void supabase.removeChannel(channel);
         };
-    }, [listIds, loadDataset, plannedBlocks, shouldSuppressRealtimeEcho, supabase, userId]);
+    }, [listIdSet, loadDataset, plannedBlocks, shouldSuppressRealtimeEcho, supabase, userId]);
 
     const projectSummaries = useMemo<ProjectSummary[]>(() => {
         return lists.map((list) => {

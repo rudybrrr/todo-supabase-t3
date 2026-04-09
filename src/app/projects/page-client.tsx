@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FolderKanban, SlidersHorizontal } from "lucide-react";
+import { FolderKanban, Plus, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "~/components/app-shell";
@@ -30,13 +30,18 @@ function ProjectsContent() {
         <div className="page-container">
             <PageHeader
                 title="Projects"
-                actions={<Button onClick={() => setDialogOpen(true)}>New project</Button>}
+                actions={(
+                    <Button size="sm" onClick={() => setDialogOpen(true)}>
+                        <Plus className="h-4 w-4" />
+                        New
+                    </Button>
+                )}
             />
 
             {loading ? (
-                <div className="surface-muted px-4 py-6 text-sm text-muted-foreground">Loading projects...</div>
+                <div className="surface-muted px-3 py-4 text-sm text-muted-foreground">Loading projects...</div>
             ) : orderedProjectSummaries.length > 0 ? (
-                <div className="overflow-hidden rounded-[1.35rem] border border-border/60 bg-card/92">
+                <div className="overflow-hidden rounded-xl border border-border/60 bg-card/92">
                     {orderedProjectSummaries.map((summary, index) => {
                         const palette = getProjectColorClasses(summary.list.color_token);
                         const Icon = getProjectIcon(summary.list.icon_token);
@@ -60,24 +65,24 @@ function ProjectsContent() {
                             <div
                                 key={summary.list.id}
                                 className={cn(
-                                    "flex items-center gap-3 px-4 py-3.5",
+                                    "flex items-center gap-2.5 px-3.5 py-3",
                                     index !== orderedProjectSummaries.length - 1 && "border-b border-border/55",
                                 )}
                             >
                                 <Link href={`/projects/${summary.list.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                                    <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border", palette.soft, palette.border)}>
+                                    <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border", palette.soft, palette.border)}>
                                         <Icon className={cn("h-4 w-4", palette.text)} />
                                     </span>
                                     <div className="min-w-0">
                                         <h2 className="truncate text-sm font-semibold tracking-[-0.02em] text-foreground">
                                             {summary.list.name}
                                         </h2>
-                                        <p className="truncate text-sm text-muted-foreground">{metaParts.join(" - ")}</p>
+                                        <p className="truncate text-[13px] text-muted-foreground">{metaParts.join(" / ")}</p>
                                     </div>
                                 </Link>
 
-                                <div className="flex items-center gap-2">
-                                    <span className="font-mono text-xs text-muted-foreground">{summary.incompleteCount}</span>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="font-mono text-[11px] text-muted-foreground">{summary.incompleteCount}</span>
                                     <Button
                                         variant="ghost"
                                         size="icon-sm"
@@ -98,7 +103,12 @@ function ProjectsContent() {
                     title="No projects"
                     description="Create a project to start organizing work."
                     icon={<FolderKanban className="h-8 w-8" />}
-                    action={<Button onClick={() => setDialogOpen(true)}>New project</Button>}
+                    action={(
+                        <Button size="sm" onClick={() => setDialogOpen(true)}>
+                            <Plus className="h-4 w-4" />
+                            New
+                        </Button>
+                    )}
                 />
             )}
 

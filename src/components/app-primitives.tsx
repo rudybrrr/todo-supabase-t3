@@ -17,21 +17,21 @@ export function PageHeader({
     actions?: ReactNode;
 }) {
     return (
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl space-y-2">
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-3xl space-y-1.5">
                 {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
-                <div className="space-y-2">
-                    <h1 className="text-balance text-[2rem] font-semibold tracking-[-0.05em] text-foreground sm:text-[2.35rem]">
+                <div className="space-y-1">
+                    <h1 className="text-balance text-[1.9rem] font-semibold tracking-[-0.05em] text-foreground sm:text-[2.15rem]">
                         {title}
                     </h1>
                     {description ? (
-                        <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[15px]">
+                        <p className="max-w-2xl text-sm leading-5 text-muted-foreground">
                             {description}
                         </p>
                     ) : null}
                 </div>
             </div>
-            {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+            {actions ? <div className="flex flex-wrap items-center gap-1.5">{actions}</div> : null}
         </header>
     );
 }
@@ -51,16 +51,16 @@ export function SectionCard({
 }) {
     return (
             <Card className={cn("overflow-hidden", className)}>
-                <CardHeader className="border-b border-border/70 pb-4">
+                <CardHeader className="border-b border-border/70 px-4 pt-4 pb-3">
                     <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-1">
-                            <CardTitle className="text-[17px] font-semibold tracking-[-0.03em]">{title}</CardTitle>
+                        <div className="space-y-0.5">
+                            <CardTitle className="text-base font-semibold tracking-[-0.03em]">{title}</CardTitle>
                             {description ? <CardDescription>{description}</CardDescription> : null}
                         </div>
                         {action ? <div className="shrink-0">{action}</div> : null}
                     </div>
                 </CardHeader>
-                <CardContent className="pt-5">{children}</CardContent>
+                <CardContent className="px-4 pt-4 pb-4">{children}</CardContent>
             </Card>
         );
 }
@@ -77,10 +77,10 @@ export function MetricTile({
     className?: string;
 }) {
     return (
-        <div className={cn("surface-card flex min-h-24 flex-col justify-between p-4", className)}>
+        <div className={cn("surface-card flex min-h-20 flex-col justify-between p-3.5", className)}>
             <p className="eyebrow">{label}</p>
-            <div className="space-y-1">
-                <p className="font-mono text-[1.7rem] font-semibold tracking-[-0.05em] text-foreground">{value}</p>
+            <div className="space-y-0.5">
+                <p className="font-mono text-[1.5rem] font-semibold tracking-[-0.05em] text-foreground">{value}</p>
                 {meta ? <p className="text-xs text-muted-foreground">{meta}</p> : null}
             </div>
         </div>
@@ -99,13 +99,13 @@ export function EmptyState({
     action?: ReactNode;
 }) {
     return (
-        <div className="surface-card flex min-h-56 flex-col items-center justify-center gap-4 p-6 text-center">
-            {icon ? <div className="rounded-lg border border-border bg-muted/70 p-4 text-primary">{icon}</div> : null}
-            <div className="space-y-2.5">
-                <h3 className="text-lg font-semibold tracking-[-0.04em] text-foreground">{title}</h3>
-                <p className="mx-auto max-w-sm text-sm leading-6 text-muted-foreground">{description}</p>
+        <div className="surface-card flex min-h-48 flex-col items-center justify-center gap-3.5 p-6 text-center">
+            {icon ? <div className="rounded-lg border border-border bg-muted/70 p-3.5 text-primary">{icon}</div> : null}
+            <div className="space-y-1.5">
+                <h3 className="text-base font-semibold tracking-[-0.04em] text-foreground">{title}</h3>
+                <p className="mx-auto max-w-sm text-sm leading-5 text-muted-foreground">{description}</p>
             </div>
-            {action ? <div className="pt-2">{action}</div> : null}
+            {action ? <div className="pt-1">{action}</div> : null}
         </div>
     );
 }

@@ -315,10 +315,20 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (!event.metaKey && !event.ctrlKey) return;
+            const key = event.key?.toLowerCase();
+
+            if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+                if (event.shiftKey || event.repeat || key !== "q") return;
+                if (isEditableKeyboardTarget(event.target)) return;
+
+                event.preventDefault();
+                openQuickAdd();
+                return;
+            }
+
             if (event.altKey) return;
 
-            if (event.key?.toLowerCase() === "k") {
+            if (key === "k") {
                 event.preventDefault();
                 handleGlobalSearchOpenChange(true);
                 return;
@@ -344,7 +354,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
         return () => {
             window.removeEventListener("keydown", handleKeyDown);
         };
-    }, [enterPrimaryActivity, handleGlobalSearchOpenChange, setCollapsedState]);
+    }, [enterPrimaryActivity, handleGlobalSearchOpenChange, openQuickAdd, setCollapsedState]);
 
     function openDesktopPreview() {
         clearHoverPreviewTimer();
@@ -428,48 +438,48 @@ function AppShellLayout({ children }: { children: ReactNode }) {
         return (
             <DropdownMenuContent
                 align="end"
-                className="w-72 rounded-xl"
+                className="w-64 rounded-lg"
             >
-                <DropdownMenuItem className="rounded-md px-3 py-2" onClick={() => handleNavigate("/progress")}>
+                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => handleNavigate("/progress")}>
                     <BarChart3 className="h-4 w-4" />
                     Progress
                 </DropdownMenuItem>
-                <DropdownMenuItem className="rounded-md px-3 py-2" onClick={() => handleNavigate("/community")}>
+                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => handleNavigate("/community")}>
                     <Users className="h-4 w-4" />
                     Community
                 </DropdownMenuItem>
-                <DropdownMenuItem className="rounded-md px-3 py-2" onClick={() => handleNavigate("/tasks?view=done")}>
+                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => handleNavigate("/tasks?view=done")}>
                     <CheckSquare2 className="h-4 w-4" />
                     Completed Tasks
                 </DropdownMenuItem>
-                <DropdownMenuItem className="rounded-md px-3 py-2" onClick={() => handleNavigate("/settings")}>
+                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => handleNavigate("/settings")}>
                     <Settings className="h-4 w-4" />
                     Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <DropdownMenuLabel className="px-2.5 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                     Theme
                 </DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={activeTheme} onValueChange={(value) => setTheme(value)}>
-                    <DropdownMenuRadioItem value="light" className="rounded-md px-3 py-2">
+                    <DropdownMenuRadioItem value="light" className="rounded-md px-2.5 py-2">
                         <Sun className="h-4 w-4" />
                         Light
                     </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="dark" className="rounded-md px-3 py-2">
+                    <DropdownMenuRadioItem value="dark" className="rounded-md px-2.5 py-2">
                         <Moon className="h-4 w-4" />
                         Dark
                     </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="midnight" className="rounded-md px-3 py-2">
+                    <DropdownMenuRadioItem value="midnight" className="rounded-md px-2.5 py-2">
                         <MoonStar className="h-4 w-4" />
                         Midnight
                     </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="noir" className="rounded-md px-3 py-2">
+                    <DropdownMenuRadioItem value="noir" className="rounded-md px-2.5 py-2">
                         <Circle className="h-4 w-4" />
                         Noir
                     </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="rounded-md px-3 py-2" onClick={() => void handleLogout()}>
+                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => void handleLogout()}>
                     <LogOut className="h-4 w-4" />
                     Log out
                 </DropdownMenuItem>
@@ -584,7 +594,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                         cursor: snapshot.isDragging ? "grabbing" : "pointer",
                                     }}
                                     className={cn(
-                                        "flex w-full cursor-pointer items-center gap-3 rounded-md border border-transparent px-3 py-2.5 text-left text-sm font-medium transition-colors",
+                                        "flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent px-2.5 py-2.5 text-left text-sm font-medium transition-colors",
                                         active
                                             ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
                                             : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
@@ -594,7 +604,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                     <span className={cn("pointer-events-none h-2.5 w-2.5 rounded-sm", palette.accent)} />
                                     <Icon className={cn("pointer-events-none h-4 w-4 shrink-0", active ? palette.text : "text-muted-foreground")} />
                                     <span className="pointer-events-none min-w-0 flex-1 truncate">{summary.list.name}</span>
-                                    <span className="pointer-events-none font-mono text-[11px] text-muted-foreground">
+                                    <span className="pointer-events-none font-mono text-[10px] text-muted-foreground">
                                         {summary.incompleteCount}
                                     </span>
                                 </div>
@@ -619,7 +629,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 type="button"
                                 onClick={() => handleNavigate(`/projects/${summary.list.id}`)}
                                 className={cn(
-                                    "flex w-full items-center gap-3 rounded-md border border-transparent px-3 py-2.5 text-left text-sm font-medium transition-colors",
+                                    "flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-2.5 text-left text-sm font-medium transition-colors",
                                     active
                                         ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
                                         : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
@@ -628,7 +638,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 <span className={cn("h-2.5 w-2.5 rounded-sm", palette.accent)} />
                                 <Icon className={cn("h-4 w-4 shrink-0", active ? palette.text : "text-muted-foreground")} />
                                 <span className="min-w-0 flex-1 truncate">{summary.list.name}</span>
-                                <span className="font-mono text-[11px] text-muted-foreground">{summary.incompleteCount}</span>
+                                <span className="font-mono text-[10px] text-muted-foreground">{summary.incompleteCount}</span>
                             </button>
                         );
                     })}
@@ -669,9 +679,9 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
         return (
             <div className="flex h-full w-full flex-col bg-sidebar">
-                <div className={cn("border-b border-sidebar-border", collapsed ? "px-2 py-4" : "px-4 py-4")}>
+                <div className={cn("border-b border-sidebar-border", collapsed ? "px-2 py-3" : "px-3 py-3")}>
                     {collapsed ? (
-                        <div className="flex flex-col items-center gap-4">
+                        <div className="flex flex-col items-center gap-3">
                                 <Link
                                     href="/tasks"
                                     title="Go to Today"
@@ -698,8 +708,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                         </div>
                     ) : (
                         <>
-                            <div className="flex items-center justify-between gap-3">
-                                <Link href="/tasks" onClick={() => dismissPrimaryActivities()} className="min-w-0 text-base font-semibold uppercase tracking-[0.14em] text-sidebar-foreground">
+                            <div className="flex items-center justify-between gap-2.5">
+                                <Link href="/tasks" onClick={() => dismissPrimaryActivities()} className="min-w-0 text-sm font-semibold uppercase tracking-[0.14em] text-sidebar-foreground">
                                     Stride
                                 </Link>
 
@@ -720,27 +730,34 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 )}
                             </div>
 
-                            <div className="mt-3 space-y-3">
+                            <div className="mt-2.5 space-y-2">
                                 {renderGlobalSearchTrigger({ collapsed, mobile })}
 
                                 <Button
-                                    className="h-11 w-full justify-start rounded-md px-4"
-                                    size="default"
+                                    className="h-10 w-full justify-between rounded-md px-3"
+                                    size="sm"
                                     onClick={() => {
                                         openQuickAdd();
                                     }}
                                     title="Quick add"
                                 >
-                                    <Plus className="h-4 w-4" />
-                                    Quick Add
+                                    <span className="inline-flex items-center gap-2">
+                                        <Plus className="h-4 w-4" />
+                                        Add
+                                    </span>
+                                    {mobile ? null : (
+                                        <span className="rounded-sm border border-primary-foreground/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-primary-foreground/80">
+                                            Q
+                                        </span>
+                                    )}
                                 </Button>
                             </div>
                         </>
                     )}
                 </div>
 
-                <div className={cn("flex-1 overflow-y-auto py-4", collapsed ? "px-2" : "px-3")}>
-                    <div className={cn("space-y-6", collapsed && "space-y-5")}>
+                <div className={cn("flex-1 overflow-y-auto py-3", collapsed ? "px-2" : "px-2.5")}>
+                    <div className={cn("space-y-5", collapsed && "space-y-4")}>
                         <nav className="space-y-1">
                             {PRIMARY_ITEMS.map((item) => {
                                 const active = item.href === "/tasks"
@@ -755,7 +772,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                         title={collapsed ? item.label : undefined}
                                         className={cn(
                                             "flex w-full cursor-pointer items-center rounded-md border border-transparent text-sm font-medium transition-colors",
-                                            collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : "gap-3 px-3 py-2.5",
+                                            collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : "gap-2.5 px-2.5 py-2.5",
                                             active
                                                 ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
                                                 : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
@@ -769,8 +786,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                         </nav>
 
                         {!collapsed && pathname === "/tasks" ? (
-                            <div className="space-y-2">
-                                <div className="px-3">
+                            <div className="space-y-1.5">
+                                <div className="px-2.5">
                                     <p className="eyebrow">Views</p>
                                 </div>
                                 <nav className="space-y-1">
@@ -783,17 +800,17 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                 type="button"
                                                 onClick={() => handleNavigate(item.href)}
                                                 className={cn(
-                                                    "flex w-full cursor-pointer items-center justify-between rounded-md border border-transparent px-3 py-2.5 text-sm font-medium transition-colors",
+                                                    "flex w-full cursor-pointer items-center justify-between rounded-md border border-transparent px-2.5 py-2.5 text-sm font-medium transition-colors",
                                                     active
                                                         ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
                                                         : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
                                                 )}
                                             >
-                                                <span className="flex items-center gap-3">
+                                                <span className="flex items-center gap-2.5">
                                                     <item.icon className="h-4 w-4" />
                                                     <span>{item.label}</span>
                                                 </span>
-                                                <span className="rounded-sm border border-sidebar-border bg-sidebar px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                                                <span className="rounded-sm border border-sidebar-border bg-sidebar px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                                                     {count}
                                                 </span>
                                             </button>
@@ -803,9 +820,9 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                             </div>
                         ) : null}
 
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                             {!collapsed ? (
-                                <div className="flex items-center justify-between px-3">
+                                <div className="flex items-center justify-between px-2.5 py-0.5">
                                     <button
                                         type="button"
                                         onClick={() => handleNavigate("/projects")}
@@ -855,7 +872,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                     </div>
                 </div>
 
-                <div className={cn("border-t border-sidebar-border py-3", collapsed ? "px-2" : "px-3")}>
+                <div className={cn("border-t border-sidebar-border py-2.5", collapsed ? "px-2" : "px-2.5")}>
                     <DropdownMenu
                         open={mobile ? mobileProfileMenuSource === "sidebar" : isDesktopProfileMenuOpen}
                         onOpenChange={(open) => {
@@ -872,10 +889,10 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 id={profileMenuTriggerId}
                                 className={cn(
                                     "flex w-full cursor-pointer items-center rounded-md border border-transparent transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/70",
-                                    collapsed ? "mx-auto h-11 w-11 justify-center rounded-lg px-0" : "gap-3 px-3 py-2.5 text-left",
+                                    collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : "gap-2.5 px-2.5 py-2 text-left",
                                 )}
                             >
-                                <Avatar className={cn("border border-border/60", collapsed ? "h-9 w-9" : "h-10 w-10")}>
+                                <Avatar className={cn("border border-border/60", collapsed ? "h-8 w-8" : "h-9 w-9")}>
                                     <AvatarImage src={avatarUrl ?? ""} alt={profile?.username ?? "User"} />
                                     <AvatarFallback className="bg-primary/12 text-primary">
                                         {profile?.username?.slice(0, 1).toUpperCase() ?? "S"}
@@ -886,7 +903,6 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                         <p className="truncate text-sm font-semibold text-foreground">
                                             {profile?.username ?? "Profile"}
                                         </p>
-                                        <p className="truncate text-xs text-muted-foreground">Progress, settings, appearance</p>
                                     </div>
                                 )}
                             </button>
@@ -1012,29 +1028,29 @@ function AppShellLayout({ children }: { children: ReactNode }) {
             ) : null}
 
             <Dialog open={globalSearchOpen} onOpenChange={handleGlobalSearchOpenChange}>
-                <DialogContent showCloseButton={false} className="max-w-2xl overflow-hidden border-border/70 p-0">
+                <DialogContent showCloseButton={false} className="max-w-xl overflow-hidden border-border/70 p-0">
                     <DialogTitle className="sr-only">Global search</DialogTitle>
                     <DialogDescription className="sr-only">
                         Search destinations, projects, and tasks across your workspace.
                     </DialogDescription>
 
-                    <div className="border-b border-border/70 px-5 py-4">
-                        <div className="flex items-center gap-3">
+                    <div className="border-b border-border/70 px-4 py-3.5">
+                        <div className="flex items-center gap-2.5">
                             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <Input
                                 autoFocus
                                 value={globalSearchQuery}
                                 onChange={(event) => setGlobalSearchQuery(event.target.value)}
-                                placeholder="Search destinations, projects, and tasks"
-                                className="h-11 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0"
+                                placeholder="Search"
+                                className="h-10 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0"
                             />
                         </div>
                     </div>
 
-                    <div className="max-h-[70vh] overflow-y-auto p-3">
+                    <div className="max-h-[70vh] overflow-y-auto p-2.5">
                         {!hasGlobalSearchResults ? (
-                            <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                                No matches for “{globalSearchQuery.trim()}”.
+                            <div className="rounded-lg border border-dashed border-border px-4 py-7 text-center text-sm text-muted-foreground">
+                                No matches for &quot;{globalSearchQuery.trim()}&quot;.
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -1048,15 +1064,12 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                 key={item.href}
                                                 type="button"
                                                 onClick={() => handleGlobalSearchNavigate(item.href)}
-                                                className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/70"
+                                                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/70"
                                             >
-                                                <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+                                                <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
                                                     <item.icon className="h-4 w-4" />
                                                 </span>
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="truncate text-sm font-medium text-foreground">{item.label}</p>
-                                                    <p className="text-xs text-muted-foreground">Destination</p>
-                                                </div>
+                                                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{item.label}</span>
                                             </button>
                                         ))}
                                     </div>
@@ -1080,14 +1093,14 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                     key={summary.list.id}
                                                     type="button"
                                                     onClick={() => handleGlobalSearchNavigate(`/projects/${summary.list.id}`)}
-                                                    className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/70"
+                                                    className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/70"
                                                 >
-                                                    <span className={cn("flex h-9 w-9 items-center justify-center rounded-md border", palette.soft, palette.border)}>
+                                                    <span className={cn("flex h-8 w-8 items-center justify-center rounded-md border", palette.soft, palette.border)}>
                                                         <Icon className={cn("h-4 w-4", palette.text)} />
                                                     </span>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-sm font-medium text-foreground">{summary.list.name}</p>
-                                                        <p className="truncate text-xs text-muted-foreground">{metaParts.join(" • ")}</p>
+                                                        <p className="truncate text-[11px] text-muted-foreground">{metaParts.join(" / ")}</p>
                                                     </div>
                                                 </button>
                                             );
@@ -1107,7 +1120,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                     key={task.id}
                                                     type="button"
                                                     onClick={() => handleGlobalSearchNavigate(`/tasks?taskId=${task.id}`)}
-                                                    className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/70"
+                                                    className="flex w-full items-start gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/70"
                                                 >
                                                     <span className={cn(
                                                         "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border",
@@ -1119,8 +1132,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                     </span>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-sm font-medium text-foreground">{task.title}</p>
-                                                        <p className="truncate text-xs text-muted-foreground">
-                                                            {[projectName, dueLabel, task.is_done ? "Completed" : null].filter(Boolean).join(" • ")}
+                                                        <p className="truncate text-[11px] text-muted-foreground">
+                                                            {[projectName, dueLabel, task.is_done ? "Completed" : null].filter(Boolean).join(" / ")}
                                                         </p>
                                                     </div>
                                                 </button>

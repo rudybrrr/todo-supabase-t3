@@ -2,15 +2,26 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
-import type { TodoList, FocusSession } from "~/lib/types";
+import type { FocusSession, TodoList, TodoRow } from "~/lib/types";
+
+interface WeeklyStatPoint {
+    day: string;
+    date: string;
+    minutes: number;
+}
+
+interface SubjectStatPoint {
+    name: string;
+    value: number;
+}
 
 interface AppStats {
     totalHours: string;
     tasksCompleted: number;
     streak: number;
     avgSession: string;
-    weeklyData: { day: string; date: string; minutes: number }[];
-    subjectData: { name: string; value: number }[];
+    weeklyData: WeeklyStatPoint[];
+    subjectData: SubjectStatPoint[];
 }
 
 interface DataProfile {
@@ -32,6 +43,12 @@ interface DataContextType {
 interface ListMembershipRow {
     role: string;
     todo_lists: TodoList | TodoList[] | null;
+}
+
+interface TodoRealtimePayload {
+    eventType: "INSERT" | "UPDATE" | "DELETE";
+    new: Partial<TodoRow>;
+    old: Partial<TodoRow>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -77,6 +94,128 @@ function calculateStreak(sessions: FocusSession[]) {
     return streak;
 }
 
+function getWeeklyDataSkeleton() {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    return Array.from({ length: 7 }, (_, i) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (6 - i));
+
+        return {
+            day: days[date.getDay()] ?? "Unknown",
+            date: date.toISOString().split("T")[0] ?? "",
+            minutes: 0,
+        };
+    });
+}
+
+function buildStatsFromSessions(sessions: FocusSession[], tasksCompleted: number): AppStats {
+    const weeklyData = getWeeklyDataSkeleton();
+    let totalSeconds = 0;
+    let focusSessionCount = 0;
+    const subjects: Record<string, number> = {};
+
+    sessions.forEach((session) => {
+        if (session.mode !== "focus") return;
+
+        totalSeconds += session.duration_seconds;
+        focusSessionCount += 1;
+
+        const sessionDate = new Date(session.inserted_at).toISOString().split("T")[0] ?? "";
+        const dayData = weeklyData.find((day) => day.date === sessionDate);
+        if (dayData) {
+            dayData.minutes += Math.round(session.duration_seconds / 60);
+        }
+
+        const subjectName = session.todo_lists?.name ?? "General";
+        subjects[subjectName] = (subjects[subjectName] ?? 0) + Math.round(session.duration_seconds / 60);
+    });
+
+    return {
+        totalHours: `${(totalSeconds / 3600).toFixed(1)}h`,
+        tasksCompleted,
+        streak: calculateStreak(sessions),
+        avgSession: focusSessionCount > 0 ? `${Math.round((totalSeconds / 60) / focusSessionCount)}m` : "0m",
+        weeklyData,
+        subjectData: Object.entries(subjects).map(([name, value]) => ({ name, value })),
+    };
+}
+
+function createEmptyStats(tasksCompleted = 0): AppStats {
+    return {
+        totalHours: "0.0h",
+        tasksCompleted,
+        streak: 0,
+        avgSession: "0m",
+        weeklyData: getWeeklyDataSkeleton(),
+        subjectData: [],
+    };
+}
+
+function areListsEqual(current: TodoList[], next: TodoList[]) {
+    if (current.length !== next.length) return false;
+
+    return current.every((list, index) => {
+        const nextList = next[index];
+        if (!nextList) return false;
+
+        return list.id === nextList.id
+            && list.name === nextList.name
+            && list.owner_id === nextList.owner_id
+            && (list.inserted_at ?? null) === (nextList.inserted_at ?? null)
+            && (list.user_role ?? null) === (nextList.user_role ?? null)
+            && (list.color_token ?? null) === (nextList.color_token ?? null)
+            && (list.icon_token ?? null) === (nextList.icon_token ?? null);
+    });
+}
+
+function areProfilesEqual(current: DataProfile | null, next: DataProfile | null) {
+    if (current === next) return true;
+    if (!current || !next) return false;
+
+    return (current.username ?? null) === (next.username ?? null)
+        && (current.full_name ?? null) === (next.full_name ?? null)
+        && (current.avatar_url ?? null) === (next.avatar_url ?? null)
+        && (current.daily_focus_goal_minutes ?? null) === (next.daily_focus_goal_minutes ?? null);
+}
+
+function areWeeklyDataEqual(current: WeeklyStatPoint[], next: WeeklyStatPoint[]) {
+    if (current.length !== next.length) return false;
+
+    return current.every((point, index) => {
+        const nextPoint = next[index];
+        if (!nextPoint) return false;
+
+        return point.day === nextPoint.day
+            && point.date === nextPoint.date
+            && point.minutes === nextPoint.minutes;
+    });
+}
+
+function areSubjectDataEqual(current: SubjectStatPoint[], next: SubjectStatPoint[]) {
+    if (current.length !== next.length) return false;
+
+    return current.every((point, index) => {
+        const nextPoint = next[index];
+        if (!nextPoint) return false;
+
+        return point.name === nextPoint.name
+            && point.value === nextPoint.value;
+    });
+}
+
+function areStatsEqual(current: AppStats | null, next: AppStats | null) {
+    if (current === next) return true;
+    if (!current || !next) return false;
+
+    return current.totalHours === next.totalHours
+        && current.tasksCompleted === next.tasksCompleted
+        && current.streak === next.streak
+        && current.avgSession === next.avgSession
+        && areWeeklyDataEqual(current.weeklyData, next.weeklyData)
+        && areSubjectDataEqual(current.subjectData, next.subjectData);
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [userId, setUserId] = useState<string | null>(null);
@@ -85,88 +224,134 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const [stats, setStats] = useState<AppStats | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchData = useCallback(async (uid: string) => {
+    const fetchShellData = useCallback(async (uid: string) => {
+        const [listsRes, profileRes] = await Promise.all([
+            supabase.from("todo_list_members").select("list_id, role, todo_lists(*)").eq("user_id", uid),
+            supabase.from("profiles").select("username, full_name, avatar_url, daily_focus_goal_minutes").eq("id", uid).maybeSingle(),
+        ]);
+
+        if (listsRes.error) throw listsRes.error;
+        if (profileRes.error) throw profileRes.error;
+
+        const membershipRows = (listsRes.data ?? []) as ListMembershipRow[];
+        const userLists: TodoList[] = membershipRows.flatMap((membership) => {
+            const list = normalizeList(membership.todo_lists);
+            if (!list) return [];
+            return [{
+                ...list,
+                user_role: membership.role,
+            }];
+        });
+
+        const nextProfile = profileRes.data
+            ? {
+                ...(profileRes.data as DataProfile),
+                daily_focus_goal_minutes: (profileRes.data as DataProfile).daily_focus_goal_minutes ?? 120,
+            }
+            : null;
+
+        setLists((current) => areListsEqual(current, userLists) ? current : userLists);
+        setProfile((current) => areProfilesEqual(current, nextProfile) ? current : nextProfile);
+    }, [supabase]);
+
+    const fetchStatsData = useCallback(async (uid: string) => {
+        const [sessionsRes, todosRes] = await Promise.all([
+            supabase.from("focus_sessions").select("*, todo_lists (name)").eq("user_id", uid).order("inserted_at", { ascending: true }),
+            supabase.from("todos").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("is_done", true),
+        ]);
+
+        if (sessionsRes.error) throw sessionsRes.error;
+        if (todosRes.error) throw todosRes.error;
+
+        const nextStats = buildStatsFromSessions((sessionsRes.data ?? []) as FocusSession[], todosRes.count ?? 0);
+        setStats((current) => areStatsEqual(current, nextStats) ? current : nextStats);
+    }, [supabase]);
+
+    const fetchCompletedTaskCount = useCallback(async (uid: string) => {
+        const { count, error } = await supabase
+            .from("todos")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", uid)
+            .eq("is_done", true);
+
+        if (error) throw error;
+
+        const nextCount = count ?? 0;
+        setStats((current) => {
+            const baseStats = current ?? createEmptyStats(nextCount);
+            const nextStats = {
+                ...baseStats,
+                tasksCompleted: nextCount,
+            };
+
+            return areStatsEqual(current, nextStats) ? current : nextStats;
+        });
+    }, [supabase]);
+
+    const fetchFocusStats = useCallback(async (uid: string) => {
+        const { data, error } = await supabase
+            .from("focus_sessions")
+            .select("*, todo_lists (name)")
+            .eq("user_id", uid)
+            .order("inserted_at", { ascending: true });
+
+        if (error) throw error;
+
+        setStats((current) => {
+            const tasksCompleted = current?.tasksCompleted ?? 0;
+            const nextStats = buildStatsFromSessions((data ?? []) as FocusSession[], tasksCompleted);
+            return areStatsEqual(current, nextStats) ? current : nextStats;
+        });
+    }, [supabase]);
+
+    const updateCompletedTaskCountFromPayload = useCallback((payload: TodoRealtimePayload) => {
+        const nextIsDone = typeof payload.new.is_done === "boolean" ? payload.new.is_done : null;
+        const previousIsDone = typeof payload.old.is_done === "boolean" ? payload.old.is_done : null;
+
+        let delta = 0;
+        if (payload.eventType === "INSERT" && nextIsDone === true) {
+            delta = 1;
+        } else if (payload.eventType === "INSERT" && nextIsDone === false) {
+            return true;
+        } else if (payload.eventType === "DELETE" && previousIsDone === true) {
+            delta = -1;
+        } else if (payload.eventType === "DELETE" && previousIsDone === false) {
+            return true;
+        } else if (payload.eventType === "UPDATE" && previousIsDone !== null && nextIsDone !== null) {
+            if (!previousIsDone && nextIsDone) delta = 1;
+            if (previousIsDone && !nextIsDone) delta = -1;
+        }
+
+        if (delta === 0) {
+            return previousIsDone !== null && nextIsDone !== null;
+        }
+
+        setStats((current) => {
+            const baseStats = current ?? createEmptyStats();
+            const nextStats = {
+                ...baseStats,
+                tasksCompleted: Math.max(0, baseStats.tasksCompleted + delta),
+            };
+
+            return areStatsEqual(current, nextStats) ? current : nextStats;
+        });
+
+        return true;
+    }, []);
+
+    const loadUserData = useCallback(async (uid: string) => {
         try {
-            const [listsRes, profileRes, sessionsRes, todosRes] = await Promise.all([
-                supabase.from("todo_list_members").select("list_id, role, todo_lists(*)").eq("user_id", uid),
-                supabase.from("profiles").select("username, full_name, avatar_url, daily_focus_goal_minutes").eq("id", uid).maybeSingle(),
-                supabase.from("focus_sessions").select("*, todo_lists (name)").eq("user_id", uid).order("inserted_at", { ascending: true }),
-                supabase.from("todos").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("is_done", true),
+            setLoading(true);
+            await Promise.all([
+                fetchShellData(uid),
+                fetchStatsData(uid),
             ]);
-
-            if (listsRes.data) {
-                const membershipRows = listsRes.data as ListMembershipRow[];
-                const userLists: TodoList[] = membershipRows.flatMap((membership) => {
-                    const list = normalizeList(membership.todo_lists);
-                    if (!list) return [];
-                    return [{
-                        ...list,
-                        user_role: membership.role,
-                    }];
-                });
-                setLists(userLists);
-            }
-
-            if (profileRes.data) {
-                const profileRow = profileRes.data as DataProfile;
-                setProfile({
-                    ...profileRow,
-                    daily_focus_goal_minutes: profileRow.daily_focus_goal_minutes ?? 120,
-                });
-            } else {
-                setProfile(null);
-            }
-
-            if (sessionsRes.data) {
-                const sessions = sessionsRes.data as FocusSession[];
-                const completedCount = todosRes.count ?? 0;
-
-                const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                const last7Days = Array.from({ length: 7 }, (_, i) => {
-                    const d = new Date();
-                    d.setDate(d.getDate() - (6 - i));
-                    return {
-                        day: days[d.getDay()] ?? "Unknown",
-                        date: d.toISOString().split("T")[0] ?? "",
-                        minutes: 0,
-                    };
-                });
-
-                let totalSeconds = 0;
-                let focusSessionCount = 0;
-                const subjects: Record<string, number> = {};
-
-                sessions.forEach((session) => {
-                    if (session.mode !== "focus") return;
-
-                    totalSeconds += session.duration_seconds;
-                    focusSessionCount++;
-
-                    const sessionDate = new Date(session.inserted_at).toISOString().split("T")[0] ?? "";
-                    const dayData = last7Days.find((day) => day.date === sessionDate);
-                    if (dayData) {
-                        dayData.minutes += Math.round(session.duration_seconds / 60);
-                    }
-
-                    const subjectName = session.todo_lists?.name ?? "General";
-                    subjects[subjectName] = (subjects[subjectName] ?? 0) + Math.round(session.duration_seconds / 60);
-                });
-
-                setStats({
-                    totalHours: `${(totalSeconds / 3600).toFixed(1)}h`,
-                    tasksCompleted: completedCount,
-                    streak: calculateStreak(sessions),
-                    avgSession: focusSessionCount > 0 ? `${Math.round((totalSeconds / 60) / focusSessionCount)}m` : "0m",
-                    weeklyData: last7Days,
-                    subjectData: Object.entries(subjects).map(([name, value]) => ({ name, value })),
-                });
-            }
         } catch (error) {
             console.error("Global Data fetch error:", error);
         } finally {
             setLoading(false);
         }
-    }, [supabase]);
+    }, [fetchShellData, fetchStatsData]);
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -174,7 +359,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
             if (user) {
                 setUserId(user.id);
-                void fetchData(user.id);
+                void loadUserData(user.id);
                 return;
             }
 
@@ -191,7 +376,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             if (session?.user) {
                 setUserId((prevUserId) => {
                     if (prevUserId === session.user.id) return prevUserId;
-                    void fetchData(session.user.id);
+                    void loadUserData(session.user.id);
                     return session.user.id;
                 });
                 return;
@@ -205,13 +390,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         });
 
         return () => subscription.unsubscribe();
-    }, [supabase, fetchData]);
+    }, [loadUserData, supabase]);
 
     const refreshData = useCallback(async () => {
         if (userId) {
-            await fetchData(userId);
+            try {
+                await Promise.all([
+                    fetchShellData(userId),
+                    fetchStatsData(userId),
+                ]);
+            } catch (error) {
+                console.error("Global Data refresh error:", error);
+            }
         }
-    }, [userId, fetchData]);
+    }, [fetchShellData, fetchStatsData, userId]);
 
     useEffect(() => {
         if (!userId) return;
@@ -221,19 +413,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "todos", filter: `user_id=eq.${userId}` },
-                () => void refreshData(),
+                (payload) => {
+                    const handled = updateCompletedTaskCountFromPayload(payload as TodoRealtimePayload);
+                    if (!handled) {
+                        void fetchCompletedTaskCount(userId);
+                    }
+                },
             )
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "focus_sessions", filter: `user_id=eq.${userId}` },
-                () => void refreshData(),
+                () => void fetchFocusStats(userId),
             )
             .subscribe();
 
         return () => {
             void supabase.removeChannel(syncChannel);
         };
-    }, [supabase, userId, refreshData]);
+    }, [fetchCompletedTaskCount, fetchFocusStats, supabase, updateCompletedTaskCountFromPayload, userId]);
 
     const value = useMemo(() => ({
         lists,

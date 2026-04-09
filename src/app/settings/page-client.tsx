@@ -1,13 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { BarChart3, Check, Circle, Moon, MoonStar, Palette, Sun, Users } from "lucide-react";
+import { Check, Circle, Moon, MoonStar, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 
 import { ACCENT_OPTIONS, useAccent } from "~/components/accent-provider";
 import { AppShell } from "~/components/app-shell";
 import { PageHeader, SectionCard } from "~/components/app-primitives";
-import { Button } from "~/components/ui/button";
 import { APP_THEMES, resolveThemeSelection } from "~/lib/theme-options";
 import { cn } from "~/lib/utils";
 import { ProfileForm } from "./profile-form";
@@ -24,31 +22,28 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
         midnight: MoonStar,
         noir: Circle,
     } as const;
+    const shortcuts = [
+        { keys: "Q", label: "Quick add" },
+        { keys: "Ctrl/Cmd K", label: "Search" },
+        { keys: "Ctrl/Cmd \\", label: "Toggle sidebar" },
+    ];
 
     return (
         <AppShell>
             <div className="page-container">
                 <PageHeader title="Settings" />
 
-                <div className="space-y-10">
-                    <div className="grid gap-8 xl:grid-cols-[minmax(0,1.2fr)_22rem]">
-                        <div className="space-y-6">
+                <div className="space-y-8">
+                    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_22rem]">
+                        <div className="space-y-5">
                             <ProfileForm userId={userId} />
                         </div>
 
-                        <div className="space-y-6">
+                        <div className="space-y-5">
                             <SectionCard title="Appearance">
-                                <div className="space-y-5">
+                                <div className="space-y-4">
                                     <div className="space-y-2">
-                                        <div className="flex items-center gap-3">
-                                            <div className="rounded-2xl bg-primary/10 p-3 text-primary">
-                                                <Palette className="h-5 w-5" />
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-semibold text-foreground">Theme</p>
-                                                <p className="text-xs text-muted-foreground">Light, Dark, Midnight, or Noir</p>
-                                            </div>
-                                        </div>
+                                        <p className="text-sm font-semibold text-foreground">Theme</p>
                                         <div className="grid gap-2">
                                             {APP_THEMES.map((option) => {
                                                 const Icon = themeIcons[option.value];
@@ -82,12 +77,12 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
                                         <div className="flex items-center justify-between gap-3">
                                             <p className="text-sm font-semibold text-foreground">Accent</p>
                                             <span className="text-xs text-muted-foreground">
-                                                {accentDisabled ? "Noir uses a fixed neutral palette" : "Saved on this browser"}
+                                                {accentDisabled ? "Locked in Noir" : "Saved locally"}
                                             </span>
                                         </div>
                                         {accentDisabled ? (
                                             <p className="text-xs text-muted-foreground">
-                                                Your accent choice is preserved for Light, Dark, and Midnight.
+                                                Preserved for Light, Dark, and Midnight.
                                             </p>
                                         ) : null}
                                         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" role="radiogroup" aria-label="Accent color">
@@ -126,20 +121,19 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
                                 </div>
                             </SectionCard>
 
-                            <SectionCard title="Shortcuts">
-                                <div className="grid gap-3">
-                                    <Button variant="outline" asChild className="justify-start">
-                                        <Link href="/community">
-                                            <Users className="h-4 w-4" />
-                                            Open community
-                                        </Link>
-                                    </Button>
-                                    <Button variant="outline" asChild className="justify-start">
-                                        <Link href="/progress">
-                                            <BarChart3 className="h-4 w-4" />
-                                            Open progress
-                                        </Link>
-                                    </Button>
+                            <SectionCard title="Keyboard">
+                                <div className="space-y-2">
+                                    {shortcuts.map((shortcut) => (
+                                        <div
+                                            key={shortcut.label}
+                                            className="flex items-center justify-between rounded-xl border border-border/60 bg-background/70 px-3 py-2.5"
+                                        >
+                                            <span className="text-sm text-foreground">{shortcut.label}</span>
+                                            <span className="rounded-md border border-border bg-secondary/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                                                {shortcut.keys}
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
                             </SectionCard>
                         </div>
@@ -152,7 +146,7 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
                             rel="noreferrer"
                             className="transition-colors hover:text-foreground"
                         >
-                            Made with love by Rudy ♡
+                            Built by Rudy
                         </a>
                     </footer>
                 </div>

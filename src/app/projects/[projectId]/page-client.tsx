@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarRange, CheckSquare2, Filter, FolderKanban, MoreHorizontal, PencilLine, Share2, X } from "lucide-react";
+import { CalendarRange, CheckSquare2, Filter, FolderKanban, MoreHorizontal, PencilLine, Plus, Share2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { AppShell, useShellActions } from "~/components/app-shell";
@@ -30,8 +30,6 @@ import {
 import {
     Popover,
     PopoverContent,
-    PopoverHeader,
-    PopoverTitle,
     PopoverTrigger,
 } from "~/components/ui/popover";
 import {
@@ -254,7 +252,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                     title="Project not found"
                     description="Return to Projects and pick another workspace."
                     icon={<FolderKanban className="h-8 w-8" />}
-                    action={<Button onClick={() => router.push("/projects")}>Back</Button>}
+                    action={<Button size="sm" onClick={() => router.push("/projects")}>Back</Button>}
                 />
             </div>
         );
@@ -280,7 +278,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                                     </Button>
                                 </SheetTrigger>
                                 <SheetContent side="bottom" className="rounded-t-[2rem] border-x-0 border-t border-border/70">
-                                    <SheetHeader>
+                                    <SheetHeader className="sr-only">
                                         <SheetTitle>Filters</SheetTitle>
                                         <SheetDescription>Refine this project by status or priority.</SheetDescription>
                                     </SheetHeader>
@@ -305,10 +303,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                                         <span className="sr-only">Open filters</span>
                                     </Button>
                                 </PopoverTrigger>
-                                <PopoverContent align="end" className="w-80">
-                                    <PopoverHeader>
-                                        <PopoverTitle>Filters</PopoverTitle>
-                                    </PopoverHeader>
+                                <PopoverContent align="end" className="w-72 p-3">
                                     <ProjectFilterPanel
                                         taskFilter={taskFilter}
                                         priorityFilter={priorityFilter}
@@ -330,7 +325,10 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                             </Button>
 
                             {!selectionMode ? (
-                                <Button onClick={() => openQuickAdd({ listId: project.id })}>Add task</Button>
+                                <Button size="sm" onClick={() => openQuickAdd({ listId: project.id })}>
+                                    <Plus className="h-4 w-4" />
+                                    Add
+                                </Button>
                             ) : null}
 
                             <DropdownMenu>
@@ -340,7 +338,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                                         <span className="sr-only">Project actions</span>
                                     </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-56 rounded-2xl">
+                                <DropdownMenuContent align="end" className="w-52 rounded-xl">
                                     <DropdownMenuItem onClick={() => router.push(`/calendar?listId=${project.id}`)}>
                                         <CalendarRange className="h-4 w-4" />
                                         Calendar
@@ -386,7 +384,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                             <button
                                 type="button"
                                 onClick={() => setTaskFilter("open")}
-                                className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/90 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                             >
                                 {PROJECT_STATUS_OPTIONS.find((option) => option.value === taskFilter)?.label}
                                 <X className="h-3.5 w-3.5" />
@@ -396,7 +394,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                             <button
                                 type="button"
                                 onClick={() => setPriorityFilter("all")}
-                                className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/90 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                             >
                                 {PRIORITY_OPTIONS.find((option) => option.value === priorityFilter)?.label}
                                 <X className="h-3.5 w-3.5" />
@@ -408,7 +406,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                 <div className="grid gap-5 lg:flex lg:items-start lg:gap-0">
                     <div className="min-w-0 flex-1">
                         {loading ? (
-                            <div className="surface-muted px-4 py-6 text-sm text-muted-foreground">Loading tasks...</div>
+                            <div className="surface-muted px-3 py-4 text-sm text-muted-foreground">Loading tasks...</div>
                         ) : visibleDisplayTasks.length > 0 ? (
                             <TaskList
                                 tasks={visibleDisplayTasks}
@@ -423,8 +421,13 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                         ) : (
                             <EmptyState
                                 title="No tasks"
-                                description={activeFilterCount > 0 ? "Try changing your filters." : "Add a task to this project."}
-                                action={<Button onClick={() => openQuickAdd({ listId: project.id })}>Add task</Button>}
+                                description={activeFilterCount > 0 ? "Adjust filters or add one." : "Add a task to this project."}
+                                action={(
+                                    <Button size="sm" onClick={() => openQuickAdd({ listId: project.id })}>
+                                        <Plus className="h-4 w-4" />
+                                        Add
+                                    </Button>
+                                )}
                             />
                         )}
                     </div>
@@ -497,7 +500,7 @@ function ProjectFilterPanel({
     const hasActiveFilters = taskFilter !== "open" || priorityFilter !== "all";
 
     return (
-        <div className="space-y-4 p-1 pt-4">
+        <div className="space-y-4 p-1">
             <div className="space-y-2">
                 <p className="eyebrow">Status</p>
                 <div className="flex flex-wrap gap-2">
@@ -539,7 +542,7 @@ function ProjectFilterPanel({
                 <Button
                     variant="ghost"
                     size="sm"
-                    className="w-full justify-center"
+                    className="h-9 w-full justify-center"
                     onClick={() => {
                         onTaskFilterChange("open");
                         onPriorityFilterChange("all");
@@ -554,6 +557,6 @@ function ProjectFilterPanel({
 
 function cnPriorityFilter(active: boolean) {
     return active
-        ? "rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary"
-        : "rounded-full border border-border/70 bg-background/70 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:border-border hover:text-foreground";
+        ? "rounded-full border border-primary bg-primary px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-foreground"
+        : "rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
 }

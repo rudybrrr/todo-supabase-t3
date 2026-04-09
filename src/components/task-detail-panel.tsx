@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarRange, Check, FileText, Play, Trash2, X } from "lucide-react";
+import { CalendarRange, Check, ChevronLeft, ChevronRight, FileText, Play, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -36,6 +36,11 @@ function TaskDetailForm({
     images,
     userId,
     onClose,
+    previousTask,
+    nextTask,
+    taskPositionLabel,
+    onNavigateToTask,
+    onDirtyChange,
     onSaved,
     onDeleted,
 }: {
@@ -44,6 +49,11 @@ function TaskDetailForm({
     images: TodoImageRow[];
     userId: string;
     onClose?: () => void;
+    previousTask?: TaskDatasetRecord | null;
+    nextTask?: TaskDatasetRecord | null;
+    taskPositionLabel?: string | null;
+    onNavigateToTask?: (taskId: string) => void;
+    onDirtyChange?: (dirty: boolean) => void;
     onSaved: () => void;
     onDeleted: () => void;
 }) {
@@ -83,13 +93,24 @@ function TaskDetailForm({
         setDeletingAttachmentId(null);
     }, [syncFormState, task]);
 
-    const isDirty =
+    const isDirty = initializedTaskIdRef.current === task.id && (
         title !== task.title
         || description !== (task.description ?? "")
         || priority !== (task.priority ?? "")
         || dueDate !== getDateInputValue(task.due_date)
         || estimatedMinutes !== (task.estimated_minutes ? String(task.estimated_minutes) : "")
-        || listId !== task.list_id;
+        || listId !== task.list_id
+    );
+
+    useEffect(() => {
+        onDirtyChange?.(isDirty);
+    }, [isDirty, onDirtyChange]);
+
+    useEffect(() => {
+        return () => {
+            onDirtyChange?.(false);
+        };
+    }, [onDirtyChange]);
 
     async function handleSave() {
         const normalizedTitle = title.trim();
@@ -205,15 +226,69 @@ function TaskDetailForm({
 
     return (
         <>
-            <div className="space-y-6">
-                <div className="flex items-start justify-between gap-4 border-b border-border pb-4">
-                    <div className="min-w-0 flex flex-1 items-center gap-3">
+            <div className="space-y-5">
+                <div className="space-y-3 border-b border-border/70 pb-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                {taskPositionLabel ? `Task ${taskPositionLabel}` : "Task details"}
+                            </span>
+                            {onNavigateToTask ? (
+                                <div className="inline-flex items-center rounded-md border border-border/70 bg-muted/35 p-0.5">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        className="h-6 w-6 rounded-sm"
+                                        title={previousTask ? `Previous task: ${previousTask.title}` : "Previous task"}
+                                        aria-label={previousTask ? `Open previous task: ${previousTask.title}` : "Previous task unavailable"}
+                                        disabled={!previousTask}
+                                        onClick={() => previousTask && onNavigateToTask(previousTask.id)}
+                                    >
+                                        <ChevronLeft className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        className="h-6 w-6 rounded-sm"
+                                        title={nextTask ? `Next task: ${nextTask.title}` : "Next task"}
+                                        aria-label={nextTask ? `Open next task: ${nextTask.title}` : "Next task unavailable"}
+                                        disabled={!nextTask}
+                                        onClick={() => nextTask && onNavigateToTask(nextTask.id)}
+                                    >
+                                        <ChevronRight className="h-3.5 w-3.5" />
+                                    </Button>
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                            {isDirty ? (
+                                <Button
+                                    variant="tonal"
+                                    size="sm"
+                                    onClick={() => void handleSave()}
+                                    disabled={saving || !title.trim()}
+                                >
+                                    {saving ? "Saving..." : "Save"}
+                                </Button>
+                            ) : null}
+                            {onClose ? (
+                                <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>
+                                    <X className="h-4 w-4" />
+                                    <span className="sr-only">Close task details</span>
+                                </Button>
+                            ) : null}
+                        </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
                         <button
                             type="button"
                             aria-label={isDone ? "Mark task incomplete" : "Mark task complete"}
                             onClick={() => void handleToggleCompletion()}
                             className={cn(
-                                "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors",
+                                "mt-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors",
                                 isDone
                                     ? "border-primary bg-primary text-primary-foreground"
                                     : "border-border bg-card text-transparent hover:border-primary/60",
@@ -232,29 +307,14 @@ function TaskDetailForm({
                                     isDone && "text-muted-foreground line-through",
                                 )}
                             />
+                            {isDirty ? (
+                                <p className="mt-1 text-xs text-muted-foreground">Unsaved changes</p>
+                            ) : null}
                         </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                        {isDirty ? (
-                            <Button
-                                variant="tonal"
-                                size="sm"
-                                onClick={() => void handleSave()}
-                                disabled={saving || !title.trim()}
-                            >
-                                {saving ? "Saving..." : "Save"}
-                            </Button>
-                        ) : null}
-                        {onClose ? (
-                            <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>
-                                <X className="h-4 w-4" />
-                                <span className="sr-only">Close task details</span>
-                            </Button>
-                        ) : null}
                     </div>
                 </div>
 
-                <section>
+                <section className="space-y-2">
                     <label htmlFor="detailNotes" className="sr-only">
                         Notes
                     </label>
@@ -263,95 +323,97 @@ function TaskDetailForm({
                         value={description}
                         onChange={(event) => setDescription(event.target.value)}
                         placeholder="Add notes"
-                        className="min-h-[92px] resize-none rounded-none border-0 bg-transparent px-0 py-1 text-sm leading-6 shadow-none focus-visible:ring-0"
+                        className="min-h-[84px] resize-none rounded-xl border-border/70 bg-muted/20 px-3.5 py-3 text-sm leading-6 shadow-none focus-visible:ring-0"
                     />
                 </section>
 
-                <section className="divide-y divide-border/70 border-y border-border/70">
-                    <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project</p>
-                        <Select value={listId} onValueChange={setListId}>
-                            <SelectTrigger
-                                id="detailProject"
-                                className="h-auto min-h-0 rounded-none border-0 bg-transparent px-0 py-0 text-right shadow-none focus-visible:ring-0 [&>span]:text-right"
-                            >
-                                <SelectValue placeholder="Choose a project" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {lists.map((list) => (
-                                    <SelectItem key={list.id} value={list.id}>
-                                        {list.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                <section className="rounded-xl border border-border/70 bg-muted/15 p-1.5">
+                    <div className="grid gap-1">
+                        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2.5">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project</p>
+                            <Select value={listId} onValueChange={setListId}>
+                                <SelectTrigger
+                                    id="detailProject"
+                                    className="h-auto min-h-0 rounded-lg border-0 bg-background/70 px-3 py-2 text-right shadow-none focus-visible:ring-0 [&>span]:text-right"
+                                >
+                                    <SelectValue placeholder="Choose a project" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {lists.map((list) => (
+                                        <SelectItem key={list.id} value={list.id}>
+                                            {list.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
 
-                    <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Due</p>
-                        <TaskDueDatePicker
-                            id="detailDue"
-                            value={dueDate}
-                            onChange={setDueDate}
-                            placeholder="Choose date"
-                            allowClear
-                            popoverAlign="end"
-                            smallScreenCalendarPlacement="left"
-                            className="h-auto rounded-none border-0 bg-transparent px-0 py-0 text-right shadow-none focus-visible:ring-0 [&>span]:w-full [&>span]:justify-end [&>span]:text-right"
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Priority</p>
-                        <Select
-                            value={priority || "none"}
-                            onValueChange={(value) => setPriority(value === "none" ? "" : value as typeof priority)}
-                        >
-                            <SelectTrigger
-                                id="detailPriority"
-                                className="h-auto min-h-0 rounded-none border-0 bg-transparent px-0 py-0 text-right shadow-none focus-visible:ring-0 [&>span]:text-right"
-                            >
-                                <SelectValue placeholder="No priority" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none">No priority</SelectItem>
-                                <SelectItem value="high">High</SelectItem>
-                                <SelectItem value="medium">Medium</SelectItem>
-                                <SelectItem value="low">Low</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Estimate</p>
-                        <div className="flex items-center justify-end gap-2">
-                            <Input
-                                id="detailEstimate"
-                                type="number"
-                                min="1"
-                                inputMode="numeric"
-                                value={estimatedMinutes}
-                                onChange={(event) => setEstimatedMinutes(event.target.value)}
-                                placeholder="45"
-                                className="h-auto w-20 rounded-none border-0 bg-transparent px-0 py-0 text-right shadow-none focus-visible:ring-0"
+                        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2.5">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Due</p>
+                            <TaskDueDatePicker
+                                id="detailDue"
+                                value={dueDate}
+                                onChange={setDueDate}
+                                placeholder="Choose date"
+                                allowClear
+                                popoverAlign="end"
+                                smallScreenCalendarPlacement="left"
+                                className="h-auto rounded-lg border-0 bg-background/70 px-3 py-2 text-right shadow-none focus-visible:ring-0 [&>span]:w-full [&>span]:justify-end [&>span]:text-right"
                             />
-                            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Min</span>
+                        </div>
+
+                        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2.5">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Priority</p>
+                            <Select
+                                value={priority || "none"}
+                                onValueChange={(value) => setPriority(value === "none" ? "" : value as typeof priority)}
+                            >
+                                <SelectTrigger
+                                    id="detailPriority"
+                                    className="h-auto min-h-0 rounded-lg border-0 bg-background/70 px-3 py-2 text-right shadow-none focus-visible:ring-0 [&>span]:text-right"
+                                >
+                                    <SelectValue placeholder="No priority" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">No priority</SelectItem>
+                                    <SelectItem value="high">High</SelectItem>
+                                    <SelectItem value="medium">Medium</SelectItem>
+                                    <SelectItem value="low">Low</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2.5">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Estimate</p>
+                            <div className="flex items-center justify-end gap-2 rounded-lg bg-background/70 px-3 py-2">
+                                <Input
+                                    id="detailEstimate"
+                                    type="number"
+                                    min="1"
+                                    inputMode="numeric"
+                                    value={estimatedMinutes}
+                                    onChange={(event) => setEstimatedMinutes(event.target.value)}
+                                    placeholder="45"
+                                    className="h-auto w-16 rounded-none border-0 bg-transparent px-0 py-0 text-right shadow-none focus-visible:ring-0"
+                                />
+                                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Min</span>
+                            </div>
                         </div>
                     </div>
                 </section>
 
                 <section className="flex flex-wrap items-center gap-2">
-                    <Button variant="ghost" size="xs" onClick={handleStartFocus}>
+                    <Button variant="outline" size="xs" onClick={handleStartFocus}>
                         <Play className="h-3.5 w-3.5" />
                         Start focus
                     </Button>
-                    <Button variant="ghost" size="xs" onClick={handlePlanBlock}>
+                    <Button variant="outline" size="xs" onClick={handlePlanBlock}>
                         <CalendarRange className="h-3.5 w-3.5" />
                         Plan block
                     </Button>
                 </section>
 
-                <section className="space-y-3 border-t border-border/60 pt-5">
+                <section className="space-y-3 border-t border-border/60 pt-4">
                     <div className="flex items-start justify-between gap-3">
                         <div>
                             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Attachments</p>
@@ -384,19 +446,19 @@ function TaskDetailForm({
                                 return (
                                     <div
                                         key={image.id}
-                                        className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5"
+                                        className="flex items-center gap-3 rounded-xl border border-border/70 bg-muted/30 px-3 py-2"
                                     >
                                         <a
                                             href={publicUrl}
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-card"
+                                            className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-card"
                                         >
                                             {imageAttachment ? (
                                                 // eslint-disable-next-line @next/next/no-img-element
                                                 <img src={publicUrl} alt={displayName} className="h-full w-full object-cover" />
                                             ) : (
-                                                <FileText className="h-5 w-5 text-muted-foreground" />
+                                                <FileText className="h-4 w-4 text-muted-foreground" />
                                             )}
                                         </a>
                                         <a href={publicUrl} target="_blank" rel="noreferrer" className="min-w-0 flex-1">
@@ -427,11 +489,11 @@ function TaskDetailForm({
                     )}
                 </section>
 
-                <section className="border-t border-border/60 pt-5">
+                <section className="border-t border-border/60 pt-4">
                     <Button
                         type="button"
                         variant="ghost"
-                        size="sm"
+                        size="xs"
                         className="h-auto px-0 py-0 font-medium text-destructive/80 hover:bg-transparent hover:text-destructive"
                         onClick={() => setDeleteOpen(true)}
                     >
@@ -467,9 +529,14 @@ export function TaskDetailPanel({
     lists,
     images,
     userId,
+    previousTask,
+    nextTask,
+    taskPositionLabel,
     open,
     onOpenChange,
     onClose,
+    onNavigateToTask,
+    onDirtyChange,
     onSaved,
     onDeleted,
     className,
@@ -478,9 +545,14 @@ export function TaskDetailPanel({
     lists: TodoList[];
     images: TodoImageRow[];
     userId: string;
+    previousTask?: TaskDatasetRecord | null;
+    nextTask?: TaskDatasetRecord | null;
+    taskPositionLabel?: string | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onClose?: () => void;
+    onNavigateToTask?: (taskId: string) => void;
+    onDirtyChange?: (dirty: boolean) => void;
     onSaved: () => void;
     onDeleted: () => void;
     className?: string;
@@ -521,6 +593,11 @@ export function TaskDetailPanel({
                                 images={images}
                                 userId={userId}
                                 onClose={onClose}
+                                previousTask={previousTask}
+                                nextTask={nextTask}
+                                taskPositionLabel={taskPositionLabel}
+                                onNavigateToTask={onNavigateToTask}
+                                onDirtyChange={onDirtyChange}
                                 onSaved={onSaved}
                                 onDeleted={onDeleted}
                             />
@@ -547,6 +624,11 @@ export function TaskDetailPanel({
                                 images={images}
                                 userId={userId}
                                 onClose={onClose}
+                                previousTask={previousTask}
+                                nextTask={nextTask}
+                                taskPositionLabel={taskPositionLabel}
+                                onNavigateToTask={onNavigateToTask}
+                                onDirtyChange={onDirtyChange}
                                 onSaved={onSaved}
                                 onDeleted={onDeleted}
                             />
