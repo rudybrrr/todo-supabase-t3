@@ -1,4 +1,5 @@
 export type TimerMode = "focus" | "shortBreak" | "longBreak";
+export type RecurrenceRule = "daily" | "weekdays" | "weekly" | "monthly";
 
 export interface TodoList {
     id: string;
@@ -20,6 +21,11 @@ export interface TodoRow {
     inserted_at: string;
     description?: string | null;
     due_date?: string | null;
+    deadline_on?: string | null;
+    deadline_at?: string | null;
+    reminder_offset_minutes?: number | null;
+    reminder_at?: string | null;
+    recurrence_rule?: RecurrenceRule | null;
     priority?: 'high' | 'medium' | 'low' | null;
     estimated_minutes?: number | null;
     completed_at?: string | null;
@@ -74,7 +80,10 @@ export interface Profile {
     full_name?: string;
     avatar_url?: string;
     daily_focus_goal_minutes?: number | null;
+    timezone?: string | null;
 }
+
+export type PlanningStatus = "unplanned" | "partially_planned" | "fully_planned" | "overplanned";
 
 export interface PlannedFocusBlock {
     id: string;

@@ -25,6 +25,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 
 import { ProjectDialog } from "~/components/project-dialog";
 import { QuickAddDialog } from "~/components/quick-add-dialog";
@@ -47,6 +48,7 @@ import { Input } from "~/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "~/components/ui/sheet";
 import { getPublicAvatarUrl } from "~/lib/avatar";
 import { getProjectColorClasses, getProjectIcon } from "~/lib/project-appearance";
+import { formatTaskReminderScheduledLabel, getReminderOffsetLabel, hasTaskReminder } from "~/lib/task-reminders";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { formatTaskDueLabel, taskMatchesSearch } from "~/lib/task-views";
 import { resolveThemeSelection } from "~/lib/theme-options";
@@ -140,6 +142,10 @@ function AppShellLayout({ children }: { children: ReactNode }) {
     const suppressProjectClickRef = useRef(false);
     const hoverPreviewTimerRef = useRef<number | null>(null);
     const desktopCollapsedRef = useRef(desktopCollapsed);
+    const reminderTasksRef = useRef(tasks);
+    const reminderTimeZoneRef = useRef(profile?.timezone ?? null);
+    const reminderToastKeysRef = useRef<Set<string>>(new Set());
+    const lastReminderCheckAtRef = useRef(Date.now());
     const primaryActivityResetsRef = useRef(new Map<string, () => void>());
 
     const activeSmartView = getActiveSmartView(pathname, searchParams.get("view"));
@@ -234,6 +240,70 @@ function AppShellLayout({ children }: { children: ReactNode }) {
     useEffect(() => {
         desktopCollapsedRef.current = desktopCollapsed;
     }, [desktopCollapsed]);
+
+    useEffect(() => {
+        reminderTasksRef.current = tasks;
+    }, [tasks]);
+
+    useEffect(() => {
+        reminderTimeZoneRef.current = profile?.timezone ?? null;
+    }, [profile?.timezone]);
+
+    useEffect(() => {
+        reminderToastKeysRef.current.clear();
+        lastReminderCheckAtRef.current = Date.now();
+    }, [userId]);
+
+    useEffect(() => {
+        if (!userId) return;
+
+        const checkReminders = () => {
+            const now = Date.now();
+            const previousCheckAt = lastReminderCheckAtRef.current;
+            lastReminderCheckAtRef.current = now;
+
+            const activeReminderKeys = new Set<string>();
+
+            for (const task of reminderTasksRef.current) {
+                if (task.is_done || !task.reminder_at || !hasTaskReminder(task)) continue;
+
+                const reminderTime = new Date(task.reminder_at).getTime();
+                if (Number.isNaN(reminderTime)) continue;
+
+                const reminderKey = `${task.id}:${task.reminder_at}`;
+                activeReminderKeys.add(reminderKey);
+
+                if (reminderTime <= previousCheckAt || reminderTime > now) continue;
+                if (reminderToastKeysRef.current.has(reminderKey)) continue;
+
+                reminderToastKeysRef.current.add(reminderKey);
+                const reminderLabel = getReminderOffsetLabel(task.reminder_offset_minutes);
+                const scheduledLabel = formatTaskReminderScheduledLabel(task.reminder_at, reminderTimeZoneRef.current);
+
+                toast.info(task.title, {
+                    id: `task-reminder-${reminderKey}`,
+                    description: [reminderLabel, scheduledLabel ? `Scheduled ${scheduledLabel}` : null]
+                        .filter(Boolean)
+                        .join(" · "),
+                    action: {
+                        label: "Open",
+                        onClick: () => router.push(`/tasks?taskId=${task.id}`),
+                    },
+                });
+            }
+
+            for (const reminderKey of Array.from(reminderToastKeysRef.current)) {
+                if (!activeReminderKeys.has(reminderKey)) {
+                    reminderToastKeysRef.current.delete(reminderKey);
+                }
+            }
+        };
+
+        const intervalId = window.setInterval(checkReminders, 15_000);
+        return () => {
+            window.clearInterval(intervalId);
+        };
+    }, [router, userId]);
 
     const clearHoverPreviewTimer = useCallback(() => {
         if (hoverPreviewTimerRef.current !== null) {
@@ -1117,7 +1187,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                             Tasks
                                         </p>
                                         {matchingTaskResults.map(({ projectName, task }) => {
-                                            const dueLabel = formatTaskDueLabel(task);
+                                            const dueLabel = formatTaskDueLabel(task, new Date(), profile?.timezone);
                                             return (
                                                 <button
                                                     key={task.id}

@@ -2,9 +2,15 @@
 
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { addDays, startOfDay } from "date-fns";
+import { addDays, differenceInCalendarDays, parseISO, startOfDay } from "date-fns";
 
 import { useData } from "~/components/data-provider";
+import {
+    buildPlannedMinutesByTodo,
+    getRemainingEstimatedMinutes,
+    getTaskPlanningStatus,
+    PLANNED_BLOCK_FIELDS,
+} from "~/lib/planning";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { subscribeToFocusSessionCompleted } from "~/lib/focus-session-events";
 import {
@@ -12,10 +18,14 @@ import {
     normalizeTodoRow,
 } from "~/lib/task-actions";
 import { getSmartViewTasks, type SmartView } from "~/lib/task-views";
-import type { PlannedFocusBlock, TodoImageRow, TodoList, TodoRow } from "~/lib/types";
+import { getTaskDeadlineDateKey, toDateKeyInTimeZone } from "~/lib/task-deadlines";
+import type { PlannedFocusBlock, PlanningStatus, TodoImageRow, TodoList, TodoRow } from "~/lib/types";
 
 export interface TaskDatasetRecord extends TodoRow {
     has_planned_block: boolean;
+    planned_minutes: number;
+    remaining_estimated_minutes: number | null;
+    planning_status: PlanningStatus;
 }
 
 export interface ProjectSummary {
@@ -44,7 +54,9 @@ interface TaskDatasetValue {
     loading: boolean;
     applyTaskPatch: (taskId: string, patch: Partial<TaskDatasetRecord>) => void;
     removeTask: (taskId: string, options?: { suppressRealtimeEcho?: boolean }) => void;
+    removePlannedBlock: (blockId: string, options?: { suppressRealtimeEcho?: boolean }) => void;
     saveProjectOrder: (nextProjectIds: string[]) => void;
+    upsertPlannedBlock: (block: PlannedFocusBlock, options?: { suppressRealtimeEcho?: boolean }) => void;
     upsertTask: (task: TodoRow, options?: { suppressRealtimeEcho?: boolean }) => void;
     refresh: (options?: { silent?: boolean }) => Promise<void>;
 }
@@ -69,6 +81,61 @@ function sortTasksByInsertedAt(tasks: TaskDatasetRecord[]) {
     return [...tasks].sort((a, b) => (a.inserted_at ?? "").localeCompare(b.inserted_at ?? ""));
 }
 
+function sortPlannedBlocks(blocks: PlannedFocusBlock[]) {
+    return [...blocks].sort((a, b) => {
+        const startComparison = a.scheduled_start.localeCompare(b.scheduled_start);
+        if (startComparison !== 0) return startComparison;
+        return a.id.localeCompare(b.id);
+    });
+}
+
+function normalizePlannedBlock(block: PlannedFocusBlock): PlannedFocusBlock {
+    return {
+        ...block,
+        todo_id: block.todo_id ?? null,
+    };
+}
+
+function arePlannedBlocksEqual(a: PlannedFocusBlock, b: PlannedFocusBlock) {
+    return a.id === b.id
+        && a.user_id === b.user_id
+        && a.list_id === b.list_id
+        && (a.todo_id ?? null) === (b.todo_id ?? null)
+        && a.title === b.title
+        && a.scheduled_start === b.scheduled_start
+        && a.scheduled_end === b.scheduled_end
+        && a.inserted_at === b.inserted_at
+        && a.updated_at === b.updated_at;
+}
+
+function arePlannedBlockCollectionsEqual(current: PlannedFocusBlock[], next: PlannedFocusBlock[]) {
+    if (current.length !== next.length) return false;
+
+    return current.every((block, index) => {
+        const nextBlock = next[index];
+        if (!nextBlock) return false;
+        return arePlannedBlocksEqual(block, nextBlock);
+    });
+}
+
+function createTaskDatasetRecord(task: TodoRow, plannedMinutesByTodo: ReadonlyMap<string, number>): TaskDatasetRecord {
+    const normalizedTask = normalizeTodoRow(task);
+    const plannedMinutes = plannedMinutesByTodo.get(normalizedTask.id) ?? 0;
+
+    return {
+        ...normalizedTask,
+        has_planned_block: plannedMinutes > 0,
+        planned_minutes: plannedMinutes,
+        remaining_estimated_minutes: getRemainingEstimatedMinutes(normalizedTask.estimated_minutes, plannedMinutes),
+        planning_status: getTaskPlanningStatus(normalizedTask.estimated_minutes, plannedMinutes),
+    };
+}
+
+function hydrateTaskDatasetRecords(tasks: TodoRow[], plannedBlocks: PlannedFocusBlock[]) {
+    const plannedMinutesByTodo = buildPlannedMinutesByTodo(plannedBlocks);
+    return sortTasksByInsertedAt(tasks.map((task) => createTaskDatasetRecord(task, plannedMinutesByTodo)));
+}
+
 function areTaskRecordsEqual(a: TaskDatasetRecord, b: TaskDatasetRecord) {
     return a.id === b.id
         && a.user_id === b.user_id
@@ -79,11 +146,19 @@ function areTaskRecordsEqual(a: TaskDatasetRecord, b: TaskDatasetRecord) {
         && a.inserted_at === b.inserted_at
         && (a.description ?? null) === (b.description ?? null)
         && (a.due_date ?? null) === (b.due_date ?? null)
+        && (a.deadline_on ?? null) === (b.deadline_on ?? null)
+        && (a.deadline_at ?? null) === (b.deadline_at ?? null)
+        && (a.reminder_offset_minutes ?? null) === (b.reminder_offset_minutes ?? null)
+        && (a.reminder_at ?? null) === (b.reminder_at ?? null)
+        && (a.recurrence_rule ?? null) === (b.recurrence_rule ?? null)
         && (a.priority ?? null) === (b.priority ?? null)
         && (a.estimated_minutes ?? null) === (b.estimated_minutes ?? null)
         && (a.completed_at ?? null) === (b.completed_at ?? null)
         && (a.updated_at ?? null) === (b.updated_at ?? null)
-        && a.has_planned_block === b.has_planned_block;
+        && a.has_planned_block === b.has_planned_block
+        && a.planned_minutes === b.planned_minutes
+        && (a.remaining_estimated_minutes ?? null) === (b.remaining_estimated_minutes ?? null)
+        && a.planning_status === b.planning_status;
 }
 
 function upsertNormalizedTaskRecord(
@@ -92,12 +167,10 @@ function upsertNormalizedTaskRecord(
     plannedBlocks: PlannedFocusBlock[],
 ) {
     const existingTask = currentTasks.find((item) => item.id === task.id);
-    const hasPlannedBlock = existingTask?.has_planned_block ?? plannedBlocks.some((block) => block.todo_id === task.id);
-    const nextTask: TaskDatasetRecord = {
+    const nextTask = createTaskDatasetRecord({
         ...existingTask,
         ...task,
-        has_planned_block: hasPlannedBlock,
-    };
+    }, buildPlannedMinutesByTodo(plannedBlocks));
 
     if (!existingTask) {
         return sortTasksByInsertedAt([...currentTasks, nextTask]);
@@ -142,11 +215,11 @@ async function loadPlannedBlocks(
 ): Promise<PlannedFocusBlock[]> {
     const { data, error } = await supabase
         .from("planned_focus_blocks")
-        .select("id, user_id, list_id, todo_id, title, scheduled_start, scheduled_end, inserted_at, updated_at")
+        .select(PLANNED_BLOCK_FIELDS)
         .eq("user_id", userId);
 
     if (!error) {
-        return (data ?? []) as PlannedFocusBlock[];
+        return sortPlannedBlocks(((data ?? []) as PlannedFocusBlock[]).map(normalizePlannedBlock));
     }
 
     if (isMissingPlannedBlocksTableError(error)) {
@@ -169,16 +242,28 @@ async function loadTodoAttachments(
     return (data ?? []) as TodoImageRow[];
 }
 
-function isDueSoon(task: TodoRow) {
-    if (!task.due_date || task.is_done) return false;
-    const dueDate = new Date(task.due_date);
-    const diffDays = Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+function getDateKeyDistance(dateKey: string, comparisonDateKey: string) {
+    return differenceInCalendarDays(parseISO(`${dateKey}T00:00:00`), parseISO(`${comparisonDateKey}T00:00:00`));
+}
+
+function isDueSoon(task: TodoRow, timeZone?: string | null) {
+    if (task.is_done) return false;
+
+    const deadlineDateKey = getTaskDeadlineDateKey(task, timeZone);
+    if (!deadlineDateKey) return false;
+
+    const todayDateKey = toDateKeyInTimeZone(new Date(), timeZone);
+    const diffDays = getDateKeyDistance(deadlineDateKey, todayDateKey);
     return diffDays >= 0 && diffDays <= 7;
 }
 
-function isOverdue(task: TodoRow) {
-    if (!task.due_date || task.is_done) return false;
-    return new Date(task.due_date).getTime() < new Date().setHours(0, 0, 0, 0);
+function isOverdue(task: TodoRow, timeZone?: string | null) {
+    if (task.is_done) return false;
+
+    const deadlineDateKey = getTaskDeadlineDateKey(task, timeZone);
+    if (!deadlineDateKey) return false;
+
+    return deadlineDateKey < toDateKeyInTimeZone(new Date(), timeZone);
 }
 
 function getRealtimeInsertedRowId(payload: { new?: unknown }) {
@@ -190,7 +275,7 @@ function getRealtimeInsertedRowId(payload: { new?: unknown }) {
 }
 
 function useTaskDatasetState(): TaskDatasetValue {
-    const { userId, lists, loading: dataLoading } = useData();
+    const { userId, lists, profile, loading: dataLoading } = useData();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [tasks, setTasks] = useState<TaskDatasetRecord[]>([]);
     const [plannedBlocks, setPlannedBlocks] = useState<PlannedFocusBlock[]>([]);
@@ -200,8 +285,10 @@ function useTaskDatasetState(): TaskDatasetValue {
     const [loading, setLoading] = useState(true);
     const [projectOrder, setProjectOrder] = useState<string[]>([]);
     const pendingRealtimeEchoCountsRef = useRef<Map<string, number>>(new Map());
+    const pendingPlannedBlockRealtimeEchoCountsRef = useRef<Map<string, number>>(new Map());
     const knownFocusSessionIdsRef = useRef<Set<string>>(new Set());
     const locallyPatchedFocusSessionIdsRef = useRef<Set<string>>(new Set());
+    const profileTimeZone = profile?.timezone ?? null;
 
     const listIdSignature = useMemo(() => {
         return Array.from(new Set(lists.map((list) => list.id)))
@@ -219,6 +306,11 @@ function useTaskDatasetState(): TaskDatasetValue {
         pendingRealtimeEchoCountsRef.current.set(taskId, currentCount + 1);
     }, []);
 
+    const markPendingPlannedBlockRealtimeEcho = useCallback((blockId: string) => {
+        const currentCount = pendingPlannedBlockRealtimeEchoCountsRef.current.get(blockId) ?? 0;
+        pendingPlannedBlockRealtimeEchoCountsRef.current.set(blockId, currentCount + 1);
+    }, []);
+
     const shouldSuppressRealtimeEcho = useCallback((taskId: string) => {
         const currentCount = pendingRealtimeEchoCountsRef.current.get(taskId) ?? 0;
         if (currentCount <= 0) return false;
@@ -230,6 +322,31 @@ function useTaskDatasetState(): TaskDatasetValue {
         }
 
         return true;
+    }, []);
+
+    const shouldSuppressPlannedBlockRealtimeEcho = useCallback((blockId: string) => {
+        const currentCount = pendingPlannedBlockRealtimeEchoCountsRef.current.get(blockId) ?? 0;
+        if (currentCount <= 0) return false;
+
+        if (currentCount === 1) {
+            pendingPlannedBlockRealtimeEchoCountsRef.current.delete(blockId);
+        } else {
+            pendingPlannedBlockRealtimeEchoCountsRef.current.set(blockId, currentCount - 1);
+        }
+
+        return true;
+    }, []);
+
+    const updatePlannedBlocks = useCallback((updater: (currentBlocks: PlannedFocusBlock[]) => PlannedFocusBlock[]) => {
+        setPlannedBlocks((currentBlocks) => {
+            const nextBlocks = sortPlannedBlocks(updater(currentBlocks));
+            if (arePlannedBlockCollectionsEqual(currentBlocks, nextBlocks)) {
+                return currentBlocks;
+            }
+
+            setTasks((currentTasks) => hydrateTaskDatasetRecords(currentTasks, nextBlocks));
+            return nextBlocks;
+        });
     }, []);
 
     const loadDataset = useCallback(async (options?: { silent?: boolean }) => {
@@ -270,16 +387,7 @@ function useTaskDatasetState(): TaskDatasetValue {
             if (membersResponse.error) throw membersResponse.error;
             if (focusResponse.error) throw focusResponse.error;
 
-            const plannedTaskIds = new Set(
-                nextBlocks.flatMap((block) => (block.todo_id ? [block.todo_id] : [])),
-            );
-
-            const nextTasks = taskRows
-                .map((task) => ({
-                    ...task,
-                    has_planned_block: plannedTaskIds.has(task.id),
-                }))
-            const sortedTasks = sortTasksByInsertedAt(nextTasks);
+            const sortedTasks = hydrateTaskDatasetRecords(taskRows, nextBlocks);
 
             const nextImagesByTodo: Record<string, TodoImageRow[]> = {};
             for (const image of attachments) {
@@ -395,7 +503,34 @@ function useTaskDatasetState(): TaskDatasetValue {
                 setTasks((currentTasks) => upsertNormalizedTaskRecord(currentTasks, nextTask, plannedBlocks));
             })
             .on("postgres_changes", { event: "*", schema: "public", table: "todo_images" }, () => void loadDataset({ silent: true }))
-            .on("postgres_changes", { event: "*", schema: "public", table: "planned_focus_blocks", filter: `user_id=eq.${userId}` }, () => void loadDataset({ silent: true }))
+            .on("postgres_changes", { event: "*", schema: "public", table: "planned_focus_blocks", filter: `user_id=eq.${userId}` }, (payload) => {
+                if (payload.eventType === "DELETE") {
+                    const deletedId = typeof payload.old.id === "string" ? payload.old.id : null;
+                    if (!deletedId) return;
+                    if (shouldSuppressPlannedBlockRealtimeEcho(deletedId)) return;
+
+                    updatePlannedBlocks((currentBlocks) => currentBlocks.filter((block) => block.id !== deletedId));
+                    return;
+                }
+
+                const nextBlock = normalizePlannedBlock(payload.new as PlannedFocusBlock);
+                if (!nextBlock.id) return;
+                if (shouldSuppressPlannedBlockRealtimeEcho(nextBlock.id)) return;
+
+                if (!listIdSet.has(nextBlock.list_id)) {
+                    updatePlannedBlocks((currentBlocks) => currentBlocks.filter((block) => block.id !== nextBlock.id));
+                    return;
+                }
+
+                updatePlannedBlocks((currentBlocks) => {
+                    const existingIndex = currentBlocks.findIndex((block) => block.id === nextBlock.id);
+                    if (existingIndex === -1) {
+                        return [...currentBlocks, nextBlock];
+                    }
+
+                    return currentBlocks.map((block) => block.id === nextBlock.id ? nextBlock : block);
+                });
+            })
             .on("postgres_changes", { event: "*", schema: "public", table: "focus_sessions", filter: `user_id=eq.${userId}` }, (payload) => {
                 const nextSessionId = getRealtimeInsertedRowId(payload);
                 if (payload.eventType === "INSERT" && nextSessionId && locallyPatchedFocusSessionIdsRef.current.has(nextSessionId)) {
@@ -412,7 +547,7 @@ function useTaskDatasetState(): TaskDatasetValue {
         return () => {
             void supabase.removeChannel(channel);
         };
-    }, [listIdSet, loadDataset, plannedBlocks, shouldSuppressRealtimeEcho, supabase, userId]);
+    }, [listIdSet, loadDataset, plannedBlocks, shouldSuppressPlannedBlockRealtimeEcho, shouldSuppressRealtimeEcho, supabase, updatePlannedBlocks, userId]);
 
     useEffect(() => {
         return subscribeToFocusSessionCompleted((detail) => {
@@ -438,12 +573,12 @@ function useTaskDatasetState(): TaskDatasetValue {
                 totalCount: projectTasks.length,
                 incompleteCount: projectTasks.filter((task) => !task.is_done).length,
                 completedCount: projectTasks.filter((task) => task.is_done).length,
-                dueSoonCount: projectTasks.filter((task) => isDueSoon(task)).length,
-                overdueCount: projectTasks.filter((task) => isOverdue(task)).length,
+                dueSoonCount: projectTasks.filter((task) => isDueSoon(task, profileTimeZone)).length,
+                overdueCount: projectTasks.filter((task) => isOverdue(task, profileTimeZone)).length,
                 memberCount: memberCounts[list.id] ?? 0,
             };
         });
-    }, [lists, memberCounts, tasks]);
+    }, [lists, memberCounts, profileTimeZone, tasks]);
 
     const orderedProjectSummaries = useMemo(() => {
         const fallbackOrder = [...projectSummaries].sort((a, b) => {
@@ -488,13 +623,14 @@ function useTaskDatasetState(): TaskDatasetValue {
     const applyTaskPatch = useCallback((taskId: string, patch: Partial<TaskDatasetRecord>) => {
         setTasks((currentTasks) => {
             let changed = false;
+            const plannedMinutesByTodo = buildPlannedMinutesByTodo(plannedBlocks);
             const nextTasks = currentTasks.map((task) => {
                 if (task.id !== taskId) return task;
 
-                const nextTask = {
+                const nextTask = createTaskDatasetRecord({
                     ...task,
                     ...patch,
-                };
+                }, plannedMinutesByTodo);
 
                 if (areTaskRecordsEqual(task, nextTask)) {
                     return task;
@@ -506,7 +642,7 @@ function useTaskDatasetState(): TaskDatasetValue {
 
             return changed ? sortTasksByInsertedAt(nextTasks) : currentTasks;
         });
-    }, []);
+    }, [plannedBlocks]);
 
     const upsertTask = useCallback((task: TodoRow, options?: { suppressRealtimeEcho?: boolean }) => {
         if (options?.suppressRealtimeEcho) {
@@ -516,6 +652,27 @@ function useTaskDatasetState(): TaskDatasetValue {
         const normalizedTask = normalizeTodoRow(task);
         setTasks((currentTasks) => upsertNormalizedTaskRecord(currentTasks, normalizedTask, plannedBlocks));
     }, [markPendingRealtimeEcho, plannedBlocks]);
+
+    const upsertPlannedBlock = useCallback((block: PlannedFocusBlock, options?: { suppressRealtimeEcho?: boolean }) => {
+        if (options?.suppressRealtimeEcho) {
+            markPendingPlannedBlockRealtimeEcho(block.id);
+        }
+
+        const normalizedBlock = normalizePlannedBlock(block);
+        updatePlannedBlocks((currentBlocks) => {
+            const existingIndex = currentBlocks.findIndex((item) => item.id === normalizedBlock.id);
+            if (existingIndex === -1) {
+                return [...currentBlocks, normalizedBlock];
+            }
+
+            const existingBlock = currentBlocks[existingIndex];
+            if (existingBlock && arePlannedBlocksEqual(existingBlock, normalizedBlock)) {
+                return currentBlocks;
+            }
+
+            return currentBlocks.map((item) => item.id === normalizedBlock.id ? normalizedBlock : item);
+        });
+    }, [markPendingPlannedBlockRealtimeEcho, updatePlannedBlocks]);
 
     const removeTask = useCallback((taskId: string, options?: { suppressRealtimeEcho?: boolean }) => {
         if (options?.suppressRealtimeEcho) {
@@ -535,12 +692,26 @@ function useTaskDatasetState(): TaskDatasetValue {
         });
     }, [markPendingRealtimeEcho]);
 
+    const removePlannedBlock = useCallback((blockId: string, options?: { suppressRealtimeEcho?: boolean }) => {
+        if (options?.suppressRealtimeEcho) {
+            markPendingPlannedBlockRealtimeEcho(blockId);
+        }
+
+        updatePlannedBlocks((currentBlocks) => {
+            if (!currentBlocks.some((block) => block.id === blockId)) {
+                return currentBlocks;
+            }
+
+            return currentBlocks.filter((block) => block.id !== blockId);
+        });
+    }, [markPendingPlannedBlockRealtimeEcho, updatePlannedBlocks]);
+
     const smartViewCounts = useMemo<SmartViewCounts>(() => ({
-        today: getSmartViewTasks(tasks, "today").length,
-        upcoming: getSmartViewTasks(tasks, "upcoming").length,
-        inbox: getSmartViewTasks(tasks, "inbox").length,
+        today: getSmartViewTasks(tasks, "today", new Date(), profileTimeZone).length,
+        upcoming: getSmartViewTasks(tasks, "upcoming", new Date(), profileTimeZone).length,
+        inbox: getSmartViewTasks(tasks, "inbox", new Date(), profileTimeZone).length,
         done: getSmartViewTasks(tasks, "done").length,
-    }), [tasks]);
+    }), [profileTimeZone, tasks]);
 
     return {
         userId,
@@ -556,7 +727,9 @@ function useTaskDatasetState(): TaskDatasetValue {
         loading: dataLoading || loading,
         applyTaskPatch,
         removeTask,
+        removePlannedBlock,
         saveProjectOrder,
+        upsertPlannedBlock,
         upsertTask,
         refresh: loadDataset,
     };

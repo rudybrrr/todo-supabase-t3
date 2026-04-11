@@ -1,14 +1,25 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Clock3 } from "lucide-react";
+import { Bell, Check, Clock3 } from "lucide-react";
 
+import { useData } from "~/components/data-provider";
 import { Badge } from "~/components/ui/badge";
+import { formatMinutesCompact, getPlanningStatusLabel } from "~/lib/planning";
 import { getProjectColorClasses } from "~/lib/project-appearance";
+import { getRecurrenceLabel } from "~/lib/task-recurrence";
+import { getReminderOffsetLabel, normalizeReminderOffsetMinutes } from "~/lib/task-reminders";
 import { formatTaskDueLabel, isTaskOverdue } from "~/lib/task-views";
 import type { TodoList } from "~/lib/types";
 import type { TaskDatasetRecord } from "~/hooks/use-task-dataset";
 import { cn } from "~/lib/utils";
+
+function getPlanningStatusVariant(task: TaskDatasetRecord) {
+    if (task.planning_status === "fully_planned") return "success";
+    if (task.planning_status === "partially_planned") return "warning";
+    if (task.planning_status === "overplanned") return "warning";
+    return "secondary";
+}
 
 export function TaskList({
     tasks,
@@ -33,6 +44,8 @@ export function TaskList({
     showProject?: boolean;
     emptyMessage?: string;
 }) {
+    const { profile } = useData();
+
     if (tasks.length === 0) {
         return (
             <div className="surface-muted px-4 py-7 text-center text-sm text-muted-foreground">
@@ -46,7 +59,8 @@ export function TaskList({
             <AnimatePresence initial={false}>
                 {tasks.map((task, index) => {
                     const project = lists.find((list) => list.id === task.list_id);
-                    const dueLabel = formatTaskDueLabel(task);
+                    const dueLabel = formatTaskDueLabel(task, new Date(), profile?.timezone);
+                    const reminderOffsetMinutes = normalizeReminderOffsetMinutes(task.reminder_offset_minutes);
                     const palette = getProjectColorClasses(project?.color_token);
                     const bulkSelected = selectedTaskIds?.has(task.id) ?? false;
 
@@ -137,11 +151,20 @@ export function TaskList({
                                             <span
                                                 className={cn(
                                                     "inline-flex items-center gap-1",
-                                                    isTaskOverdue(task) ? "text-destructive" : "",
+                                                    isTaskOverdue(task, new Date(), profile?.timezone) ? "text-destructive" : "",
                                                 )}
                                             >
                                                 <Clock3 className="h-3.5 w-3.5" />
                                                 {dueLabel}
+                                            </span>
+                                        ) : null}
+                                        {task.recurrence_rule ? (
+                                            <Badge variant="secondary">{getRecurrenceLabel(task.recurrence_rule)}</Badge>
+                                        ) : null}
+                                        {!task.is_done && reminderOffsetMinutes != null ? (
+                                            <span className="inline-flex items-center gap-1">
+                                                <Bell className="h-3.5 w-3.5" />
+                                                {getReminderOffsetLabel(reminderOffsetMinutes)}
                                             </span>
                                         ) : null}
                                         {task.estimated_minutes ? (
@@ -149,8 +172,20 @@ export function TaskList({
                                                 {task.estimated_minutes} min
                                             </span>
                                         ) : null}
-                                        {task.has_planned_block && !task.is_done ? (
-                                            <Badge variant="outline">Planned</Badge>
+                                        {task.planned_minutes > 0 && !task.is_done ? (
+                                            <span className="inline-flex items-center">
+                                                {formatMinutesCompact(task.planned_minutes)} scheduled
+                                            </span>
+                                        ) : null}
+                                        {!task.is_done && task.planning_status !== "unplanned" ? (
+                                            <Badge variant={getPlanningStatusVariant(task)}>
+                                                {getPlanningStatusLabel(task.planning_status)}
+                                            </Badge>
+                                        ) : null}
+                                        {task.remaining_estimated_minutes && task.remaining_estimated_minutes > 0 && !task.is_done ? (
+                                            <span className="inline-flex items-center text-amber-700 dark:text-amber-300">
+                                                {formatMinutesCompact(task.remaining_estimated_minutes)} left
+                                            </span>
                                         ) : null}
                                     </div>
                                 </div>

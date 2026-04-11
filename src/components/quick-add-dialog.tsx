@@ -1,6 +1,6 @@
 "use client";
 
-import { Flag, Folder, Hourglass, Paperclip, Plus, Rows3, SendHorizontal } from "lucide-react";
+import { Bell, Flag, Folder, Hourglass, Paperclip, Plus, Repeat, Rows3, SendHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -21,9 +21,16 @@ import { Textarea } from "~/components/ui/textarea";
 import { useTaskDataset } from "~/hooks/use-task-dataset";
 import { useTaskSections } from "~/hooks/use-task-sections";
 import { parseQuickAddInput, type QuickAddMatchedToken } from "~/lib/quick-add-parser";
+import { getRecurrenceLabel, RECURRENCE_RULE_OPTIONS } from "~/lib/task-recurrence";
+import {
+    getReminderOffsetLabel,
+    getReminderOffsetMinutesFromInput,
+    REMINDER_OFFSET_OPTIONS,
+} from "~/lib/task-reminders";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { createTask, uploadTaskAttachments } from "~/lib/task-actions";
 import { getDateInputValue } from "~/lib/task-views";
+import type { RecurrenceRule } from "~/lib/types";
 import { cn } from "~/lib/utils";
 
 interface QuickAddDefaults {
@@ -114,7 +121,7 @@ export function QuickAddDialog({
     onOpenChange: (open: boolean) => void;
     defaults?: QuickAddDefaults | null;
 }) {
-    const { userId, lists } = useData();
+    const { userId, lists, profile } = useData();
     const { upsertTask } = useTaskDataset();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -133,6 +140,8 @@ export function QuickAddDialog({
     const [manualSectionId, setManualSectionId] = useState<string | undefined>(undefined);
     const [manualPriority, setManualPriority] = useState<"high" | "medium" | "low" | "" | undefined>(undefined);
     const [manualDueDate, setManualDueDate] = useState<string | undefined>(undefined);
+    const [manualReminderOffset, setManualReminderOffset] = useState<string | undefined>(undefined);
+    const [manualRecurrenceRule, setManualRecurrenceRule] = useState<RecurrenceRule | "" | undefined>(undefined);
     const [manualEstimatedMinutes, setManualEstimatedMinutes] = useState<string | undefined>(undefined);
     const [description, setDescription] = useState("");
     const [expanded, setExpanded] = useState(false);
@@ -152,6 +161,9 @@ export function QuickAddDialog({
     const showSectionSelector = sectionsEnabled && (sectionsLoading || sections.length > 0 || Boolean(effectiveSectionId));
     const effectivePriority = manualPriority ?? parsedInput.priority ?? "";
     const effectiveDueDate = manualDueDate ?? parsedInput.dueDate ?? defaultDueDate;
+    const effectiveReminderOffset = manualReminderOffset ?? "";
+    const parsedReminderOffsetMinutes = getReminderOffsetMinutesFromInput(effectiveReminderOffset);
+    const effectiveRecurrenceRule = manualRecurrenceRule ?? "";
     const effectiveEstimatedMinutes = manualEstimatedMinutes
         ?? (parsedInput.estimatedMinutes ? String(parsedInput.estimatedMinutes) : "");
     const parsedEstimateMinutes = effectiveEstimatedMinutes ? Number.parseInt(effectiveEstimatedMinutes, 10) : null;
@@ -166,6 +178,8 @@ export function QuickAddDialog({
         setManualSectionId(undefined);
         setManualPriority(undefined);
         setManualDueDate(undefined);
+        setManualReminderOffset(undefined);
+        setManualRecurrenceRule(undefined);
         setManualEstimatedMinutes(undefined);
         setDescription("");
         setExpanded(false);
@@ -210,6 +224,14 @@ export function QuickAddDialog({
 
     async function handleSubmit() {
         if (!userId || !effectiveListId || !cleanedTitle) return;
+        if (effectiveRecurrenceRule && !effectiveDueDate) {
+            toast.error("Recurring tasks need a deadline.");
+            return;
+        }
+        if (parsedReminderOffsetMinutes != null && !effectiveDueDate) {
+            toast.error("Reminders need a deadline.");
+            return;
+        }
 
         try {
             setSaving(true);
@@ -220,9 +242,12 @@ export function QuickAddDialog({
                 title: cleanedTitle,
                 description,
                 dueDate: effectiveDueDate || null,
+                reminderOffsetMinutes: parsedReminderOffsetMinutes,
+                recurrenceRule: effectiveRecurrenceRule || null,
                 priority: effectivePriority || null,
                 estimatedMinutes:
                     parsedEstimateMinutes && !Number.isNaN(parsedEstimateMinutes) ? parsedEstimateMinutes : null,
+                preferredTimeZone: profile?.timezone,
             });
 
             if (attachments.length > 0) {
@@ -387,6 +412,50 @@ export function QuickAddDialog({
                                         allowClear
                                         className={cn(ACTION_CHIP_CLASS, "w-auto")}
                                     />
+
+                                    <Select
+                                        value={effectiveReminderOffset || "none"}
+                                        onValueChange={(value) => setManualReminderOffset(value === "none" ? "" : value)}
+                                    >
+                                        <SelectTrigger id="quickAddReminder" className={cn(ACTION_CHIP_CLASS, "max-w-[12rem]")}>
+                                            <span className="inline-flex min-w-0 items-center gap-2">
+                                                <Bell className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                <span className="truncate">
+                                                    {parsedReminderOffsetMinutes != null ? getReminderOffsetLabel(parsedReminderOffsetMinutes) : "Reminder"}
+                                                </span>
+                                            </span>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">No reminder</SelectItem>
+                                            {REMINDER_OFFSET_OPTIONS.map((option) => (
+                                                <SelectItem key={option.value} value={String(option.value)}>
+                                                    {option.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+
+                                    <Select
+                                        value={effectiveRecurrenceRule || "none"}
+                                        onValueChange={(value) => setManualRecurrenceRule(value === "none" ? "" : value as RecurrenceRule)}
+                                    >
+                                        <SelectTrigger id="quickAddRecurrence" className={cn(ACTION_CHIP_CLASS, "max-w-[12rem]")}>
+                                            <span className="inline-flex min-w-0 items-center gap-2">
+                                                <Repeat className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                <span className="truncate">
+                                                    {effectiveRecurrenceRule ? getRecurrenceLabel(effectiveRecurrenceRule) : "Repeat"}
+                                                </span>
+                                            </span>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">Does not repeat</SelectItem>
+                                            {RECURRENCE_RULE_OPTIONS.map((option) => (
+                                                <SelectItem key={option.value} value={option.value}>
+                                                    {option.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
 
                                     <Select
                                         value={effectivePriority || "none"}

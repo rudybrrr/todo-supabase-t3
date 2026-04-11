@@ -32,6 +32,7 @@ interface DataProfile {
     full_name?: string;
     avatar_url?: string | null;
     daily_focus_goal_minutes?: number | null;
+    timezone?: string | null;
 }
 
 interface DataContextType {
@@ -182,7 +183,8 @@ function areProfilesEqual(current: DataProfile | null, next: DataProfile | null)
     return (current.username ?? null) === (next.username ?? null)
         && (current.full_name ?? null) === (next.full_name ?? null)
         && (current.avatar_url ?? null) === (next.avatar_url ?? null)
-        && (current.daily_focus_goal_minutes ?? null) === (next.daily_focus_goal_minutes ?? null);
+        && (current.daily_focus_goal_minutes ?? null) === (next.daily_focus_goal_minutes ?? null)
+        && (current.timezone ?? null) === (next.timezone ?? null);
 }
 
 function areWeeklyDataEqual(current: WeeklyStatPoint[], next: WeeklyStatPoint[]) {
@@ -245,7 +247,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const fetchShellData = useCallback(async (uid: string) => {
         const [listsRes, profileRes] = await Promise.all([
             supabase.from("todo_list_members").select("list_id, role, todo_lists(*)").eq("user_id", uid),
-            supabase.from("profiles").select("username, full_name, avatar_url, daily_focus_goal_minutes").eq("id", uid).maybeSingle(),
+            supabase.from("profiles").select("username, full_name, avatar_url, daily_focus_goal_minutes, timezone").eq("id", uid).maybeSingle(),
         ]);
 
         if (listsRes.error) throw listsRes.error;
@@ -265,6 +267,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             ? {
                 ...(profileRes.data as DataProfile),
                 daily_focus_goal_minutes: (profileRes.data as DataProfile).daily_focus_goal_minutes ?? 120,
+                timezone: (profileRes.data as DataProfile).timezone ?? null,
             }
             : null;
 

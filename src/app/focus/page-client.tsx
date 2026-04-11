@@ -6,6 +6,8 @@ import {
     ArrowUpRight,
     BarChart3,
     Brain,
+    CalendarRange,
+    Clock3,
     Pause,
     Play,
     RotateCcw,
@@ -18,6 +20,13 @@ import { MODE_CONFIG, useFocus } from "~/components/focus-provider";
 import { Button } from "~/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { useTaskDataset } from "~/hooks/use-task-dataset";
+import {
+    formatBlockTimeRange,
+    formatMinutesCompact,
+    getCurrentPlannedBlock,
+    getNextPlannedBlock,
+    getRemainingPlannedMinutesForDay,
+} from "~/lib/planning";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { cn } from "~/lib/utils";
 
@@ -108,6 +117,32 @@ function FocusLinkCard({
     );
 }
 
+function FocusPlannerBlockCard({
+    label,
+    emptyLabel,
+    projectName,
+    taskTitle,
+    timeLabel,
+}: {
+    label: string;
+    emptyLabel: string;
+    projectName?: string | null;
+    taskTitle?: string | null;
+    timeLabel?: string | null;
+}) {
+    return (
+        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
+            <p className="eyebrow">{label}</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">
+                {taskTitle ?? emptyLabel}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+                {[projectName, timeLabel].filter(Boolean).join(" / ") || "No block in scope"}
+            </p>
+        </div>
+    );
+}
+
 export default function FocusClient() {
     return (
         <AppShell>
@@ -118,9 +153,10 @@ export default function FocusClient() {
 
 function FocusPageContent() {
     const { profile, stats, userId, loading: dataLoading } = useData();
-    const { todayFocusMinutes, orderedProjectSummaries, loading: datasetLoading } = useTaskDataset();
+    const { lists, plannedBlocks, tasks, todayFocusMinutes, orderedProjectSummaries, loading: datasetLoading } = useTaskDataset();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [communityRank, setCommunityRank] = useState<number | null | undefined>(undefined);
+    const [now, setNow] = useState(() => new Date());
     const {
         mode,
         timeLeft,
@@ -130,6 +166,10 @@ function FocusPageContent() {
         handleModeChange,
         currentListId,
         setCurrentListId,
+        currentTaskId,
+        setCurrentTaskId,
+        currentBlockId,
+        setCurrentBlockId,
     } = useFocus();
 
     const isFocusDataLoading = dataLoading || datasetLoading;
@@ -141,6 +181,73 @@ function FocusPageContent() {
     const sessionMinutes = mode === "focus" && timeLeft < config.duration ? Math.ceil((config.duration - timeLeft) / 60) : 0;
     const selectedProjectId = orderedProjectSummaries.some((summary) => summary.list.id === currentListId) ? currentListId : null;
     const selectedProjectName = orderedProjectSummaries.find((summary) => summary.list.id === selectedProjectId)?.list.name ?? null;
+    const listMap = useMemo(() => new Map(lists.map((list) => [list.id, list])), [lists]);
+    const taskMap = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
+    const scopedBlocks = useMemo(
+        () => selectedProjectId ? plannedBlocks.filter((block) => block.list_id === selectedProjectId) : plannedBlocks,
+        [plannedBlocks, selectedProjectId],
+    );
+    const focusContextBlock = useMemo(
+        () => currentBlockId ? plannedBlocks.find((block) => block.id === currentBlockId) ?? null : null,
+        [currentBlockId, plannedBlocks],
+    );
+    const currentPlannedBlock = useMemo(
+        () => getCurrentPlannedBlock(scopedBlocks, now),
+        [now, scopedBlocks],
+    );
+    const nextDetectedBlock = useMemo(
+        () => getNextPlannedBlock(scopedBlocks, now),
+        [now, scopedBlocks],
+    );
+    const nextPlannedBlock = useMemo(() => {
+        if (
+            focusContextBlock
+            && focusContextBlock.id !== currentPlannedBlock?.id
+            && new Date(focusContextBlock.scheduled_start).getTime() > now.getTime()
+        ) {
+            return focusContextBlock;
+        }
+
+        return nextDetectedBlock;
+    }, [currentPlannedBlock?.id, focusContextBlock, nextDetectedBlock, now]);
+    const focusContextTask = useMemo(
+        () => currentTaskId ? taskMap.get(currentTaskId) ?? null : null,
+        [currentTaskId, taskMap],
+    );
+    const plannerTask = useMemo(() => {
+        if (currentPlannedBlock?.todo_id) {
+            return taskMap.get(currentPlannedBlock.todo_id) ?? null;
+        }
+
+        if (nextPlannedBlock?.todo_id) {
+            return taskMap.get(nextPlannedBlock.todo_id) ?? null;
+        }
+
+        return focusContextTask;
+    }, [currentPlannedBlock?.todo_id, focusContextTask, nextPlannedBlock?.todo_id, taskMap]);
+    const remainingPlannedMinutes = useMemo(
+        () => getRemainingPlannedMinutesForDay(scopedBlocks, now),
+        [now, scopedBlocks],
+    );
+    const plannerAnchorBlock = currentPlannedBlock ?? nextPlannedBlock ?? focusContextBlock;
+    const plannerHref = useMemo(() => {
+        const params = new URLSearchParams();
+
+        if (selectedProjectId) {
+            params.set("listId", selectedProjectId);
+        }
+
+        if (plannerAnchorBlock) {
+            params.set("blockId", plannerAnchorBlock.id);
+            params.set("view", "day");
+        } else if (plannerTask) {
+            params.set("taskId", plannerTask.id);
+            params.set("view", "day");
+        }
+
+        const query = params.toString();
+        return query ? `/calendar?${query}` : "/calendar";
+    }, [plannerAnchorBlock, plannerTask, selectedProjectId]);
 
     useEffect(() => {
         if (!userId) {
@@ -184,20 +291,42 @@ function FocusPageContent() {
         };
     }, [supabase, userId]);
 
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            setNow(new Date());
+        }, 60_000);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!currentTaskId) return;
+        if (taskMap.has(currentTaskId)) return;
+        setCurrentTaskId(null);
+    }, [currentTaskId, setCurrentTaskId, taskMap]);
+
+    useEffect(() => {
+        if (!currentBlockId) return;
+        if (plannedBlocks.some((block) => block.id === currentBlockId)) return;
+        setCurrentBlockId(null);
+    }, [currentBlockId, plannedBlocks, setCurrentBlockId]);
+
     return (
-        <div className="page-container gap-4">
-            <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-4 lg:gap-5">
-                <div className="text-center lg:pt-1">
+        <div className="page-container gap-3 lg:gap-4">
+            <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 lg:gap-4">
+                <div className="text-center">
                     <p className="eyebrow">Pomodoro</p>
                 </div>
 
-                <section className="surface-card relative overflow-hidden p-4 sm:p-6 lg:p-7 xl:p-8">
+                <section className="surface-card relative overflow-hidden p-3.5 sm:p-5 lg:p-6 xl:p-7">
                     <div className={cn("absolute inset-0 opacity-95", tone.heroGlow)} />
                     <div className="absolute inset-x-10 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_oklab,var(--color-primary)_34%,transparent),transparent)]" />
                     <div className="absolute left-1/2 top-8 h-40 w-40 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,_color-mix(in_oklab,var(--color-primary)_16%,transparent)_0%,transparent_72%)] opacity-80" />
                     <div className="absolute right-[-7rem] bottom-[-8rem] h-56 w-56 rounded-full bg-[radial-gradient(circle,_color-mix(in_oklab,var(--color-card)_75%,transparent)_0%,transparent_70%)] opacity-70" />
 
-                    <div className="relative flex h-full flex-col gap-4 lg:gap-6">
+                    <div className="relative flex h-full flex-col gap-3 lg:gap-4">
                         <div className="flex flex-wrap items-center justify-center gap-2">
                             {MODE_OPTIONS.map((nextMode) => {
                                 const active = mode === nextMode;
@@ -207,7 +336,7 @@ function FocusPageContent() {
                                         type="button"
                                         onClick={() => handleModeChange(nextMode)}
                                         className={cn(
-                                            "inline-flex items-center rounded-full border px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.18em] transition-colors",
+                                            "inline-flex items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors",
                                             active
                                                 ? tone.pill
                                                 : "border-border/70 bg-background/72 text-muted-foreground hover:border-ring/30 hover:text-foreground",
@@ -219,15 +348,15 @@ function FocusPageContent() {
                             })}
                         </div>
 
-                        <div className="grid gap-4 lg:min-h-[31rem] lg:grid-cols-[minmax(0,1.12fr)_minmax(19rem,0.88fr)] xl:gap-5">
-                            <div className="flex min-h-[24rem] flex-col items-center justify-center rounded-[1.5rem] border border-border/70 bg-background/64 px-4 py-6 text-center backdrop-blur-sm sm:px-6 sm:py-8 lg:min-h-full lg:px-10 lg:py-9">
-                                <div className={cn("mb-6 flex h-[4.9rem] w-[4.9rem] items-center justify-center rounded-[1.5rem] border backdrop-blur-sm", tone.iconWrap)}>
-                                    <config.icon className="h-9 w-9" />
+                        <div className="grid gap-4 lg:min-h-[25rem] lg:grid-cols-[minmax(0,1.12fr)_minmax(19rem,0.88fr)] xl:gap-4">
+                            <div className="flex min-h-[18rem] flex-col items-center justify-center rounded-[1.5rem] border border-border/70 bg-background/64 px-4 py-5 text-center backdrop-blur-sm sm:px-5 sm:py-6 lg:min-h-full lg:px-8 lg:py-6">
+                                <div className={cn("mb-3 flex h-[4rem] w-[4rem] items-center justify-center rounded-[1.2rem] border backdrop-blur-sm", tone.iconWrap)}>
+                                    <config.icon className="h-7 w-7" />
                                 </div>
                                 <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/72 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
                                     {config.label}
                                 </div>
-                                <p className="mb-3 font-mono text-[clamp(4.4rem,10vw,8.15rem)] leading-none font-semibold tracking-[-0.1em] text-foreground">
+                                <p className="mb-2 font-mono text-[clamp(4rem,10vw,7rem)] leading-none font-semibold tracking-[-0.1em] text-foreground">
                                     {formatTime(timeLeft)}
                                 </p>
                                 <p className="max-w-xl text-sm leading-6 text-muted-foreground">
@@ -240,7 +369,7 @@ function FocusPageContent() {
                                             : "Pause here for a short reset before the next study block."}
                                 </p>
 
-                                <div className="mt-6 flex w-full flex-col items-stretch justify-center gap-2 sm:w-auto sm:flex-row">
+                                <div className="mt-3 flex w-full flex-col items-stretch justify-center gap-2 sm:w-auto sm:flex-row">
                                     <Button size="lg" className="w-full sm:w-auto sm:min-w-[12rem]" onClick={toggleTimer}>
                                         {isActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                                         {isActive ? "Pause" : mode === "focus" ? "Start focus" : "Start break"}
@@ -253,7 +382,7 @@ function FocusPageContent() {
                             </div>
 
                             <div className="flex flex-col gap-3 lg:justify-center">
-                                <div className="rounded-[1.2rem] border border-border/70 bg-background/68 p-3.5 backdrop-blur-sm sm:p-4">
+                                <div className="rounded-[1.2rem] border border-border/70 bg-background/68 p-3.5 backdrop-blur-sm">
                                     <div className="mb-2 flex items-center justify-between gap-3">
                                         <p className="eyebrow">Session project</p>
                                         {selectedProjectName ? (
@@ -264,7 +393,11 @@ function FocusPageContent() {
                                     </div>
                                     <Select
                                         value={selectedProjectId ?? "general"}
-                                        onValueChange={(value) => setCurrentListId(value === "general" ? null : value)}
+                                        onValueChange={(value) => {
+                                            setCurrentListId(value === "general" ? null : value);
+                                            setCurrentTaskId(null);
+                                            setCurrentBlockId(null);
+                                        }}
                                     >
                                         <SelectTrigger className="h-10 border-border/70 bg-card/75 shadow-none focus-visible:ring-0">
                                             <SelectValue placeholder="General" />
@@ -280,7 +413,7 @@ function FocusPageContent() {
                                     </Select>
                                 </div>
 
-                                <div className="rounded-[1.2rem] border border-border/70 bg-background/68 p-3.5 backdrop-blur-sm sm:p-4">
+                                <div className="rounded-[1.2rem] border border-border/70 bg-background/68 p-3.5 backdrop-blur-sm">
                                     <div className="flex items-start justify-between gap-4">
                                         <div className="space-y-1">
                                             <p className="eyebrow">Daily goal</p>
@@ -296,7 +429,7 @@ function FocusPageContent() {
                                         </div>
                                     </div>
 
-                                    <div className="mt-4 space-y-3">
+                                    <div className="mt-3 space-y-2.5">
                                         <div className="h-2.5 overflow-hidden rounded-full bg-muted">
                                             <div
                                                 className="h-full rounded-full bg-primary transition-[width]"
@@ -312,26 +445,86 @@ function FocusPageContent() {
                                         </p>
                                     </div>
 
-                                    <div className="mt-4 grid grid-cols-3 gap-2">
-                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2.5">
+                                    <div className="mt-3 grid grid-cols-3 gap-2">
+                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
                                             <p className="eyebrow">Current</p>
                                             <p className="mt-1 text-sm font-semibold text-foreground">
                                                 {sessionMinutes > 0 ? `${sessionMinutes}m` : "--"}
                                             </p>
                                         </div>
-                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2.5">
+                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
                                             <p className="eyebrow">Typical</p>
                                             <p className="mt-1 text-sm font-semibold text-foreground">
                                                 {isFocusDataLoading ? "--" : (stats?.avgSession ?? "0m")}
                                             </p>
                                         </div>
-                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2.5">
+                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
                                             <p className="eyebrow">Goal</p>
                                             <p className="mt-1 text-sm font-semibold text-foreground">
                                                 {isFocusDataLoading ? "--" : `${Math.round(focusProgress)}%`}
                                             </p>
                                         </div>
                                     </div>
+                                </div>
+
+                                <div className="rounded-[1.2rem] border border-border/70 bg-background/68 p-3.5 backdrop-blur-sm">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="space-y-1">
+                                            <p className="eyebrow">Planner context</p>
+                                            <p className="text-base font-semibold tracking-[-0.04em] text-foreground">
+                                                {currentPlannedBlock
+                                                    ? "Run the current block"
+                                                    : nextPlannedBlock
+                                                        ? "Next block is queued"
+                                                        : "No scheduled block in scope"}
+                                            </p>
+                                        </div>
+                                        <Button asChild variant="outline" size="xs">
+                                            <Link href={plannerHref}>
+                                                <CalendarRange className="h-3.5 w-3.5" />
+                                                Open calendar
+                                            </Link>
+                                        </Button>
+                                    </div>
+
+                                    <div className="mt-3 grid gap-2">
+                                        <FocusPlannerBlockCard
+                                            label="Current block"
+                                            emptyLabel="Nothing running now"
+                                            projectName={currentPlannedBlock ? (listMap.get(currentPlannedBlock.list_id)?.name ?? "Project") : null}
+                                            taskTitle={currentPlannedBlock?.todo_id ? (taskMap.get(currentPlannedBlock.todo_id)?.title ?? currentPlannedBlock.title) : currentPlannedBlock?.title}
+                                            timeLabel={currentPlannedBlock ? formatBlockTimeRange(currentPlannedBlock.scheduled_start, currentPlannedBlock.scheduled_end) : null}
+                                        />
+                                        <FocusPlannerBlockCard
+                                            label="Next block"
+                                            emptyLabel="Nothing else planned today"
+                                            projectName={nextPlannedBlock ? (listMap.get(nextPlannedBlock.list_id)?.name ?? "Project") : null}
+                                            taskTitle={nextPlannedBlock?.todo_id ? (taskMap.get(nextPlannedBlock.todo_id)?.title ?? nextPlannedBlock.title) : nextPlannedBlock?.title}
+                                            timeLabel={nextPlannedBlock ? formatBlockTimeRange(nextPlannedBlock.scheduled_start, nextPlannedBlock.scheduled_end) : null}
+                                        />
+                                    </div>
+
+                                    <div className="mt-3 grid grid-cols-2 gap-2">
+                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
+                                            <p className="eyebrow">Planned left</p>
+                                            <p className="mt-1 text-sm font-semibold text-foreground">
+                                                {formatMinutesCompact(remainingPlannedMinutes)}
+                                            </p>
+                                        </div>
+                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
+                                            <p className="eyebrow">Task context</p>
+                                            <p className="mt-1 text-sm font-semibold text-foreground">
+                                                {plannerTask?.title ?? "General focus"}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <Clock3 className="h-3.5 w-3.5" />
+                                        {remainingPlannedMinutes > 0
+                                            ? `${formatMinutesCompact(remainingPlannedMinutes)} still scheduled today`
+                                            : "Nothing else scheduled today"}
+                                    </p>
                                 </div>
                             </div>
                         </div>

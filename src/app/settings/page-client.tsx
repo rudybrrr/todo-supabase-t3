@@ -141,7 +141,7 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
 
                     <footer className="border-t border-border/60 pt-6 text-center text-sm text-muted-foreground">
                         <a
-                            href="https://rudhresh.vercel.app/"
+                            href="https://www.rudhresh.com/"
                             target="_blank"
                             rel="noreferrer"
                             className="transition-colors hover:text-foreground"

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createProject } from "~/lib/project-actions";
+import { getBrowserTimeZone } from "~/lib/task-deadlines";
 import type { TodoList } from "~/lib/types";
 
 interface BootstrapOptions {
@@ -44,6 +45,7 @@ function isMissingProfilesEmailColumnError(error: unknown) {
 
 async function ensureProfileRow(supabase: SupabaseClient, userId: string, email?: string | null) {
     let resolvedEmail = email?.trim() ?? null;
+    const resolvedTimeZone = getBrowserTimeZone();
 
     if (!resolvedEmail) {
         const { data } = await supabase.auth.getUser();
@@ -51,8 +53,8 @@ async function ensureProfileRow(supabase: SupabaseClient, userId: string, email?
     }
 
     const profilePayloadWithEmail = resolvedEmail
-        ? { id: userId, email: resolvedEmail }
-        : { id: userId };
+        ? { id: userId, email: resolvedEmail, timezone: resolvedTimeZone }
+        : { id: userId, timezone: resolvedTimeZone };
 
     const { error } = await supabase
         .from("profiles")
@@ -65,7 +67,7 @@ async function ensureProfileRow(supabase: SupabaseClient, userId: string, email?
 
     const { error: fallbackError } = await supabase
         .from("profiles")
-        .upsert({ id: userId }, { onConflict: "id" });
+        .upsert({ id: userId, timezone: resolvedTimeZone }, { onConflict: "id" });
 
     if (fallbackError) {
         throw fallbackError;

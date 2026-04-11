@@ -13,6 +13,8 @@ import {
 } from "~/lib/task-step-actions";
 import type { TodoStepRow } from "~/lib/types";
 
+const taskStepsCache = new Map<string, TodoStepRow[]>();
+
 function sortTaskSteps(steps: TodoStepRow[]) {
     return [...steps].sort((a, b) => {
         if (a.position !== b.position) return a.position - b.position;
@@ -46,6 +48,12 @@ function removeTaskStep(currentSteps: TodoStepRow[], stepId: string) {
     return nextSteps.length === currentSteps.length ? currentSteps : nextSteps;
 }
 
+function cacheTaskSteps(taskId: string, steps: TodoStepRow[]) {
+    const sortedSteps = sortTaskSteps(steps);
+    taskStepsCache.set(taskId, sortedSteps);
+    return sortedSteps;
+}
+
 export function useTaskSteps(taskId: string | null) {
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [steps, setSteps] = useState<TodoStepRow[]>([]);
@@ -66,6 +74,23 @@ export function useTaskSteps(taskId: string | null) {
         setPendingStepIds((current) => current.filter((id) => id !== stepId));
     }, []);
 
+    const writeSteps = useCallback((
+        scopeTaskId: string,
+        updater: TodoStepRow[] | ((currentSteps: TodoStepRow[]) => TodoStepRow[]),
+    ) => {
+        setSteps((currentSteps) => {
+            const baseSteps = activeTaskIdRef.current === scopeTaskId
+                ? currentSteps
+                : (taskStepsCache.get(scopeTaskId) ?? []);
+            const nextSteps = typeof updater === "function"
+                ? updater(baseSteps)
+                : updater;
+            const cachedSteps = cacheTaskSteps(scopeTaskId, nextSteps);
+
+            return activeTaskIdRef.current === scopeTaskId ? cachedSteps : currentSteps;
+        });
+    }, []);
+
     useEffect(() => {
         if (!taskId) {
             setSteps([]);
@@ -76,15 +101,16 @@ export function useTaskSteps(taskId: string | null) {
         }
 
         let active = true;
-        setSteps([]);
-        setLoading(true);
+        const cachedSteps = taskStepsCache.get(taskId) ?? null;
+        setSteps(cachedSteps ?? []);
+        setLoading(!cachedSteps);
         setCreating(false);
         setPendingStepIds([]);
 
         void listTaskSteps(supabase, taskId)
             .then((loadedSteps) => {
                 if (!active || activeTaskIdRef.current !== taskId) return;
-                setSteps(loadedSteps);
+                setSteps(cacheTaskSteps(taskId, loadedSteps));
             })
             .catch((error) => {
                 if (!active || activeTaskIdRef.current !== taskId) return;
@@ -106,13 +132,13 @@ export function useTaskSteps(taskId: string | null) {
                     if (payload.eventType === "DELETE") {
                         const deletedId = typeof payload.old.id === "string" ? payload.old.id : null;
                         if (!deletedId) return;
-                        setSteps((current) => removeTaskStep(current, deletedId));
+                        writeSteps(taskId, (current) => removeTaskStep(current, deletedId));
                         return;
                     }
 
                     const nextStep = payload.new as TodoStepRow | null;
                     if (!nextStep?.id) return;
-                    setSteps((current) => upsertTaskStep(current, nextStep));
+                    writeSteps(taskId, (current) => upsertTaskStep(current, nextStep));
                 },
             )
             .subscribe();
@@ -121,7 +147,7 @@ export function useTaskSteps(taskId: string | null) {
             active = false;
             void supabase.removeChannel(channel);
         };
-    }, [supabase, taskId]);
+    }, [supabase, taskId, writeSteps]);
 
     const createStep = useCallback(async (title: string) => {
         const scopeTaskId = taskId;
@@ -142,7 +168,7 @@ export function useTaskSteps(taskId: string | null) {
         };
 
         setCreating(true);
-        setSteps((current) => sortTaskSteps([...current, optimisticStep]));
+        writeSteps(scopeTaskId, (current) => [...current, optimisticStep]);
 
         try {
             const createdStep = await createTaskStep(supabase, {
@@ -153,7 +179,7 @@ export function useTaskSteps(taskId: string | null) {
 
             if (activeTaskIdRef.current !== scopeTaskId) return true;
 
-            setSteps((current) => {
+            writeSteps(scopeTaskId, (current) => {
                 const withoutTemp = current.filter((step) => step.id !== tempId);
                 return upsertTaskStep(withoutTemp, createdStep);
             });
@@ -161,7 +187,7 @@ export function useTaskSteps(taskId: string | null) {
             return true;
         } catch (error) {
             if (activeTaskIdRef.current === scopeTaskId) {
-                setSteps((current) => current.filter((step) => step.id !== tempId));
+                writeSteps(scopeTaskId, (current) => current.filter((step) => step.id !== tempId));
                 toast.error(error instanceof Error ? error.message : "Unable to add step.");
             }
             return false;
@@ -170,7 +196,7 @@ export function useTaskSteps(taskId: string | null) {
                 setCreating(false);
             }
         }
-    }, [steps, supabase, taskId]);
+    }, [steps, supabase, taskId, writeSteps]);
 
     const renameStep = useCallback(async (stepId: string, title: string) => {
         const scopeTaskId = taskId;
@@ -180,7 +206,7 @@ export function useTaskSteps(taskId: string | null) {
         if (!scopeTaskId || !previousStep || !normalizedTitle || previousStep.title === normalizedTitle) return;
 
         addPendingStepId(stepId);
-        setSteps((current) => current.map((step) => (
+        writeSteps(scopeTaskId, (current) => current.map((step) => (
             step.id === stepId
                 ? { ...step, title: normalizedTitle, updated_at: new Date().toISOString() }
                 : step
@@ -193,10 +219,10 @@ export function useTaskSteps(taskId: string | null) {
             });
 
             if (activeTaskIdRef.current !== scopeTaskId) return;
-            setSteps((current) => upsertTaskStep(current, updatedStep));
+            writeSteps(scopeTaskId, (current) => upsertTaskStep(current, updatedStep));
         } catch (error) {
             if (activeTaskIdRef.current === scopeTaskId) {
-                setSteps((current) => current.map((step) => (step.id === stepId ? previousStep : step)));
+                writeSteps(scopeTaskId, (current) => current.map((step) => (step.id === stepId ? previousStep : step)));
                 toast.error(error instanceof Error ? error.message : "Unable to rename step.");
             }
         } finally {
@@ -204,7 +230,7 @@ export function useTaskSteps(taskId: string | null) {
                 removePendingStepId(stepId);
             }
         }
-    }, [addPendingStepId, removePendingStepId, steps, supabase, taskId]);
+    }, [addPendingStepId, removePendingStepId, steps, supabase, taskId, writeSteps]);
 
     const toggleStep = useCallback(async (stepId: string, nextIsDone: boolean) => {
         const scopeTaskId = taskId;
@@ -213,7 +239,7 @@ export function useTaskSteps(taskId: string | null) {
         if (!scopeTaskId || !previousStep || previousStep.is_done === nextIsDone) return;
 
         addPendingStepId(stepId);
-        setSteps((current) => current.map((step) => (
+        writeSteps(scopeTaskId, (current) => current.map((step) => (
             step.id === stepId
                 ? { ...step, is_done: nextIsDone, updated_at: new Date().toISOString() }
                 : step
@@ -223,10 +249,10 @@ export function useTaskSteps(taskId: string | null) {
             const updatedStep = await setTaskStepCompletion(supabase, stepId, nextIsDone);
 
             if (activeTaskIdRef.current !== scopeTaskId) return;
-            setSteps((current) => upsertTaskStep(current, updatedStep));
+            writeSteps(scopeTaskId, (current) => upsertTaskStep(current, updatedStep));
         } catch (error) {
             if (activeTaskIdRef.current === scopeTaskId) {
-                setSteps((current) => current.map((step) => (step.id === stepId ? previousStep : step)));
+                writeSteps(scopeTaskId, (current) => current.map((step) => (step.id === stepId ? previousStep : step)));
                 toast.error(error instanceof Error ? error.message : "Unable to update step.");
             }
         } finally {
@@ -234,7 +260,7 @@ export function useTaskSteps(taskId: string | null) {
                 removePendingStepId(stepId);
             }
         }
-    }, [addPendingStepId, removePendingStepId, steps, supabase, taskId]);
+    }, [addPendingStepId, removePendingStepId, steps, supabase, taskId, writeSteps]);
 
     const removeStep = useCallback(async (stepId: string) => {
         const scopeTaskId = taskId;
@@ -243,13 +269,13 @@ export function useTaskSteps(taskId: string | null) {
         if (!scopeTaskId || !previousStep) return;
 
         addPendingStepId(stepId);
-        setSteps((current) => removeTaskStep(current, stepId));
+        writeSteps(scopeTaskId, (current) => removeTaskStep(current, stepId));
 
         try {
             await deleteTaskStep(supabase, stepId);
         } catch (error) {
             if (activeTaskIdRef.current === scopeTaskId) {
-                setSteps((current) => sortTaskSteps([...current, previousStep]));
+                writeSteps(scopeTaskId, (current) => [...current, previousStep]);
                 toast.error(error instanceof Error ? error.message : "Unable to remove step.");
             }
         } finally {
@@ -257,7 +283,7 @@ export function useTaskSteps(taskId: string | null) {
                 removePendingStepId(stepId);
             }
         }
-    }, [addPendingStepId, removePendingStepId, steps, supabase, taskId]);
+    }, [addPendingStepId, removePendingStepId, steps, supabase, taskId, writeSteps]);
 
     const pendingStepIdSet = useMemo(() => new Set(pendingStepIds), [pendingStepIds]);
     const completedCount = useMemo(() => steps.filter((step) => step.is_done).length, [steps]);

@@ -1,13 +1,16 @@
 "use client";
 
+import { addDays, format, startOfDay } from "date-fns";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarRange, Check, ChevronLeft, ChevronRight, FileText, Play, Trash2, X } from "lucide-react";
+import { Bell, CalendarRange, Check, ChevronLeft, ChevronRight, FileText, Play, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { useData } from "~/components/data-provider";
 import { useFocus } from "~/components/focus-provider";
 import { TaskAttachmentUpload } from "~/components/task-attachment-upload";
 import { TaskStepsSection } from "~/components/task-steps-section";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
     Dialog,
@@ -25,11 +28,29 @@ import { Textarea } from "~/components/ui/textarea";
 import { useTaskDataset } from "~/hooks/use-task-dataset";
 import { useTaskSections } from "~/hooks/use-task-sections";
 import type { TaskDatasetRecord } from "~/hooks/use-task-dataset";
+import {
+    findNextPlannerSlot,
+    findPlannerSlotForDate,
+    formatBlockTimeRange,
+    formatMinutesCompact,
+    getPlannerDateFromMinutes,
+    getPlanningStatusLabel,
+    toDateKey,
+} from "~/lib/planning";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { formatAttachmentSize, getAttachmentDisplayName, getAttachmentExtension, isImageAttachment } from "~/lib/task-attachments";
-import { deleteTask, deleteTaskAttachment, setTaskCompletion, updateTask } from "~/lib/task-actions";
-import { getDateInputValue } from "~/lib/task-views";
-import type { PlannedFocusBlock, TodoImageRow, TodoList } from "~/lib/types";
+import { deleteTask, deleteTaskAttachment, completeTaskWithRecurrence, updateTask } from "~/lib/task-actions";
+import { buildTaskDeadlineMutation, getDateInputValue } from "~/lib/task-deadlines";
+import { canTaskRecur, getRecurrenceLabel, RECURRENCE_RULE_OPTIONS } from "~/lib/task-recurrence";
+import {
+    buildTaskReminderMutation,
+    formatTaskReminderScheduledLabel,
+    getReminderOffsetInputValue,
+    getReminderOffsetLabel,
+    getReminderOffsetMinutesFromInput,
+    REMINDER_OFFSET_OPTIONS,
+} from "~/lib/task-reminders";
+import type { PlannedFocusBlock, RecurrenceRule, TodoImageRow, TodoList } from "~/lib/types";
 import { cn } from "~/lib/utils";
 
 type TaskDetailFormSnapshot = {
@@ -37,12 +58,14 @@ type TaskDetailFormSnapshot = {
     description: string;
     priority: "high" | "medium" | "low" | "";
     dueDate: string;
+    reminderOffsetMinutes: string;
+    recurrenceRule: RecurrenceRule | "";
     estimatedMinutes: string;
     listId: string;
     sectionId: string;
 };
 
-type TaskDetailFormSyncInput = Pick<TaskDatasetRecord, "id" | "title" | "description" | "priority" | "due_date" | "estimated_minutes" | "list_id" | "section_id" | "is_done">;
+type TaskDetailFormSyncInput = Pick<TaskDatasetRecord, "id" | "title" | "description" | "priority" | "due_date" | "deadline_on" | "deadline_at" | "reminder_offset_minutes" | "recurrence_rule" | "estimated_minutes" | "list_id" | "section_id" | "is_done">;
 
 type TaskDetailSnapshotComparisonContext = {
     sectionsEnabled: boolean;
@@ -51,13 +74,16 @@ type TaskDetailSnapshotComparisonContext = {
 };
 
 function createTaskDetailFormSnapshot(
-    task: Pick<TaskDatasetRecord, "title" | "description" | "priority" | "due_date" | "estimated_minutes" | "list_id" | "section_id">,
+    task: Pick<TaskDatasetRecord, "title" | "description" | "priority" | "due_date" | "deadline_on" | "deadline_at" | "reminder_offset_minutes" | "recurrence_rule" | "estimated_minutes" | "list_id" | "section_id">,
+    timeZone?: string | null,
 ): TaskDetailFormSnapshot {
     return {
         title: task.title,
         description: task.description ?? "",
         priority: task.priority ?? "",
-        dueDate: getDateInputValue(task.due_date),
+        dueDate: getDateInputValue(task, timeZone),
+        reminderOffsetMinutes: getReminderOffsetInputValue(task.reminder_offset_minutes),
+        recurrenceRule: task.recurrence_rule ?? "",
         estimatedMinutes: task.estimated_minutes ? String(task.estimated_minutes) : "",
         listId: task.list_id,
         sectionId: task.section_id ?? "",
@@ -69,6 +95,8 @@ function areTaskDetailFormSnapshotsEqual(a: TaskDetailFormSnapshot, b: TaskDetai
         && a.description === b.description
         && a.priority === b.priority
         && a.dueDate === b.dueDate
+        && a.reminderOffsetMinutes === b.reminderOffsetMinutes
+        && a.recurrenceRule === b.recurrenceRule
         && a.estimatedMinutes === b.estimatedMinutes
         && a.listId === b.listId
         && a.sectionId === b.sectionId;
@@ -117,6 +145,8 @@ function createComparableTaskDetailFormSnapshot(
         description: normalizeTaskDetailOptionalText(snapshot.description),
         priority: snapshot.priority || "",
         dueDate: snapshot.dueDate || "",
+        reminderOffsetMinutes: snapshot.reminderOffsetMinutes || "",
+        recurrenceRule: snapshot.recurrenceRule || "",
         estimatedMinutes: normalizeTaskDetailEstimatedMinutes(snapshot.estimatedMinutes),
         listId: snapshot.listId,
         sectionId: normalizeTaskDetailSectionId(snapshot.sectionId, context),
@@ -134,6 +164,13 @@ function selectPreferredPlannedBlock(blocks: PlannedFocusBlock[]) {
     if (upcomingBlock) return upcomingBlock;
 
     return [...blocks].sort((a, b) => b.scheduled_start.localeCompare(a.scheduled_start))[0] ?? null;
+}
+
+function getPlanningStatusVariant(task: TaskDatasetRecord) {
+    if (task.planning_status === "fully_planned") return "success";
+    if (task.planning_status === "partially_planned") return "warning";
+    if (task.planning_status === "overplanned") return "warning";
+    return "secondary";
 }
 
 function TaskDetailForm({
@@ -164,13 +201,16 @@ function TaskDetailForm({
     onDeleted: () => void;
 }) {
     const router = useRouter();
+    const { profile } = useData();
     const { applyTaskPatch, plannedBlocks, refresh, removeTask, upsertTask } = useTaskDataset();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-    const { setCurrentListId, handleModeChange, setIsActive } = useFocus();
+    const { setCurrentListId, setCurrentTaskId, setCurrentBlockId, handleModeChange, setIsActive } = useFocus();
     const [title, setTitle] = useState(task.title);
     const [description, setDescription] = useState(task.description ?? "");
     const [priority, setPriority] = useState<"high" | "medium" | "low" | "">(task.priority ?? "");
-    const [dueDate, setDueDate] = useState(getDateInputValue(task.due_date));
+    const [dueDate, setDueDate] = useState(getDateInputValue(task, profile?.timezone));
+    const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState(getReminderOffsetInputValue(task.reminder_offset_minutes));
+    const [recurrenceRule, setRecurrenceRule] = useState<RecurrenceRule | "">(task.recurrence_rule ?? "");
     const [estimatedMinutes, setEstimatedMinutes] = useState(task.estimated_minutes ? String(task.estimated_minutes) : "");
     const [listId, setListId] = useState(task.list_id);
     const [sectionId, setSectionId] = useState(task.section_id ?? "");
@@ -199,11 +239,13 @@ function TaskDetailForm({
         description,
         priority,
         dueDate,
+        reminderOffsetMinutes,
+        recurrenceRule,
         estimatedMinutes,
         listId,
         sectionId,
-    }), [description, dueDate, estimatedMinutes, listId, priority, sectionId, title]);
-    const taskSnapshot = useMemo(() => createTaskDetailFormSnapshot(task), [task]);
+    }), [description, dueDate, estimatedMinutes, listId, priority, recurrenceRule, reminderOffsetMinutes, sectionId, title]);
+    const taskSnapshot = useMemo(() => createTaskDetailFormSnapshot(task, profile?.timezone), [profile?.timezone, task]);
     const comparableCurrentFormSnapshot = useMemo(() => createComparableTaskDetailFormSnapshot(currentFormSnapshot, {
         sectionsEnabled,
         sectionsLoading,
@@ -223,19 +265,75 @@ function TaskDetailForm({
         : null;
 
     const syncFormState = useCallback((nextTask: TaskDetailFormSyncInput) => {
-        const nextSnapshot = createTaskDetailFormSnapshot(nextTask);
+        const nextSnapshot = createTaskDetailFormSnapshot(nextTask, profile?.timezone);
 
         setTitle(nextSnapshot.title);
         setDescription(nextSnapshot.description);
         setPriority(nextSnapshot.priority);
         setDueDate(nextSnapshot.dueDate);
+        setReminderOffsetMinutes(nextSnapshot.reminderOffsetMinutes);
+        setRecurrenceRule(nextSnapshot.recurrenceRule);
         setEstimatedMinutes(nextSnapshot.estimatedMinutes);
         setListId(nextSnapshot.listId);
         setSectionId(nextSnapshot.sectionId);
         setIsDone(nextTask.is_done);
         initializedTaskIdRef.current = nextTask.id;
         lastSyncedSnapshotRef.current = nextSnapshot;
-    }, []);
+    }, [profile?.timezone]);
+
+    const planningStatusLabel = useMemo(
+        () => getPlanningStatusLabel(task.planning_status),
+        [task.planning_status],
+    );
+    const plannedTimeLabel = useMemo(
+        () => formatMinutesCompact(task.planned_minutes),
+        [task.planned_minutes],
+    );
+    const remainingEstimateLabel = useMemo(() => {
+        if (task.remaining_estimated_minutes == null) {
+            return task.planned_minutes > 0 ? "Scheduled" : "No estimate";
+        }
+
+        if (task.planning_status === "overplanned" && task.estimated_minutes) {
+            return `${formatMinutesCompact(Math.max(task.planned_minutes - task.estimated_minutes, 0))} over`;
+        }
+
+        if (task.remaining_estimated_minutes === 0) {
+            return "Estimate covered";
+        }
+
+        return `${formatMinutesCompact(task.remaining_estimated_minutes)} left`;
+    }, [task.estimated_minutes, task.planned_minutes, task.planning_status, task.remaining_estimated_minutes]);
+    const nextBlockLabel = useMemo(
+        () => preferredPlannedBlock
+            ? formatBlockTimeRange(preferredPlannedBlock.scheduled_start, preferredPlannedBlock.scheduled_end)
+            : "No scheduled block",
+        [preferredPlannedBlock],
+    );
+    const defaultScheduleDuration = useMemo(
+        () => task.remaining_estimated_minutes ?? task.estimated_minutes ?? 60,
+        [task.estimated_minutes, task.remaining_estimated_minutes],
+    );
+    const recurrenceLabel = useMemo(
+        () => getRecurrenceLabel(recurrenceRule || null),
+        [recurrenceRule],
+    );
+    const parsedReminderOffsetMinutes = useMemo(
+        () => getReminderOffsetMinutesFromInput(reminderOffsetMinutes),
+        [reminderOffsetMinutes],
+    );
+    const reminderLabel = useMemo(
+        () => parsedReminderOffsetMinutes == null ? null : getReminderOffsetLabel(parsedReminderOffsetMinutes),
+        [parsedReminderOffsetMinutes],
+    );
+    const reminderPreviewAt = useMemo(() => {
+        const deadlinePatch = buildTaskDeadlineMutation(dueDate || null);
+        return buildTaskReminderMutation(deadlinePatch, parsedReminderOffsetMinutes, profile?.timezone).reminder_at;
+    }, [dueDate, parsedReminderOffsetMinutes, profile?.timezone]);
+    const reminderScheduledLabel = useMemo(
+        () => formatTaskReminderScheduledLabel(reminderPreviewAt, profile?.timezone),
+        [profile?.timezone, reminderPreviewAt],
+    );
 
     useEffect(() => {
         const switchingTasks = initializedTaskIdRef.current !== task.id;
@@ -290,17 +388,32 @@ function TaskDetailForm({
         const normalizedTitle = title.trim();
         const normalizedDescription = description.trim() ? description.trim() : null;
         const normalizedDueDate = dueDate || null;
+        const normalizedReminderOffsetMinutes = parsedReminderOffsetMinutes;
+        const normalizedRecurrenceRule = recurrenceRule || null;
         const normalizedPriority = priority || null;
         const normalizedEstimatedMinutes = estimatedMinutes ? Number.parseInt(estimatedMinutes, 10) : null;
         const normalizedSectionId = sectionId || null;
         const optimisticUpdatedAt = new Date().toISOString();
+        const deadlinePatch = buildTaskDeadlineMutation(normalizedDueDate);
+        const reminderPatch = buildTaskReminderMutation(deadlinePatch, normalizedReminderOffsetMinutes, profile?.timezone);
+
+        if (normalizedReminderOffsetMinutes != null && !normalizedDueDate) {
+            toast.error("Reminders need a deadline.");
+            return;
+        }
+        if (normalizedRecurrenceRule && !normalizedDueDate) {
+            toast.error("Recurring tasks need a deadline.");
+            return;
+        }
 
         try {
             setSaving(true);
             applyTaskPatch(task.id, {
                 title: normalizedTitle,
                 description: normalizedDescription,
-                due_date: normalizedDueDate,
+                ...deadlinePatch,
+                ...reminderPatch,
+                recurrence_rule: normalizedRecurrenceRule,
                 priority: normalizedPriority,
                 estimated_minutes: normalizedEstimatedMinutes,
                 list_id: listId,
@@ -312,10 +425,13 @@ function TaskDetailForm({
                 title: normalizedTitle,
                 description: normalizedDescription,
                 dueDate: normalizedDueDate,
+                reminderOffsetMinutes: normalizedReminderOffsetMinutes,
+                recurrenceRule: normalizedRecurrenceRule,
                 priority: normalizedPriority,
                 estimatedMinutes: normalizedEstimatedMinutes,
                 listId,
                 sectionId: normalizedSectionId,
+                preferredTimeZone: profile?.timezone,
             });
             upsertTask(updatedTask, { suppressRealtimeEcho: true });
             syncFormState(updatedTask);
@@ -340,9 +456,18 @@ function TaskDetailForm({
                 completed_at: nextIsDone ? optimisticUpdatedAt : null,
                 updated_at: optimisticUpdatedAt,
             });
-            const updatedTask = await setTaskCompletion(supabase, task.id, nextIsDone);
-            upsertTask(updatedTask, { suppressRealtimeEcho: true });
-            toast.success(nextIsDone ? "Task completed." : "Task reopened.");
+            const result = await completeTaskWithRecurrence(supabase, task, nextIsDone, profile?.timezone);
+            upsertTask(result.completedTask, { suppressRealtimeEcho: true });
+            if (result.nextTask) {
+                upsertTask(result.nextTask, { suppressRealtimeEcho: true });
+            }
+            toast.success(
+                nextIsDone
+                    ? result.nextTask
+                        ? "Task completed. Next occurrence created."
+                        : "Task completed."
+                    : "Task reopened.",
+            );
             onSaved();
         } catch (error) {
             setIsDone(task.is_done);
@@ -365,28 +490,107 @@ function TaskDetailForm({
 
     function handleStartFocus() {
         setCurrentListId(task.list_id);
+        setCurrentTaskId(task.id);
+        setCurrentBlockId(preferredPlannedBlock?.id ?? null);
         handleModeChange("focus");
         setIsActive(true);
         router.push("/focus");
         toast.success("Focus session started.");
     }
 
-    function handlePlanBlock() {
+    function openPlannerWithPrefill(options?: {
+        date?: string;
+        startTime?: string;
+        durationMinutes?: number;
+        preferExistingBlock?: boolean;
+        view?: "day" | "week";
+    }) {
         const nextParams = new URLSearchParams({
             listId: preferredPlannedBlock?.list_id ?? task.list_id,
         });
 
-        if (preferredPlannedBlock) {
+        if (options?.preferExistingBlock && preferredPlannedBlock) {
             nextParams.set("blockId", preferredPlannedBlock.id);
         } else {
             nextParams.set("taskId", task.id);
-            if (dueDate) {
-                nextParams.set("date", dueDate);
+            const nextDate = options?.date ?? dueDate;
+            if (nextDate) {
+                nextParams.set("date", nextDate);
+            }
+            if (options?.startTime) {
+                nextParams.set("startTime", options.startTime);
+            }
+            if (options?.durationMinutes) {
+                nextParams.set("duration", String(options.durationMinutes));
+            }
+            if (options?.view) {
+                nextParams.set("view", options.view);
             }
         }
 
         router.push(`/calendar?${nextParams.toString()}`);
         onClose?.();
+    }
+
+    function handlePlanBlock() {
+        openPlannerWithPrefill({
+            preferExistingBlock: true,
+            view: preferredPlannedBlock ? "week" : "day",
+        });
+    }
+
+    function handleScheduleToday() {
+        const today = startOfDay(new Date());
+        const slot = findPlannerSlotForDate(plannedBlocks, today, defaultScheduleDuration, {
+            after: new Date(),
+        });
+
+        openPlannerWithPrefill({
+            date: toDateKey(today),
+            startTime: slot ? format(getPlannerDateFromMinutes(slot.date, slot.startMinutes), "HH:mm") : undefined,
+            durationMinutes: defaultScheduleDuration,
+            view: "day",
+        });
+    }
+
+    function handleScheduleTomorrow() {
+        const tomorrow = startOfDay(addDays(new Date(), 1));
+        const slot = findPlannerSlotForDate(plannedBlocks, tomorrow, defaultScheduleDuration);
+
+        openPlannerWithPrefill({
+            date: toDateKey(tomorrow),
+            startTime: slot ? format(getPlannerDateFromMinutes(slot.date, slot.startMinutes), "HH:mm") : undefined,
+            durationMinutes: defaultScheduleDuration,
+            view: "day",
+        });
+    }
+
+    function handleAddThirtyMinuteBlock() {
+        const slot = findNextPlannerSlot(plannedBlocks, {
+            after: new Date(),
+            durationMinutes: 30,
+        });
+
+        openPlannerWithPrefill({
+            date: toDateKey(slot.date),
+            startTime: format(getPlannerDateFromMinutes(slot.date, slot.startMinutes), "HH:mm"),
+            durationMinutes: 30,
+            view: "day",
+        });
+    }
+
+    function handleScheduleNextSlot() {
+        const slot = findNextPlannerSlot(plannedBlocks, {
+            after: new Date(),
+            durationMinutes: defaultScheduleDuration,
+        });
+
+        openPlannerWithPrefill({
+            date: toDateKey(slot.date),
+            startTime: format(getPlannerDateFromMinutes(slot.date, slot.startMinutes), "HH:mm"),
+            durationMinutes: defaultScheduleDuration,
+            view: "day",
+        });
     }
 
     async function handleAttachmentsUploaded() {
@@ -423,6 +627,12 @@ function TaskDetailForm({
                             <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                 {taskPositionLabel ? `Task ${taskPositionLabel}` : "Task details"}
                             </span>
+                            {reminderLabel ? (
+                                <Badge variant="secondary">{reminderLabel}</Badge>
+                            ) : null}
+                            {recurrenceRule ? (
+                                <Badge variant="secondary">{recurrenceLabel}</Badge>
+                            ) : null}
                             {onNavigateToTask ? (
                                 <div className="inline-flex items-center rounded-md border border-border/70 bg-muted/35 p-0.5">
                                     <Button
@@ -519,6 +729,33 @@ function TaskDetailForm({
 
                 <TaskStepsSection taskId={task.id} />
 
+                <section className="rounded-xl border border-border/70 bg-card/70 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Planning</p>
+                            <h3 className="mt-1 text-sm font-semibold tracking-[-0.02em] text-foreground">
+                                Schedule coverage
+                            </h3>
+                        </div>
+                        <Badge variant={getPlanningStatusVariant(task)}>{planningStatusLabel}</Badge>
+                    </div>
+
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-lg border border-border/70 bg-background/55 px-3 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Planned time</p>
+                            <p className="mt-1 text-sm font-semibold text-foreground">{plannedTimeLabel}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/70 bg-background/55 px-3 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Estimate delta</p>
+                            <p className="mt-1 text-sm font-semibold text-foreground">{remainingEstimateLabel}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/70 bg-background/55 px-3 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Next block</p>
+                            <p className="mt-1 text-sm font-semibold text-foreground">{nextBlockLabel}</p>
+                        </div>
+                    </div>
+                </section>
+
                 <section className="rounded-xl border border-border/70 bg-muted/15 p-1.5">
                     <div className="grid gap-1">
                         <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2.5">
@@ -583,6 +820,73 @@ function TaskDetailForm({
                         </div>
 
                         <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2.5">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Reminder</p>
+                            <div className="space-y-1">
+                                <Select
+                                    value={reminderOffsetMinutes || "none"}
+                                    onValueChange={(value) => setReminderOffsetMinutes(value === "none" ? "" : value)}
+                                >
+                                    <SelectTrigger
+                                        id="detailReminder"
+                                        className="h-auto min-h-0 rounded-lg border-0 bg-background/70 px-3 py-2 text-right shadow-none focus-visible:ring-0 [&>span]:text-right"
+                                    >
+                                        <span className="inline-flex w-full items-center justify-end gap-2">
+                                            <Bell className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                            <span>{reminderLabel ?? "No reminder"}</span>
+                                        </span>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">No reminder</SelectItem>
+                                        {REMINDER_OFFSET_OPTIONS.map((option) => (
+                                            <SelectItem key={option.value} value={String(option.value)}>
+                                                {option.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {parsedReminderOffsetMinutes != null && !dueDate ? (
+                                    <p className="text-right text-[11px] text-amber-700 dark:text-amber-300">
+                                        Add a deadline to set a reminder.
+                                    </p>
+                                ) : reminderScheduledLabel ? (
+                                    <p className="text-right text-[11px] text-muted-foreground">
+                                        Will remind {reminderScheduledLabel}.
+                                    </p>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2.5">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Repeat</p>
+                            <div className="space-y-1">
+                                <Select
+                                    value={recurrenceRule || "none"}
+                                    onValueChange={(value) => setRecurrenceRule(value === "none" ? "" : value as RecurrenceRule)}
+                                >
+                                    <SelectTrigger
+                                        id="detailRecurrence"
+                                        className="h-auto min-h-0 rounded-lg border-0 bg-background/70 px-3 py-2 text-right shadow-none focus-visible:ring-0 [&>span]:text-right"
+                                    >
+                                        <SelectValue placeholder="Does not repeat" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">Does not repeat</SelectItem>
+                                        {RECURRENCE_RULE_OPTIONS.map((option) => (
+                                            <SelectItem key={option.value} value={option.value}>
+                                                {option.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {recurrenceRule && !canTaskRecur({ due_date: null, deadline_on: dueDate || null, deadline_at: null }) ? (
+                                    <p className="text-right text-[11px] text-amber-700 dark:text-amber-300">
+                                        Add a deadline to repeat this task.
+                                    </p>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2.5">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Priority</p>
                             <Select
                                 value={priority || "none"}
@@ -622,6 +926,39 @@ function TaskDetailForm({
                     </div>
                 </section>
 
+                <section className="space-y-3 rounded-xl border border-border/70 bg-muted/15 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Schedule</p>
+                            <h3 className="mt-1 text-sm font-semibold tracking-[-0.02em] text-foreground">
+                                Quick plan actions
+                            </h3>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">
+                            {task.remaining_estimated_minutes ?? task.estimated_minutes ?? 60}m default
+                        </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="tonal" size="xs" onClick={handleScheduleToday}>
+                            Today
+                        </Button>
+                        <Button variant="tonal" size="xs" onClick={handleScheduleTomorrow}>
+                            Tomorrow
+                        </Button>
+                        <Button variant="tonal" size="xs" onClick={handleScheduleNextSlot}>
+                            Next slot
+                        </Button>
+                        <Button variant="tonal" size="xs" onClick={handleAddThirtyMinuteBlock}>
+                            Add 30m
+                        </Button>
+                        <Button variant="outline" size="xs" onClick={handlePlanBlock}>
+                            <CalendarRange className="h-3.5 w-3.5" />
+                            {preferredPlannedBlock ? "Edit block" : "Open planner"}
+                        </Button>
+                    </div>
+                </section>
+
                 <section className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" size="xs" onClick={handleStartFocus}>
                         <Play className="h-3.5 w-3.5" />
@@ -629,7 +966,7 @@ function TaskDetailForm({
                     </Button>
                     <Button variant="outline" size="xs" onClick={handlePlanBlock}>
                         <CalendarRange className="h-3.5 w-3.5" />
-                        {preferredPlannedBlock ? "Edit block" : "Plan block"}
+                        {preferredPlannedBlock ? "Edit block" : "Open planner"}
                     </Button>
                 </section>
 

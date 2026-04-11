@@ -13,6 +13,7 @@ import { motion } from "framer-motion";
 
 import { useData } from "~/components/data-provider";
 import { getPublicAvatarUrl, isAvatarPathOwnedByUser, PROFILE_AVATAR_BUCKET } from "~/lib/avatar";
+import { getBrowserTimeZone, isValidTimeZone } from "~/lib/task-deadlines";
 
 interface ProfileUpdatePayload {
     id: string;
@@ -28,6 +29,7 @@ interface AvatarUpdatePayload {
 interface StudyGoalUpdatePayload {
     id: string;
     daily_focus_goal_minutes: number;
+    timezone: string;
 }
 
 const MAX_AVATAR_BYTES = 3 * 1024 * 1024;
@@ -81,6 +83,7 @@ export function ProfileForm({ userId }: { userId: string }) {
     const [fullName, setFullName] = useState("");
     const [avatarPath, setAvatarPath] = useState<string | null>(null);
     const [dailyGoal, setDailyGoal] = useState("120");
+    const [timeZone, setTimeZone] = useState(getBrowserTimeZone());
 
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -91,6 +94,7 @@ export function ProfileForm({ userId }: { userId: string }) {
         setFullName(profile?.full_name ?? "");
         setAvatarPath(profile?.avatar_url ?? null);
         setDailyGoal(String(profile?.daily_focus_goal_minutes ?? 120));
+        setTimeZone(profile?.timezone ?? getBrowserTimeZone());
     }, [profile]);
 
     const avatarPreviewUrl = useMemo(
@@ -231,8 +235,13 @@ export function ProfileForm({ userId }: { userId: string }) {
         e.preventDefault();
 
         const nextGoal = Number.parseInt(dailyGoal, 10);
+        const normalizedTimeZone = timeZone.trim();
         if (!Number.isFinite(nextGoal) || nextGoal <= 0) {
             toast.error("Daily study goal must be a positive number of minutes.");
+            return;
+        }
+        if (!isValidTimeZone(normalizedTimeZone)) {
+            toast.error("Use a valid IANA timezone like Asia/Singapore.");
             return;
         }
 
@@ -242,6 +251,7 @@ export function ProfileForm({ userId }: { userId: string }) {
             const studyGoalPayload: StudyGoalUpdatePayload = {
                 id: userId,
                 daily_focus_goal_minutes: nextGoal,
+                timezone: normalizedTimeZone,
             };
 
             const { error } = await supabase.from("profiles").upsert(studyGoalPayload, { onConflict: "id" });
@@ -249,7 +259,7 @@ export function ProfileForm({ userId }: { userId: string }) {
                 throw error;
             }
 
-            toast.success("Daily study goal updated.");
+            toast.success("Planner preferences updated.");
             void refreshData();
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : "Unknown study goal update error";
@@ -422,9 +432,9 @@ export function ProfileForm({ userId }: { userId: string }) {
                                         <Target className="w-6 h-6" />
                                     </div>
                                     <div>
-                                        <CardTitle className="text-xl font-black tracking-tight">Study Goal</CardTitle>
+                                        <CardTitle className="text-xl font-black tracking-tight">Planner Defaults</CardTitle>
                                         <CardDescription className="text-muted-foreground font-medium mt-1">
-                                            Set your daily focus target in minutes.
+                                            Configure the planner target and timezone it should trust.
                                         </CardDescription>
                                     </div>
                                 </div>
@@ -455,6 +465,23 @@ export function ProfileForm({ userId }: { userId: string }) {
                                             Used for your daily focus goal across the planner.
                                         </p>
                                     </div>
+
+                                    <div className="space-y-2 max-w-md">
+                                        <Label htmlFor="plannerTimeZone" className="text-xs font-bold uppercase tracking-wider opacity-70">
+                                            Planner Timezone
+                                        </Label>
+                                        <Input
+                                            id="plannerTimeZone"
+                                            value={timeZone}
+                                            onChange={(event) => setTimeZone(event.target.value)}
+                                            placeholder="Asia/Singapore"
+                                            className="rounded-xl border-border/40 bg-background/50 focus:ring-primary shadow-sm h-11 font-medium transition-all"
+                                            required
+                                        />
+                                        <p className="text-[10px] text-muted-foreground font-bold uppercase pl-1">
+                                            Use an IANA timezone so date-only deadlines stay stable across devices.
+                                        </p>
+                                    </div>
                                 </CardContent>
                                 <CardFooter className="p-4 bg-muted/30 border-t border-border/40 flex justify-end">
                                     <Button
@@ -467,7 +494,7 @@ export function ProfileForm({ userId }: { userId: string }) {
                                         ) : (
                                             <Check className="w-4 h-4" />
                                         )}
-                                        {studyGoalSaving ? "Saving..." : "Save Goal"}
+                                        {studyGoalSaving ? "Saving..." : "Save Planner Defaults"}
                                     </Button>
                                 </CardFooter>
                             </div>

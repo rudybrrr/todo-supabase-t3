@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { useData } from "~/components/data-provider";
 import { useTaskDataset, type TaskDatasetRecord } from "~/hooks/use-task-dataset";
+import { buildTaskDeadlineMutation, getDateInputValue } from "~/lib/task-deadlines";
+import { buildTaskReminderMutation } from "~/lib/task-reminders";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
-import { deleteTask, setTaskCompletion, updateTask } from "~/lib/task-actions";
+import { completeTaskWithRecurrence, deleteTask, updateTask } from "~/lib/task-actions";
 import type { TaskPriority } from "~/lib/task-views";
 
 interface DueDateChange {
@@ -63,6 +66,7 @@ export function useTaskSelectionActions({
     getBufferPlacement,
     onTaskDeleted,
 }: UseTaskSelectionActionsOptions) {
+    const { profile } = useData();
     const { applyTaskPatch, removeTask, upsertTask } = useTaskDataset();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [selectionMode, setSelectionMode] = useState(false);
@@ -121,14 +125,23 @@ export function useTaskSelectionActions({
                 completed_at: nextIsDone ? optimisticUpdatedAt : null,
                 updated_at: optimisticUpdatedAt,
             });
-            const updatedTask = await setTaskCompletion(supabase, taskId, nextIsDone);
-            upsertTask(updatedTask, { suppressRealtimeEcho: true });
-            toast.success(nextIsDone ? "Task completed." : "Task reopened.");
+            const result = await completeTaskWithRecurrence(supabase, existingTask, nextIsDone, profile?.timezone);
+            upsertTask(result.completedTask, { suppressRealtimeEcho: true });
+            if (result.nextTask) {
+                upsertTask(result.nextTask, { suppressRealtimeEcho: true });
+            }
+            toast.success(
+                nextIsDone
+                    ? result.nextTask
+                        ? "Task completed. Next occurrence created."
+                        : "Task completed."
+                    : "Task reopened.",
+            );
         } catch (error) {
             upsertTask(existingTask);
             toast.error(error instanceof Error ? error.message : "Unable to update task.");
         }
-    }, [allTasks, applyTaskPatch, getBufferPlacement, queueBufferedTask, supabase, upsertTask]);
+    }, [allTasks, applyTaskPatch, getBufferPlacement, profile?.timezone, queueBufferedTask, supabase, upsertTask]);
 
     const handleToggleTaskSelection = useCallback((task: TaskDatasetRecord, options?: TaskSelectionGestureOptions) => {
         const shiftKey = options?.shiftKey ?? false;
@@ -209,10 +222,11 @@ export function useTaskSelectionActions({
         }
 
         const results = await Promise.allSettled(
-            tasksToComplete.map((task) => setTaskCompletion(supabase, task.id, true)),
+            tasksToComplete.map((task) => completeTaskWithRecurrence(supabase, task, true, profile?.timezone)),
         );
 
         let successCount = 0;
+        let recurringCount = 0;
         const failedTaskIds: string[] = [];
 
         results.forEach((result, index) => {
@@ -220,7 +234,11 @@ export function useTaskSelectionActions({
             if (!originalTask) return;
 
             if (result.status === "fulfilled") {
-                upsertTask(result.value, { suppressRealtimeEcho: true });
+                upsertTask(result.value.completedTask, { suppressRealtimeEcho: true });
+                if (result.value.nextTask) {
+                    upsertTask(result.value.nextTask, { suppressRealtimeEcho: true });
+                    recurringCount += 1;
+                }
                 successCount += 1;
                 return;
             }
@@ -230,7 +248,11 @@ export function useTaskSelectionActions({
         });
 
         if (successCount > 0) {
-            toast.success(`${successCount} task${successCount === 1 ? "" : "s"} completed.`);
+            toast.success(
+                recurringCount > 0
+                    ? `${successCount} task${successCount === 1 ? "" : "s"} completed, ${recurringCount} repeated.`
+                    : `${successCount} task${successCount === 1 ? "" : "s"} completed.`,
+            );
         }
         if (failedTaskIds.length > 0) {
             toast.error(`${failedTaskIds.length} task${failedTaskIds.length === 1 ? "" : "s"} failed to update.`);
@@ -241,7 +263,7 @@ export function useTaskSelectionActions({
             setSelectionMode(false);
         }
         setBulkCompleting(false);
-    }, [applyTaskPatch, getBufferPlacement, queueBufferedTask, selectedVisibleTasks, supabase, upsertTask]);
+    }, [applyTaskPatch, getBufferPlacement, profile?.timezone, queueBufferedTask, selectedVisibleTasks, supabase, upsertTask]);
 
     const handleDeleteSelected = useCallback(async () => {
         if (selectedVisibleTasks.length === 0) return;
@@ -290,10 +312,12 @@ export function useTaskSelectionActions({
         const optimisticUpdatedAt = new Date().toISOString();
         const tasksToUpdate = selectedVisibleTasks.map((task) => {
             const nextDueDate = changes.dueDate.mode === "keep"
-                ? task.due_date ?? null
+                ? (getDateInputValue(task) || null)
                 : changes.dueDate.mode === "clear"
                     ? null
                     : (changes.dueDate.value ?? null);
+            const nextReminderOffsetMinutes = nextDueDate ? task.reminder_offset_minutes ?? null : null;
+            const nextRecurrenceRule = nextDueDate ? task.recurrence_rule ?? null : null;
             const nextPriority = changes.priority.mode === "keep"
                 ? task.priority ?? null
                 : changes.priority.mode === "clear"
@@ -306,12 +330,15 @@ export function useTaskSelectionActions({
                 ? task.section_id ?? null
                 : null;
 
-            return { originalTask: task, nextDueDate, nextPriority, nextListId, nextSectionId };
+            return { originalTask: task, nextDueDate, nextReminderOffsetMinutes, nextRecurrenceRule, nextPriority, nextListId, nextSectionId };
         });
 
-        for (const { originalTask, nextDueDate, nextPriority, nextListId, nextSectionId } of tasksToUpdate) {
+        for (const { originalTask, nextDueDate, nextReminderOffsetMinutes, nextRecurrenceRule, nextPriority, nextListId, nextSectionId } of tasksToUpdate) {
+            const deadlinePatch = buildTaskDeadlineMutation(nextDueDate);
             applyTaskPatch(originalTask.id, {
-                due_date: nextDueDate,
+                ...deadlinePatch,
+                ...buildTaskReminderMutation(deadlinePatch, nextReminderOffsetMinutes, profile?.timezone),
+                recurrence_rule: nextRecurrenceRule,
                 priority: nextPriority,
                 list_id: nextListId,
                 section_id: nextSectionId,
@@ -320,15 +347,18 @@ export function useTaskSelectionActions({
         }
 
         const results = await Promise.allSettled(
-            tasksToUpdate.map(({ originalTask, nextDueDate, nextPriority, nextListId, nextSectionId }) => updateTask(supabase, {
+            tasksToUpdate.map(({ originalTask, nextDueDate, nextReminderOffsetMinutes, nextRecurrenceRule, nextPriority, nextListId, nextSectionId }) => updateTask(supabase, {
                 id: originalTask.id,
                 title: originalTask.title,
                 description: originalTask.description ?? null,
                 dueDate: nextDueDate,
+                reminderOffsetMinutes: nextReminderOffsetMinutes,
+                recurrenceRule: nextRecurrenceRule,
                 priority: nextPriority,
                 estimatedMinutes: originalTask.estimated_minutes ?? null,
                 listId: nextListId,
                 sectionId: nextSectionId,
+                preferredTimeZone: profile?.timezone,
             })),
         );
 
@@ -357,7 +387,7 @@ export function useTaskSelectionActions({
         }
 
         setBulkEditing(false);
-    }, [applyTaskPatch, selectedVisibleTasks, supabase, upsertTask]);
+    }, [applyTaskPatch, profile?.timezone, selectedVisibleTasks, supabase, upsertTask]);
 
     const handleSetSelectedDueDate = useCallback((value: string | null) => {
         void handleEditSelected({

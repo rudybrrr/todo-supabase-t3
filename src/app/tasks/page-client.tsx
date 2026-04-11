@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 
 import { AppShell, useShellActions } from "~/components/app-shell";
 import { EmptyState, PageHeader } from "~/components/app-primitives";
+import { useData } from "~/components/data-provider";
 import { TaskDetailPanel } from "~/components/task-detail-panel";
 import { TaskList } from "~/components/task-list";
 import { TaskSelectionBar } from "~/components/task-selection-bar";
@@ -105,6 +106,7 @@ function TasksContent({
 }) {
     const searchParams = useSearchParams();
     const { enterPrimaryActivity, openQuickAdd, registerPrimaryActivityReset } = useShellActions();
+    const { profile } = useData();
     const { userId, tasks, lists, imagesByTodo, loading } = useTaskDataset();
     const { bufferedTasks, queueBufferedTask } = useTaskTransitionBuffer();
 
@@ -136,11 +138,17 @@ function TasksContent({
         return projectScopedTasks.filter((task) => task.priority === priorityFilter);
     }, [priorityFilter, projectScopedTasks]);
 
-    const visibleTasks = useMemo(() => getSmartViewTasks(priorityScopedTasks, view), [priorityScopedTasks, view]);
-    const overdueTasks = useMemo(() => visibleTasks.filter((task) => isTaskOverdue(task)), [visibleTasks]);
+    const visibleTasks = useMemo(
+        () => getSmartViewTasks(priorityScopedTasks, view, new Date(), profile?.timezone),
+        [priorityScopedTasks, profile?.timezone, view],
+    );
+    const overdueTasks = useMemo(
+        () => visibleTasks.filter((task) => isTaskOverdue(task, new Date(), profile?.timezone)),
+        [profile?.timezone, visibleTasks],
+    );
     const dueTodayTasks = useMemo(
-        () => visibleTasks.filter((task) => !isTaskOverdue(task) && isTaskDueToday(task)),
-        [visibleTasks],
+        () => visibleTasks.filter((task) => !isTaskOverdue(task, new Date(), profile?.timezone) && isTaskDueToday(task, new Date(), profile?.timezone)),
+        [profile?.timezone, visibleTasks],
     );
     const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
     const defaultListId = useMemo(

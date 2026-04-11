@@ -48,6 +48,10 @@ interface FocusContextType {
     handleModeChange: (newMode: TimerMode) => void;
     currentListId: string | null;
     setCurrentListId: (id: string | null) => void;
+    currentTaskId: string | null;
+    setCurrentTaskId: (id: string | null) => void;
+    currentBlockId: string | null;
+    setCurrentBlockId: (id: string | null) => void;
 }
 
 const FocusContext = createContext<FocusContextType | undefined>(undefined);
@@ -61,6 +65,8 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     const [timeLeft, setTimeLeft] = useState(MODE_CONFIG.focus.duration);
     const [isActive, setIsActive] = useState(false);
     const [currentListId, setCurrentListId] = useState<string | null>(null);
+    const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+    const [currentBlockId, setCurrentBlockId] = useState<string | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
     const completionHandledRef = useRef(false);
 
@@ -68,6 +74,9 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         const savedMode = localStorage.getItem("focus-mode") as TimerMode;
         const savedTime = localStorage.getItem("focus-time");
+        const savedListId = localStorage.getItem("focus-list-id");
+        const savedTaskId = localStorage.getItem("focus-task-id");
+        const savedBlockId = localStorage.getItem("focus-block-id");
         const nextMode = savedMode && MODE_CONFIG[savedMode] ? savedMode : "focus";
         const parsedTime = savedTime ? parseInt(savedTime, 10) : NaN;
         const nextTime = Number.isFinite(parsedTime) && parsedTime > 0
@@ -78,6 +87,9 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         setTimeLeft(nextTime);
         // Until the timer is wall-clock based, never auto-resume on refresh.
         setIsActive(false);
+        setCurrentListId(savedListId ?? null);
+        setCurrentTaskId(savedTaskId ?? null);
+        setCurrentBlockId(savedBlockId ?? null);
         completionHandledRef.current = false;
         setIsInitialized(true);
     }, []);
@@ -88,7 +100,24 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("focus-mode", mode);
         localStorage.setItem("focus-time", timeLeft.toString());
         localStorage.setItem("focus-active", isActive.toString());
-    }, [mode, timeLeft, isActive, isInitialized]);
+        if (currentListId) {
+            localStorage.setItem("focus-list-id", currentListId);
+        } else {
+            localStorage.removeItem("focus-list-id");
+        }
+
+        if (currentTaskId) {
+            localStorage.setItem("focus-task-id", currentTaskId);
+        } else {
+            localStorage.removeItem("focus-task-id");
+        }
+
+        if (currentBlockId) {
+            localStorage.setItem("focus-block-id", currentBlockId);
+        } else {
+            localStorage.removeItem("focus-block-id");
+        }
+    }, [currentBlockId, currentListId, currentTaskId, isActive, isInitialized, mode, timeLeft]);
 
     const toggleTimer = useCallback(() => {
         if (isActive) {
@@ -198,7 +227,11 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         handleModeChange,
         currentListId,
         setCurrentListId,
-    }), [mode, timeLeft, isActive, toggleTimer, resetTimer, handleModeChange, currentListId]);
+        currentTaskId,
+        setCurrentTaskId,
+        currentBlockId,
+        setCurrentBlockId,
+    }), [currentBlockId, currentListId, currentTaskId, handleModeChange, isActive, mode, resetTimer, timeLeft, toggleTimer]);
 
     return (
         <FocusContext.Provider value={value}>

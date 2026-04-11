@@ -1,12 +1,24 @@
-import { differenceInCalendarDays, format, isToday, isTomorrow, startOfDay } from "date-fns";
+import { parseISO } from "date-fns";
 
 import type { TodoRow } from "~/lib/types";
+import {
+    formatTaskDueLabel as formatResolvedTaskDueLabel,
+    getDateInputValue as getResolvedDateInputValue,
+    isTaskDueToday as isResolvedTaskDueToday,
+    isTaskOverdue as isResolvedTaskOverdue,
+    isTaskUpcoming as isResolvedTaskUpcoming,
+    resolveTaskDeadline,
+    hasTaskDeadline,
+} from "~/lib/task-deadlines";
+import type { PlanningStatus } from "~/lib/types";
 
 export type SmartView = "today" | "upcoming" | "inbox" | "done";
 export type TaskPriority = NonNullable<TodoRow["priority"]>;
 
 export interface TaskRecord extends TodoRow {
     has_planned_block?: boolean;
+    planning_status?: PlanningStatus;
+    planned_minutes?: number;
 }
 
 const PRIORITY_SCORE: Record<TaskPriority, number> = {
@@ -21,7 +33,14 @@ function getPriorityScore(priority?: TodoRow["priority"]) {
 }
 
 function getComparableDueDate(task: TodoRow) {
-    return task.due_date ? startOfDay(new Date(task.due_date)) : null;
+    const deadline = resolveTaskDeadline(task);
+    if (!deadline) return null;
+
+    if (deadline.kind === "datetime" && deadline.dateTime) {
+        return new Date(deadline.dateTime);
+    }
+
+    return parseISO(`${deadline.dateKey}T12:00:00`);
 }
 
 function compareNullableNumber(a: number | null | undefined, b: number | null | undefined) {
@@ -57,43 +76,34 @@ export function comparePriorityDescending(a: TodoRow, b: TodoRow) {
     return compareDeterministicTasks(a, b);
 }
 
-export function getDateInputValue(dateIso?: string | null) {
-    if (!dateIso) return "";
-    return format(new Date(dateIso), "yyyy-MM-dd");
+export function getDateInputValue(value?: TodoRow | string | null, timeZone?: string | null) {
+    return getResolvedDateInputValue(value, timeZone);
 }
 
-export function toStoredDueDate(dateInput?: string | null) {
-    if (!dateInput) return null;
-    return new Date(`${dateInput}T12:00:00`).toISOString();
+export function isTaskOverdue(task: TodoRow, now = new Date(), timeZone?: string | null) {
+    return isResolvedTaskOverdue(task, now, timeZone);
 }
 
-export function isTaskOverdue(task: TodoRow, now = new Date()) {
-    if (task.is_done || !task.due_date) return false;
-    return differenceInCalendarDays(new Date(task.due_date), startOfDay(now)) < 0;
+export function isTaskDueToday(task: TodoRow, now = new Date(), timeZone?: string | null) {
+    return isResolvedTaskDueToday(task, now, timeZone);
 }
 
-export function isTaskDueToday(task: TodoRow, now = new Date()) {
-    if (task.is_done || !task.due_date) return false;
-    return differenceInCalendarDays(new Date(task.due_date), startOfDay(now)) === 0;
-}
-
-export function isTaskUpcoming(task: TodoRow, now = new Date()) {
-    if (task.is_done || !task.due_date) return false;
-    return differenceInCalendarDays(new Date(task.due_date), startOfDay(now)) > 0;
+export function isTaskUpcoming(task: TodoRow, now = new Date(), timeZone?: string | null) {
+    return isResolvedTaskUpcoming(task, now, timeZone);
 }
 
 export function isInboxTask(task: TaskRecord) {
-    return !task.is_done && !task.due_date && !task.has_planned_block;
+    return !task.is_done && !hasTaskDeadline(task) && !task.has_planned_block;
 }
 
-export function getSmartViewTasks<T extends TaskRecord>(tasks: T[], view: SmartView, now = new Date()): T[] {
+export function getSmartViewTasks<T extends TaskRecord>(tasks: T[], view: SmartView, now = new Date(), timeZone?: string | null): T[] {
     const incomplete = tasks.filter((task) => !task.is_done);
 
     if (view === "today") {
         return incomplete
-            .filter((task) => isTaskOverdue(task, now) || isTaskDueToday(task, now))
+            .filter((task) => isTaskOverdue(task, now, timeZone) || isTaskDueToday(task, now, timeZone))
             .sort((a, b) => {
-                const overdueDelta = Number(isTaskOverdue(b, now)) - Number(isTaskOverdue(a, now));
+                const overdueDelta = Number(isTaskOverdue(b, now, timeZone)) - Number(isTaskOverdue(a, now, timeZone));
                 if (overdueDelta !== 0) return overdueDelta;
                 return comparePriorityDescending(a, b);
             });
@@ -101,7 +111,7 @@ export function getSmartViewTasks<T extends TaskRecord>(tasks: T[], view: SmartV
 
     if (view === "upcoming") {
         return incomplete
-            .filter((task) => isTaskUpcoming(task, now))
+            .filter((task) => isTaskUpcoming(task, now, timeZone))
             .sort(compareDeterministicTasks);
     }
 
@@ -124,22 +134,22 @@ export function getSmartViewTasks<T extends TaskRecord>(tasks: T[], view: SmartV
         });
 }
 
-export function selectNextUpTask<T extends TaskRecord>(tasks: T[], now = new Date()): T | null {
+export function selectNextUpTask<T extends TaskRecord>(tasks: T[], now = new Date(), timeZone?: string | null): T | null {
     const incomplete = tasks.filter((task) => !task.is_done);
     if (incomplete.length === 0) return null;
 
     const overdue = incomplete
-        .filter((task) => isTaskOverdue(task, now))
+        .filter((task) => isTaskOverdue(task, now, timeZone))
         .sort(comparePriorityDescending);
     if (overdue[0]) return overdue[0];
 
     const today = incomplete
-        .filter((task) => isTaskDueToday(task, now))
+        .filter((task) => isTaskDueToday(task, now, timeZone))
         .sort(comparePriorityDescending);
     if (today[0]) return today[0];
 
     const upcomingHigh = incomplete
-        .filter((task) => task.priority === "high" && isTaskUpcoming(task, now))
+        .filter((task) => task.priority === "high" && isTaskUpcoming(task, now, timeZone))
         .sort(compareDeterministicTasks);
     if (upcomingHigh[0]) return upcomingHigh[0];
 
@@ -159,17 +169,8 @@ export function selectNextUpTask<T extends TaskRecord>(tasks: T[], now = new Dat
     })[0] ?? null;
 }
 
-export function formatTaskDueLabel(task: TodoRow) {
-    if (!task.due_date) return null;
-
-    const dueDate = new Date(task.due_date);
-    if (isToday(dueDate)) return "Today";
-    if (isTomorrow(dueDate)) return "Tomorrow";
-
-    const diff = differenceInCalendarDays(dueDate, new Date());
-    if (diff < 0) return `${Math.abs(diff)}d overdue`;
-    if (diff < 7) return format(dueDate, "EEE");
-    return format(dueDate, "MMM d");
+export function formatTaskDueLabel(task: TodoRow, now = new Date(), timeZone?: string | null) {
+    return formatResolvedTaskDueLabel(task, now, timeZone);
 }
 
 export function taskMatchesSearch(task: TodoRow, query: string) {

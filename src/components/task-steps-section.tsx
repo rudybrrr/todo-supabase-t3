@@ -123,7 +123,7 @@ export function TaskStepsSection({ taskId }: { taskId: string }) {
                 </div>
             </div>
 
-            {loading ? (
+            {loading && steps.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border/70 bg-background/35 px-3 py-3 text-sm text-muted-foreground">
                     Loading steps...
                 </div>
