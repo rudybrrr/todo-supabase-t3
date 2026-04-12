@@ -13,6 +13,7 @@ export interface ResolvedTaskDeadline {
 
 const dateKeyFormatterCache = new Map<string, Intl.DateTimeFormat>();
 const timeFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const timeInputFormatterCache = new Map<string, Intl.DateTimeFormat>();
 
 function getDateKeyFormatter(timeZone: string) {
     const cacheKey = timeZone;
@@ -43,8 +44,42 @@ function getTimeFormatter(timeZone: string) {
     return formatter;
 }
 
+function getTimeInputFormatter(timeZone: string) {
+    const cacheKey = timeZone;
+    const existing = timeInputFormatterCache.get(cacheKey);
+    if (existing) return existing;
+
+    const formatter = new Intl.DateTimeFormat("en-GB", {
+        timeZone,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+    });
+    timeInputFormatterCache.set(cacheKey, formatter);
+    return formatter;
+}
+
 function isDateInput(value: string) {
     return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isDateTimeInput(value: string) {
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) || /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value);
+}
+
+export function isTimeInput(value: string) {
+    return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function parseTimeInput(value: string) {
+    if (!isTimeInput(value)) return null;
+
+    const [hoursString, minutesString] = value.split(":");
+    const hours = Number.parseInt(hoursString ?? "", 10);
+    const minutes = Number.parseInt(minutesString ?? "", 10);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+
+    return { hours, minutes };
 }
 
 function toDateOnlyDate(dateKey: string) {
@@ -143,13 +178,96 @@ export function getDateInputValue(value?: DeadlineFields | string | null, prefer
     return getTaskDeadlineDateKey(value, preferredTimeZone) ?? "";
 }
 
-export function buildTaskDeadlineMutation(dateInput?: string | null) {
+export function getTimeInputValue(value?: DeadlineFields | string | null, preferredTimeZone?: string | null) {
+    if (!value) return "";
+
+    if (typeof value === "string") {
+        if (isTimeInput(value)) return value;
+        if (!isDateTimeInput(value)) return "";
+
+        const timeZone = resolveTimeZone(preferredTimeZone);
+        return getTimeInputFormatter(timeZone).format(new Date(value));
+    }
+
+    const deadline = resolveTaskDeadline(value, preferredTimeZone);
+    if (deadline?.kind !== "datetime" || !deadline.dateTime) return "";
+
+    const timeZone = resolveTimeZone(preferredTimeZone);
+    return getTimeInputFormatter(timeZone).format(new Date(deadline.dateTime));
+}
+
+function getZonedDateTimeParts(date: Date, timeZone: string) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+    }).formatToParts(date);
+    const partByType = new Map(parts.map((part) => [part.type, part.value]));
+
+    return {
+        year: Number.parseInt(partByType.get("year") ?? "0", 10),
+        month: Number.parseInt(partByType.get("month") ?? "0", 10),
+        day: Number.parseInt(partByType.get("day") ?? "0", 10),
+        hour: Number.parseInt(partByType.get("hour") ?? "0", 10),
+        minute: Number.parseInt(partByType.get("minute") ?? "0", 10),
+        second: Number.parseInt(partByType.get("second") ?? "0", 10),
+    };
+}
+
+function getTimeZoneOffsetMilliseconds(date: Date, timeZone: string) {
+    const parts = getZonedDateTimeParts(date, timeZone);
+    const utcMs = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    return utcMs - date.getTime();
+}
+
+export function toUtcIsoForDateKeyAtLocalTime(dateKey: string, hour: number, minute: number, preferredTimeZone?: string | null) {
+    const timeZone = resolveTimeZone(preferredTimeZone);
+    const [yearString, monthString, dayString] = dateKey.split("-");
+    const year = Number.parseInt(yearString ?? "", 10);
+    const month = Number.parseInt(monthString ?? "", 10);
+    const day = Number.parseInt(dayString ?? "", 10);
+
+    if (!year || !month || !day) {
+        return null;
+    }
+
+    const naiveUtcMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+    let utcMs = naiveUtcMs - getTimeZoneOffsetMilliseconds(new Date(naiveUtcMs), timeZone);
+    const adjustedOffset = getTimeZoneOffsetMilliseconds(new Date(utcMs), timeZone);
+    utcMs = naiveUtcMs - adjustedOffset;
+
+    return new Date(utcMs).toISOString();
+}
+
+export function buildTaskDeadlineMutation(dateInput?: string | null, timeInput?: string | null, preferredTimeZone?: string | null) {
     const normalized = dateInput?.trim() ?? "";
     if (!normalized) {
         return {
             due_date: null,
             deadline_on: null,
             deadline_at: null,
+        };
+    }
+
+    if (!timeInput && isDateTimeInput(normalized)) {
+        return {
+            due_date: null,
+            deadline_on: null,
+            deadline_at: new Date(normalized).toISOString(),
+        };
+    }
+
+    const parsedTime = parseTimeInput(timeInput?.trim() ?? "");
+    if (parsedTime) {
+        return {
+            due_date: null,
+            deadline_on: null,
+            deadline_at: toUtcIsoForDateKeyAtLocalTime(normalized, parsedTime.hours, parsedTime.minutes, preferredTimeZone),
         };
     }
 

@@ -1,5 +1,8 @@
 import type { TodoImageRow } from "~/lib/types";
 
+export const MAX_ATTACHMENT_SIZE_MB = 5;
+export const MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024;
+
 const IMAGE_EXTENSIONS = new Set([
     "apng",
     "avif",
@@ -71,4 +74,12 @@ export function formatAttachmentSize(sizeBytes: number | string | null | undefin
     }
 
     return null;
+}
+
+export function calculateTotalSize(files: (File | { size_bytes?: number | string | null })[]) {
+    return files.reduce((acc, file) => {
+        const sizeValue = "size" in file ? file.size : file.size_bytes;
+        const size = typeof sizeValue === "string" ? Number.parseInt(sizeValue, 10) : (sizeValue ?? 0);
+        return acc + (Number.isNaN(size) ? 0 : size);
+    }, 0);
 }

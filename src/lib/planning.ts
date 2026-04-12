@@ -13,6 +13,22 @@ import {
 import type { PlannedFocusBlock, PlanningStatus } from "~/lib/types";
 
 export type PlannerView = "day" | "month" | "week";
+export type PlannerWeekStartsOn = 0 | 1;
+
+export interface PlannerPreferenceInput {
+  default_block_minutes?: number | null;
+  week_starts_on?: number | null;
+  planner_day_start_hour?: number | null;
+  planner_day_end_hour?: number | null;
+}
+
+export interface PlannerPreferences {
+  dayEndHour: number;
+  dayStartHour: number;
+  defaultBlockMinutes: number;
+  defaultBlockStartHour: number;
+  weekStartsOn: PlannerWeekStartsOn;
+}
 
 export interface PlannerTimedBlockLayout {
   block: PlannedFocusBlock;
@@ -30,6 +46,7 @@ export interface PlannerSlotDraft {
   endMinutes: number;
 }
 
+export const PLANNER_DEFAULT_BLOCK_MINUTES = 60;
 export const WEEK_STARTS_ON = 1 as const;
 export const PLANNER_DAY_START_HOUR = 7;
 export const PLANNER_DAY_END_HOUR = 22;
@@ -56,17 +73,89 @@ export function dateKeyToDate(dateKey: string) {
   return parseISO(`${dateKey}T00:00:00`);
 }
 
-export function getWeekDays(anchorDate: Date) {
-  const start = startOfWeek(anchorDate, { weekStartsOn: WEEK_STARTS_ON });
+export function normalizePlannerWeekStartsOn(value: number | null | undefined): PlannerWeekStartsOn {
+  return value === 0 ? 0 : 1;
+}
+
+export function normalizePlannerDayStartHour(value: number | null | undefined) {
+  if (!Number.isFinite(value)) {
+    return PLANNER_DAY_START_HOUR;
+  }
+
+  return Math.min(Math.max(Math.round(value!), 0), 23);
+}
+
+export function normalizePlannerDayEndHour(value: number | null | undefined, dayStartHour = PLANNER_DAY_START_HOUR) {
+  if (!Number.isFinite(value)) {
+    return Math.min(Math.max(PLANNER_DAY_END_HOUR, dayStartHour + 1), 24);
+  }
+
+  return Math.min(Math.max(Math.round(value!), dayStartHour + 1), 24);
+}
+
+export function normalizePlannerDefaultBlockMinutes(value: number | null | undefined) {
+  if (!Number.isFinite(value)) {
+    return PLANNER_DEFAULT_BLOCK_MINUTES;
+  }
+
+  return Math.max(
+    PLANNER_MIN_BLOCK_MINUTES,
+    snapPlannerMinutes(Math.round(value!), { mode: "ceil" }),
+  );
+}
+
+export function getPlannerDefaultStartHour(
+  dayStartHour = PLANNER_DAY_START_HOUR,
+  dayEndHour = PLANNER_DAY_END_HOUR,
+) {
+  return Math.min(Math.max(PLANNER_DEFAULT_BLOCK_START_HOUR, dayStartHour), dayEndHour - 1);
+}
+
+export function getPlannerDefaultStartMinutes(
+  dayStartHour = PLANNER_DAY_START_HOUR,
+  dayEndHour = PLANNER_DAY_END_HOUR,
+  defaultBlockStartHour = getPlannerDefaultStartHour(dayStartHour, dayEndHour),
+) {
+  return clampPlannerMinutes(
+    Math.max((defaultBlockStartHour - dayStartHour) * 60, 0),
+    0,
+    Math.max(getPlannerDayMinuteRange(dayStartHour, dayEndHour) - PLANNER_MIN_BLOCK_MINUTES, 0),
+  );
+}
+
+export function getPlannerPreferences(input?: PlannerPreferenceInput | null): PlannerPreferences {
+  const dayStartHour = normalizePlannerDayStartHour(input?.planner_day_start_hour);
+  const dayEndHour = normalizePlannerDayEndHour(input?.planner_day_end_hour, dayStartHour);
+  const plannerDayMinutes = getPlannerDayMinuteRange(dayStartHour, dayEndHour);
+
+  return {
+    dayEndHour,
+    dayStartHour,
+    defaultBlockMinutes: Math.min(
+      normalizePlannerDefaultBlockMinutes(input?.default_block_minutes),
+      plannerDayMinutes,
+    ),
+    defaultBlockStartHour: getPlannerDefaultStartHour(dayStartHour, dayEndHour),
+    weekStartsOn: normalizePlannerWeekStartsOn(input?.week_starts_on),
+  };
+}
+
+export function getWeekDays(anchorDate: Date, weekStartsOn: PlannerWeekStartsOn = WEEK_STARTS_ON) {
+  const start = startOfWeek(anchorDate, { weekStartsOn });
   return Array.from({ length: 7 }, (_, index) => addDays(start, index));
 }
 
-export function getPlannerVisibleDays(view: Exclude<PlannerView, "month">, anchorDate: Date, selectedDate: Date) {
+export function getPlannerVisibleDays(
+  view: Exclude<PlannerView, "month">,
+  anchorDate: Date,
+  selectedDate: Date,
+  weekStartsOn: PlannerWeekStartsOn = WEEK_STARTS_ON,
+) {
   if (view === "day") {
     return [startOfDay(selectedDate)];
   }
 
-  return getWeekDays(anchorDate);
+  return getWeekDays(anchorDate, weekStartsOn);
 }
 
 export function getPlannerHours(
@@ -80,7 +169,12 @@ export function formatPlannerHourLabel(hour: number) {
   return format(setHours(startOfDay(new Date()), hour), "HH:mm");
 }
 
-export function getPlannerRangeLabel(view: PlannerView, anchorDate: Date, selectedDate = anchorDate) {
+export function getPlannerRangeLabel(
+  view: PlannerView,
+  anchorDate: Date,
+  selectedDate = anchorDate,
+  weekStartsOn: PlannerWeekStartsOn = WEEK_STARTS_ON,
+) {
   if (view === "day") {
     return format(selectedDate, "EEEE, MMM d");
   }
@@ -89,7 +183,7 @@ export function getPlannerRangeLabel(view: PlannerView, anchorDate: Date, select
     return format(anchorDate, "MMMM yyyy");
   }
 
-  const start = startOfWeek(anchorDate, { weekStartsOn: WEEK_STARTS_ON });
+  const start = startOfWeek(anchorDate, { weekStartsOn });
   const end = addDays(start, 6);
   return `${format(start, "MMM d")} - ${format(end, "MMM d")}`;
 }
@@ -195,15 +289,24 @@ export function buildPlannedMinutesByTodo(blocks: PlannedFocusBlock[]) {
   return plannedMinutesByTodo;
 }
 
-function getPlannerDayIntervals(blocks: PlannedFocusBlock[], date: Date) {
-  const plannerDayMinutes = getPlannerDayMinuteRange();
+function getPlannerDayIntervals(
+  blocks: PlannedFocusBlock[],
+  date: Date,
+  dayStartHour = PLANNER_DAY_START_HOUR,
+  dayEndHour = PLANNER_DAY_END_HOUR,
+) {
+  const plannerDayMinutes = getPlannerDayMinuteRange(dayStartHour, dayEndHour);
 
   return blocks
     .filter((block) => toDateKey(new Date(block.scheduled_start)) === toDateKey(date))
     .map((block) => {
-      const startMinutes = clampPlannerMinutes(getPlannerMinutesFromDate(block.scheduled_start), 0, plannerDayMinutes);
+      const startMinutes = clampPlannerMinutes(
+        getPlannerMinutesFromDate(block.scheduled_start, dayStartHour),
+        0,
+        plannerDayMinutes,
+      );
       const endMinutes = clampPlannerMinutes(
-        Math.max(startMinutes + PLANNER_MIN_BLOCK_MINUTES, getPlannerMinutesFromDate(block.scheduled_end)),
+        Math.max(startMinutes + PLANNER_MIN_BLOCK_MINUTES, getPlannerMinutesFromDate(block.scheduled_end, dayStartHour)),
         PLANNER_MIN_BLOCK_MINUTES,
         plannerDayMinutes,
       );
@@ -218,13 +321,21 @@ export function findPlannerSlotForDate(
   blocks: PlannedFocusBlock[],
   date: Date,
   durationMinutes: number,
-  options?: { after?: Date | null },
+  options?: {
+    after?: Date | null;
+    dayEndHour?: number;
+    dayStartHour?: number;
+    defaultBlockStartHour?: number;
+  },
 ): PlannerSlotDraft | null {
   const normalizedDate = startOfDay(date);
+  const dayStartHour = options?.dayStartHour ?? PLANNER_DAY_START_HOUR;
+  const dayEndHour = options?.dayEndHour ?? PLANNER_DAY_END_HOUR;
+  const defaultBlockStartHour = options?.defaultBlockStartHour ?? getPlannerDefaultStartHour(dayStartHour, dayEndHour);
   const normalizedDuration = Math.max(PLANNER_MIN_BLOCK_MINUTES, snapPlannerMinutes(durationMinutes, { mode: "ceil" }));
-  const plannerDayMinutes = getPlannerDayMinuteRange();
+  const plannerDayMinutes = getPlannerDayMinuteRange(dayStartHour, dayEndHour);
   const defaultStartMinutes = clampPlannerMinutes(
-    Math.max((PLANNER_DEFAULT_BLOCK_START_HOUR - PLANNER_DAY_START_HOUR) * 60, 0),
+    getPlannerDefaultStartMinutes(dayStartHour, dayEndHour, defaultBlockStartHour),
     0,
     plannerDayMinutes - normalizedDuration,
   );
@@ -238,12 +349,12 @@ export function findPlannerSlotForDate(
     : null;
   const initialStartMinutes = sameDayAfter
     ? clampPlannerMinutes(
-      snapPlannerMinutes(getPlannerMinutesFromDate(sameDayAfter), { mode: "ceil" }),
+      snapPlannerMinutes(getPlannerMinutesFromDate(sameDayAfter, dayStartHour), { mode: "ceil" }),
       defaultStartMinutes,
       plannerDayMinutes - normalizedDuration,
     )
     : defaultStartMinutes;
-  const intervals = getPlannerDayIntervals(blocks, normalizedDate);
+  const intervals = getPlannerDayIntervals(blocks, normalizedDate, dayStartHour, dayEndHour);
   let cursorMinutes = initialStartMinutes;
 
   for (const interval of intervals) {
@@ -275,12 +386,22 @@ export function findPlannerSlotForDate(
 
 export function findNextPlannerSlot(
   blocks: PlannedFocusBlock[],
-  options?: { after?: Date; daysToScan?: number; durationMinutes?: number },
+  options?: {
+    after?: Date;
+    dayEndHour?: number;
+    dayStartHour?: number;
+    daysToScan?: number;
+    defaultBlockStartHour?: number;
+    durationMinutes?: number;
+  },
 ) {
   const after = options?.after ?? new Date();
+  const dayStartHour = options?.dayStartHour ?? PLANNER_DAY_START_HOUR;
+  const dayEndHour = options?.dayEndHour ?? PLANNER_DAY_END_HOUR;
+  const defaultBlockStartHour = options?.defaultBlockStartHour ?? getPlannerDefaultStartHour(dayStartHour, dayEndHour);
   const normalizedDuration = Math.max(
     PLANNER_MIN_BLOCK_MINUTES,
-    snapPlannerMinutes(options?.durationMinutes ?? 60, { mode: "ceil" }),
+    snapPlannerMinutes(options?.durationMinutes ?? PLANNER_DEFAULT_BLOCK_MINUTES, { mode: "ceil" }),
   );
   const daysToScan = Math.max(options?.daysToScan ?? 10, 1);
 
@@ -288,6 +409,9 @@ export function findNextPlannerSlot(
     const nextDate = startOfDay(addDays(after, index));
     const slot = findPlannerSlotForDate(blocks, nextDate, normalizedDuration, {
       after: index === 0 ? after : null,
+      dayEndHour,
+      dayStartHour,
+      defaultBlockStartHour,
     });
 
     if (slot) {
@@ -349,13 +473,19 @@ export function getRemainingPlannedMinutesForDay(
     }, 0);
 }
 
-export function buildTimedBlockLayouts(blocks: PlannedFocusBlock[], date: Date) {
-  const plannerDayMinutes = getPlannerDayMinuteRange();
+export function buildTimedBlockLayouts(
+  blocks: PlannedFocusBlock[],
+  date: Date,
+  options?: { dayEndHour?: number; dayStartHour?: number },
+) {
+  const dayStartHour = options?.dayStartHour ?? PLANNER_DAY_START_HOUR;
+  const dayEndHour = options?.dayEndHour ?? PLANNER_DAY_END_HOUR;
+  const plannerDayMinutes = getPlannerDayMinuteRange(dayStartHour, dayEndHour);
   const normalizedBlocks = blocks
     .filter((block) => toDateKey(new Date(block.scheduled_start)) === toDateKey(date))
     .sort((a, b) => a.scheduled_start.localeCompare(b.scheduled_start))
     .map((block) => {
-      const interval = getPlannerDayIntervals([block], date)[0];
+      const interval = getPlannerDayIntervals([block], date, dayStartHour, dayEndHour)[0];
       if (!interval) return null;
 
       return {

@@ -2,7 +2,7 @@
 
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { addDays, differenceInCalendarDays, parseISO, startOfDay } from "date-fns";
+import { addDays, startOfDay } from "date-fns";
 
 import { useData } from "~/components/data-provider";
 import {
@@ -11,31 +11,29 @@ import {
     getTaskPlanningStatus,
     PLANNED_BLOCK_FIELDS,
 } from "~/lib/planning";
+import { buildProjectSummary, type ProjectSummary } from "~/lib/project-summaries";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { subscribeToFocusSessionCompleted } from "~/lib/focus-session-events";
+import {
+    areTaskLabelCollectionsEqual,
+    buildTaskLabelsByTodo,
+    normalizeTaskLabel,
+    TASK_LABEL_FIELDS,
+    TODO_LABEL_LINK_FIELDS,
+} from "~/lib/task-labels";
 import {
     TODO_FIELDS,
     normalizeTodoRow,
 } from "~/lib/task-actions";
 import { getSmartViewTasks, type SmartView } from "~/lib/task-views";
-import { getTaskDeadlineDateKey, toDateKeyInTimeZone } from "~/lib/task-deadlines";
-import type { PlannedFocusBlock, PlanningStatus, TodoImageRow, TodoList, TodoRow } from "~/lib/types";
+import type { PlannedFocusBlock, PlanningStatus, ProjectMemberProfile, TaskLabel, TodoImageRow, TodoLabelLinkRow, TodoList, TodoListMember, TodoRow } from "~/lib/types";
 
 export interface TaskDatasetRecord extends TodoRow {
     has_planned_block: boolean;
+    labels: TaskLabel[];
     planned_minutes: number;
     remaining_estimated_minutes: number | null;
     planning_status: PlanningStatus;
-}
-
-export interface ProjectSummary {
-    list: TodoList;
-    totalCount: number;
-    incompleteCount: number;
-    completedCount: number;
-    dueSoonCount: number;
-    overdueCount: number;
-    memberCount: number;
 }
 
 type SmartViewCounts = Record<SmartView, number>;
@@ -44,9 +42,11 @@ interface TaskDatasetValue {
     userId: string | null;
     lists: TodoList[];
     tasks: TaskDatasetRecord[];
+    taskLabels: TaskLabel[];
     plannedBlocks: PlannedFocusBlock[];
     imagesByTodo: Record<string, TodoImageRow[]>;
     memberCounts: Record<string, number>;
+    membersByListId: Record<string, ProjectMemberProfile[]>;
     projectSummaries: ProjectSummary[];
     orderedProjectSummaries: ProjectSummary[];
     smartViewCounts: SmartViewCounts;
@@ -57,14 +57,22 @@ interface TaskDatasetValue {
     removePlannedBlock: (blockId: string, options?: { suppressRealtimeEcho?: boolean }) => void;
     saveProjectOrder: (nextProjectIds: string[]) => void;
     upsertPlannedBlock: (block: PlannedFocusBlock, options?: { suppressRealtimeEcho?: boolean }) => void;
+    upsertTaskLabels: (labels: TaskLabel[]) => void;
     upsertTask: (task: TodoRow, options?: { suppressRealtimeEcho?: boolean }) => void;
     refresh: (options?: { silent?: boolean }) => Promise<void>;
 }
 
 const WorkspaceDataContext = createContext<TaskDatasetValue | undefined>(undefined);
 
-interface ListMemberCountRow {
-    list_id: string;
+interface TodoListMemberRow extends TodoListMember {
+    inserted_at: string;
+}
+
+interface MemberProfileRow {
+    id: string;
+    username?: string | null;
+    full_name?: string | null;
+    avatar_url?: string | null;
 }
 
 interface FocusSessionSummaryRow {
@@ -76,6 +84,49 @@ interface FocusSessionSummaryRow {
 
 const PROJECT_ORDER_STORAGE_KEY_PREFIX = "list-order-";
 const ATTACHMENT_FIELDS = "id, todo_id, user_id, list_id, path, original_name, mime_type, size_bytes, inserted_at";
+
+function normalizeProjectOrderIds(value: string[] | null | undefined) {
+    if (!Array.isArray(value)) return null;
+
+    return Array.from(new Set(value.filter((item): item is string => typeof item === "string" && item.length > 0)));
+}
+
+function loadProjectOrderFromStorage(userId: string) {
+    const storageKey = `${PROJECT_ORDER_STORAGE_KEY_PREFIX}${userId}`;
+    const savedOrder = window.localStorage.getItem(storageKey);
+
+    if (!savedOrder) {
+        return [];
+    }
+
+    try {
+        const parsedOrder = JSON.parse(savedOrder) as unknown;
+        if (!Array.isArray(parsedOrder)) {
+            return [];
+        }
+
+        return Array.from(new Set(parsedOrder.filter((item): item is string => typeof item === "string" && item.length > 0)));
+    } catch (error) {
+        console.error("Failed to parse project order.", error);
+        return [];
+    }
+}
+
+function saveProjectOrderToStorage(userId: string, projectIds: string[]) {
+    window.localStorage.setItem(
+        `${PROJECT_ORDER_STORAGE_KEY_PREFIX}${userId}`,
+        JSON.stringify(projectIds),
+    );
+}
+
+function isMissingProjectOrderPreferenceColumnError(error: unknown) {
+    if (!error || typeof error !== "object") return false;
+
+    const code = "code" in error ? String(error.code) : "";
+    const message = "message" in error ? String(error.message) : "";
+
+    return code === "PGRST204" && message.includes("project_order_ids");
+}
 
 function sortTasksByInsertedAt(tasks: TaskDatasetRecord[]) {
     return [...tasks].sort((a, b) => (a.inserted_at ?? "").localeCompare(b.inserted_at ?? ""));
@@ -118,22 +169,35 @@ function arePlannedBlockCollectionsEqual(current: PlannedFocusBlock[], next: Pla
     });
 }
 
-function createTaskDatasetRecord(task: TodoRow, plannedMinutesByTodo: ReadonlyMap<string, number>): TaskDatasetRecord {
+function buildTaskLabelsByTodoFromRecords(tasks: Array<Pick<TaskDatasetRecord, "id" | "labels">>) {
+    return new Map(tasks.map((task) => [task.id, task.labels]));
+}
+
+function createTaskDatasetRecord(
+    task: TodoRow,
+    plannedMinutesByTodo: ReadonlyMap<string, number>,
+    taskLabelsByTodo: ReadonlyMap<string, TaskLabel[]> = new Map(),
+): TaskDatasetRecord {
     const normalizedTask = normalizeTodoRow(task);
     const plannedMinutes = plannedMinutesByTodo.get(normalizedTask.id) ?? 0;
 
     return {
         ...normalizedTask,
         has_planned_block: plannedMinutes > 0,
+        labels: taskLabelsByTodo.get(normalizedTask.id) ?? [],
         planned_minutes: plannedMinutes,
         remaining_estimated_minutes: getRemainingEstimatedMinutes(normalizedTask.estimated_minutes, plannedMinutes),
         planning_status: getTaskPlanningStatus(normalizedTask.estimated_minutes, plannedMinutes),
     };
 }
 
-function hydrateTaskDatasetRecords(tasks: TodoRow[], plannedBlocks: PlannedFocusBlock[]) {
+function hydrateTaskDatasetRecords(
+    tasks: TodoRow[],
+    plannedBlocks: PlannedFocusBlock[],
+    taskLabelsByTodo: ReadonlyMap<string, TaskLabel[]> = new Map(),
+) {
     const plannedMinutesByTodo = buildPlannedMinutesByTodo(plannedBlocks);
-    return sortTasksByInsertedAt(tasks.map((task) => createTaskDatasetRecord(task, plannedMinutesByTodo)));
+    return sortTasksByInsertedAt(tasks.map((task) => createTaskDatasetRecord(task, plannedMinutesByTodo, taskLabelsByTodo)));
 }
 
 function areTaskRecordsEqual(a: TaskDatasetRecord, b: TaskDatasetRecord) {
@@ -141,6 +205,8 @@ function areTaskRecordsEqual(a: TaskDatasetRecord, b: TaskDatasetRecord) {
         && a.user_id === b.user_id
         && a.list_id === b.list_id
         && (a.section_id ?? null) === (b.section_id ?? null)
+        && (a.assignee_user_id ?? null) === (b.assignee_user_id ?? null)
+        && (a.position ?? 0) === (b.position ?? 0)
         && a.title === b.title
         && a.is_done === b.is_done
         && a.inserted_at === b.inserted_at
@@ -155,6 +221,7 @@ function areTaskRecordsEqual(a: TaskDatasetRecord, b: TaskDatasetRecord) {
         && (a.estimated_minutes ?? null) === (b.estimated_minutes ?? null)
         && (a.completed_at ?? null) === (b.completed_at ?? null)
         && (a.updated_at ?? null) === (b.updated_at ?? null)
+        && areTaskLabelCollectionsEqual(a.labels, b.labels)
         && a.has_planned_block === b.has_planned_block
         && a.planned_minutes === b.planned_minutes
         && (a.remaining_estimated_minutes ?? null) === (b.remaining_estimated_minutes ?? null)
@@ -170,7 +237,7 @@ function upsertNormalizedTaskRecord(
     const nextTask = createTaskDatasetRecord({
         ...existingTask,
         ...task,
-    }, buildPlannedMinutesByTodo(plannedBlocks));
+    }, buildPlannedMinutesByTodo(plannedBlocks), buildTaskLabelsByTodoFromRecords(currentTasks));
 
     if (!existingTask) {
         return sortTasksByInsertedAt([...currentTasks, nextTask]);
@@ -183,7 +250,7 @@ function upsertNormalizedTaskRecord(
     return sortTasksByInsertedAt(currentTasks.map((item) => item.id === task.id ? nextTask : item));
 }
 
-function isMissingPlannedBlocksTableError(error: unknown) {
+function isMissingTableError(error: unknown, tableName: string) {
     if (!error || typeof error !== "object") return false;
 
     const code = "code" in error ? String(error.code) : "";
@@ -192,7 +259,7 @@ function isMissingPlannedBlocksTableError(error: unknown) {
     return (
         code === "PGRST205" ||
         code === "42P01" ||
-        message.includes("planned_focus_blocks")
+        message.includes(tableName)
     );
 }
 
@@ -222,7 +289,48 @@ async function loadPlannedBlocks(
         return sortPlannedBlocks(((data ?? []) as PlannedFocusBlock[]).map(normalizePlannedBlock));
     }
 
-    if (isMissingPlannedBlocksTableError(error)) {
+    if (isMissingTableError(error, "planned_focus_blocks")) {
+        return [];
+    }
+
+    throw error;
+}
+
+async function loadTaskLabels(
+    supabase: ReturnType<typeof createSupabaseBrowserClient>,
+    userId: string,
+): Promise<TaskLabel[]> {
+    const { data, error } = await supabase
+        .from("task_labels")
+        .select(TASK_LABEL_FIELDS)
+        .eq("user_id", userId)
+        .order("name", { ascending: true });
+
+    if (!error) {
+        return ((data ?? []) as TaskLabel[]).map(normalizeTaskLabel);
+    }
+
+    if (isMissingTableError(error, "task_labels")) {
+        return [];
+    }
+
+    throw error;
+}
+
+async function loadTodoLabelLinks(
+    supabase: ReturnType<typeof createSupabaseBrowserClient>,
+    userId: string,
+): Promise<TodoLabelLinkRow[]> {
+    const { data, error } = await supabase
+        .from("todo_label_links")
+        .select(TODO_LABEL_LINK_FIELDS)
+        .eq("user_id", userId);
+
+    if (!error) {
+        return (data ?? []) as TodoLabelLinkRow[];
+    }
+
+    if (isMissingTableError(error, "todo_label_links")) {
         return [];
     }
 
@@ -242,30 +350,6 @@ async function loadTodoAttachments(
     return (data ?? []) as TodoImageRow[];
 }
 
-function getDateKeyDistance(dateKey: string, comparisonDateKey: string) {
-    return differenceInCalendarDays(parseISO(`${dateKey}T00:00:00`), parseISO(`${comparisonDateKey}T00:00:00`));
-}
-
-function isDueSoon(task: TodoRow, timeZone?: string | null) {
-    if (task.is_done) return false;
-
-    const deadlineDateKey = getTaskDeadlineDateKey(task, timeZone);
-    if (!deadlineDateKey) return false;
-
-    const todayDateKey = toDateKeyInTimeZone(new Date(), timeZone);
-    const diffDays = getDateKeyDistance(deadlineDateKey, todayDateKey);
-    return diffDays >= 0 && diffDays <= 7;
-}
-
-function isOverdue(task: TodoRow, timeZone?: string | null) {
-    if (task.is_done) return false;
-
-    const deadlineDateKey = getTaskDeadlineDateKey(task, timeZone);
-    if (!deadlineDateKey) return false;
-
-    return deadlineDateKey < toDateKeyInTimeZone(new Date(), timeZone);
-}
-
 function getRealtimeInsertedRowId(payload: { new?: unknown }) {
     const nextRecord = payload.new;
     if (!nextRecord || typeof nextRecord !== "object") return null;
@@ -278,9 +362,11 @@ function useTaskDatasetState(): TaskDatasetValue {
     const { userId, lists, profile, loading: dataLoading } = useData();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [tasks, setTasks] = useState<TaskDatasetRecord[]>([]);
+    const [taskLabels, setTaskLabels] = useState<TaskLabel[]>([]);
     const [plannedBlocks, setPlannedBlocks] = useState<PlannedFocusBlock[]>([]);
     const [imagesByTodo, setImagesByTodo] = useState<Record<string, TodoImageRow[]>>({});
     const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
+    const [membersByListId, setMembersByListId] = useState<Record<string, ProjectMemberProfile[]>>({});
     const [todayFocusMinutes, setTodayFocusMinutes] = useState(0);
     const [loading, setLoading] = useState(true);
     const [projectOrder, setProjectOrder] = useState<string[]>([]);
@@ -288,6 +374,7 @@ function useTaskDatasetState(): TaskDatasetValue {
     const pendingPlannedBlockRealtimeEchoCountsRef = useRef<Map<string, number>>(new Map());
     const knownFocusSessionIdsRef = useRef<Set<string>>(new Set());
     const locallyPatchedFocusSessionIdsRef = useRef<Set<string>>(new Set());
+    const migratedProjectOrderUserIdsRef = useRef<Set<string>>(new Set());
     const profileTimeZone = profile?.timezone ?? null;
 
     const listIdSignature = useMemo(() => {
@@ -344,7 +431,7 @@ function useTaskDatasetState(): TaskDatasetValue {
                 return currentBlocks;
             }
 
-            setTasks((currentTasks) => hydrateTaskDatasetRecords(currentTasks, nextBlocks));
+            setTasks((currentTasks) => hydrateTaskDatasetRecords(currentTasks, nextBlocks, buildTaskLabelsByTodoFromRecords(currentTasks)));
             return nextBlocks;
         });
     }, []);
@@ -356,9 +443,11 @@ function useTaskDatasetState(): TaskDatasetValue {
 
         if (listIds.length === 0) {
             setTasks([]);
+            setTaskLabels([]);
             setPlannedBlocks([]);
             setImagesByTodo({});
             setMemberCounts({});
+            setMembersByListId({});
             setLoading(false);
             return;
         }
@@ -368,13 +457,15 @@ function useTaskDatasetState(): TaskDatasetValue {
                 setLoading(true);
             }
 
-            const [taskRows, nextBlocks, attachments, membersResponse, focusResponse] = await Promise.all([
+            const [taskRows, nextBlocks, attachments, memberLabels, labelLinks, membersResponse, focusResponse] = await Promise.all([
                 loadTodoRows(supabase, listIds),
                 loadPlannedBlocks(supabase, userId),
                 loadTodoAttachments(supabase, listIds),
+                loadTaskLabels(supabase, userId),
+                loadTodoLabelLinks(supabase, userId),
                 supabase
                     .from("todo_list_members")
-                    .select("list_id")
+                    .select("list_id, user_id, role, inserted_at")
                     .in("list_id", listIds),
                 supabase
                     .from("focus_sessions")
@@ -387,7 +478,8 @@ function useTaskDatasetState(): TaskDatasetValue {
             if (membersResponse.error) throw membersResponse.error;
             if (focusResponse.error) throw focusResponse.error;
 
-            const sortedTasks = hydrateTaskDatasetRecords(taskRows, nextBlocks);
+            const taskLabelsByTodo = buildTaskLabelsByTodo(memberLabels, labelLinks);
+            const sortedTasks = hydrateTaskDatasetRecords(taskRows, nextBlocks, taskLabelsByTodo);
 
             const nextImagesByTodo: Record<string, TodoImageRow[]> = {};
             for (const image of attachments) {
@@ -395,8 +487,45 @@ function useTaskDatasetState(): TaskDatasetValue {
             }
 
             const nextMemberCounts: Record<string, number> = {};
-            for (const row of (membersResponse.data ?? []) as ListMemberCountRow[]) {
+            const memberRows = (membersResponse.data ?? []) as TodoListMemberRow[];
+            for (const row of memberRows) {
                 nextMemberCounts[row.list_id] = (nextMemberCounts[row.list_id] ?? 0) + 1;
+            }
+
+            const memberIds = Array.from(new Set(memberRows.map((row) => row.user_id)));
+            const nextMembersByListId: Record<string, ProjectMemberProfile[]> = {};
+
+            if (memberIds.length > 0) {
+                const { data: memberProfilesData, error: memberProfilesError } = await supabase
+                    .from("profiles")
+                    .select("id, username, full_name, avatar_url")
+                    .in("id", memberIds);
+
+                if (memberProfilesError) throw memberProfilesError;
+
+                const memberProfilesById = new Map<string, MemberProfileRow>(
+                    ((memberProfilesData ?? []) as MemberProfileRow[]).map((profileRow) => [profileRow.id, profileRow]),
+                );
+
+                memberRows.forEach((memberRow) => {
+                    const profileRow = memberProfilesById.get(memberRow.user_id);
+                    const nextMember: ProjectMemberProfile = {
+                        ...memberRow,
+                        username: profileRow?.username ?? null,
+                        full_name: profileRow?.full_name ?? null,
+                        avatar_url: profileRow?.avatar_url ?? null,
+                    };
+
+                    (nextMembersByListId[memberRow.list_id] ??= []).push(nextMember);
+                });
+
+                Object.keys(nextMembersByListId).forEach((listIdKey) => {
+                    nextMembersByListId[listIdKey] = nextMembersByListId[listIdKey]!.sort((a, b) => {
+                        const nameA = a.full_name ?? a.username ?? a.user_id;
+                        const nameB = b.full_name ?? b.username ?? b.user_id;
+                        return nameA.localeCompare(nameB);
+                    });
+                });
             }
 
             const focusSessions = (focusResponse.data ?? []) as FocusSessionSummaryRow[];
@@ -412,9 +541,11 @@ function useTaskDatasetState(): TaskDatasetValue {
                 .reduce((total, session) => total + Math.round(session.duration_seconds / 60), 0);
 
             setPlannedBlocks(nextBlocks);
+            setTaskLabels(memberLabels);
             setTasks(sortedTasks);
             setImagesByTodo(nextImagesByTodo);
             setMemberCounts(nextMemberCounts);
+            setMembersByListId(nextMembersByListId);
             setTodayFocusMinutes(focusMinutes);
         } catch (error) {
             const message = error instanceof Error ? error.message : "Unable to load tasks.";
@@ -428,6 +559,8 @@ function useTaskDatasetState(): TaskDatasetValue {
         if (!userId) {
             knownFocusSessionIdsRef.current = new Set();
             locallyPatchedFocusSessionIdsRef.current = new Set();
+            setTaskLabels([]);
+            setMembersByListId({});
         }
     }, [userId]);
 
@@ -441,29 +574,36 @@ function useTaskDatasetState(): TaskDatasetValue {
             return;
         }
 
-        const storageKey = `${PROJECT_ORDER_STORAGE_KEY_PREFIX}${userId}`;
-        const savedOrder = window.localStorage.getItem(storageKey);
-
-        if (!savedOrder) {
-            setProjectOrder([]);
+        const syncedProjectOrder = normalizeProjectOrderIds(profile?.project_order_ids);
+        if (syncedProjectOrder) {
+            setProjectOrder(syncedProjectOrder);
+            saveProjectOrderToStorage(userId, syncedProjectOrder);
             return;
         }
 
-        try {
-            const parsedOrder = JSON.parse(savedOrder) as unknown;
-            if (!Array.isArray(parsedOrder)) {
-                setProjectOrder([]);
-                return;
-            }
+        setProjectOrder(loadProjectOrderFromStorage(userId));
+    }, [profile?.project_order_ids, userId]);
 
-            setProjectOrder(
-                parsedOrder.filter((item): item is string => typeof item === "string"),
-            );
-        } catch (error) {
-            console.error("Failed to parse project order.", error);
-            setProjectOrder([]);
-        }
-    }, [userId]);
+    useEffect(() => {
+        if (!userId) return;
+
+        const syncedProjectOrder = normalizeProjectOrderIds(profile?.project_order_ids);
+        if (syncedProjectOrder || migratedProjectOrderUserIdsRef.current.has(userId)) return;
+
+        const localProjectOrder = loadProjectOrderFromStorage(userId);
+        if (localProjectOrder.length === 0) return;
+
+        migratedProjectOrderUserIdsRef.current.add(userId);
+        setProjectOrder(localProjectOrder);
+
+        void supabase
+            .from("profiles")
+            .upsert({ id: userId, project_order_ids: localProjectOrder }, { onConflict: "id" })
+            .then(({ error }) => {
+                if (!error || isMissingProjectOrderPreferenceColumnError(error)) return;
+                console.error("Failed to sync project order.", error);
+            });
+    }, [profile?.project_order_ids, supabase, userId]);
 
     useEffect(() => {
         if (!userId) return;
@@ -502,6 +642,8 @@ function useTaskDatasetState(): TaskDatasetValue {
 
                 setTasks((currentTasks) => upsertNormalizedTaskRecord(currentTasks, nextTask, plannedBlocks));
             })
+            .on("postgres_changes", { event: "*", schema: "public", table: "task_labels", filter: `user_id=eq.${userId}` }, () => void loadDataset({ silent: true }))
+            .on("postgres_changes", { event: "*", schema: "public", table: "todo_label_links", filter: `user_id=eq.${userId}` }, () => void loadDataset({ silent: true }))
             .on("postgres_changes", { event: "*", schema: "public", table: "todo_images" }, () => void loadDataset({ silent: true }))
             .on("postgres_changes", { event: "*", schema: "public", table: "planned_focus_blocks", filter: `user_id=eq.${userId}` }, (payload) => {
                 if (payload.eventType === "DELETE") {
@@ -566,24 +708,29 @@ function useTaskDatasetState(): TaskDatasetValue {
     }, []);
 
     const projectSummaries = useMemo<ProjectSummary[]>(() => {
-        return lists.map((list) => {
-            const projectTasks = tasks.filter((task) => task.list_id === list.id);
-            return {
-                list,
-                totalCount: projectTasks.length,
-                incompleteCount: projectTasks.filter((task) => !task.is_done).length,
-                completedCount: projectTasks.filter((task) => task.is_done).length,
-                dueSoonCount: projectTasks.filter((task) => isDueSoon(task, profileTimeZone)).length,
-                overdueCount: projectTasks.filter((task) => isOverdue(task, profileTimeZone)).length,
-                memberCount: memberCounts[list.id] ?? 0,
-            };
-        });
-    }, [lists, memberCounts, profileTimeZone, tasks]);
+        return lists.map((list) => buildProjectSummary({
+            list,
+            tasks,
+            plannedBlocks,
+            memberCount: memberCounts[list.id] ?? 0,
+            timeZone: profileTimeZone,
+        }));
+    }, [lists, memberCounts, plannedBlocks, profileTimeZone, tasks]);
 
     const orderedProjectSummaries = useMemo(() => {
         const fallbackOrder = [...projectSummaries].sort((a, b) => {
+            const overdueDelta = Number(b.overdueCount > 0) - Number(a.overdueCount > 0);
+            if (overdueDelta !== 0) return overdueDelta;
+
+            const dueSoonDelta = Number(b.dueSoonCount > 0) - Number(a.dueSoonCount > 0);
+            if (dueSoonDelta !== 0) return dueSoonDelta;
+
             const activeDelta = Number(b.incompleteCount > 0) - Number(a.incompleteCount > 0);
             if (activeDelta !== 0) return activeDelta;
+
+            const scheduledDelta = Number(Boolean(b.nextScheduledBlock)) - Number(Boolean(a.nextScheduledBlock));
+            if (scheduledDelta !== 0) return scheduledDelta;
+
             return a.list.name.localeCompare(b.list.name);
         });
 
@@ -614,23 +761,29 @@ function useTaskDatasetState(): TaskDatasetValue {
 
         const uniqueProjectIds = Array.from(new Set(nextProjectIds));
         setProjectOrder(uniqueProjectIds);
-        window.localStorage.setItem(
-            `${PROJECT_ORDER_STORAGE_KEY_PREFIX}${userId}`,
-            JSON.stringify(uniqueProjectIds),
-        );
-    }, [userId]);
+        saveProjectOrderToStorage(userId, uniqueProjectIds);
+
+        void supabase
+            .from("profiles")
+            .upsert({ id: userId, project_order_ids: uniqueProjectIds }, { onConflict: "id" })
+            .then(({ error }) => {
+                if (!error || isMissingProjectOrderPreferenceColumnError(error)) return;
+                console.error("Failed to sync project order.", error);
+            });
+    }, [supabase, userId]);
 
     const applyTaskPatch = useCallback((taskId: string, patch: Partial<TaskDatasetRecord>) => {
         setTasks((currentTasks) => {
             let changed = false;
             const plannedMinutesByTodo = buildPlannedMinutesByTodo(plannedBlocks);
+            const taskLabelsByTodo = buildTaskLabelsByTodoFromRecords(currentTasks);
             const nextTasks = currentTasks.map((task) => {
                 if (task.id !== taskId) return task;
 
                 const nextTask = createTaskDatasetRecord({
                     ...task,
                     ...patch,
-                }, plannedMinutesByTodo);
+                }, plannedMinutesByTodo, new Map(taskLabelsByTodo).set(taskId, patch.labels ?? task.labels));
 
                 if (areTaskRecordsEqual(task, nextTask)) {
                     return task;
@@ -643,6 +796,31 @@ function useTaskDatasetState(): TaskDatasetValue {
             return changed ? sortTasksByInsertedAt(nextTasks) : currentTasks;
         });
     }, [plannedBlocks]);
+
+    const upsertTaskLabels = useCallback((labels: TaskLabel[]) => {
+        setTaskLabels((currentLabels) => {
+            const nextLabelsById = new Map(currentLabels.map((label) => [label.id, label]));
+            let changed = false;
+
+            labels.forEach((label) => {
+                const normalizedLabel = normalizeTaskLabel(label);
+                const existingLabel = nextLabelsById.get(normalizedLabel.id);
+
+                if (existingLabel?.name === normalizedLabel.name
+                    && existingLabel.user_id === normalizedLabel.user_id
+                    && (existingLabel.color_token ?? "slate") === (normalizedLabel.color_token ?? "slate")
+                    && existingLabel.inserted_at === normalizedLabel.inserted_at
+                    && existingLabel.updated_at === normalizedLabel.updated_at) {
+                    return;
+                }
+
+                changed = true;
+                nextLabelsById.set(normalizedLabel.id, normalizedLabel);
+            });
+
+            return changed ? Array.from(nextLabelsById.values()).sort((a, b) => a.name.localeCompare(b.name)) : currentLabels;
+        });
+    }, []);
 
     const upsertTask = useCallback((task: TodoRow, options?: { suppressRealtimeEcho?: boolean }) => {
         if (options?.suppressRealtimeEcho) {
@@ -717,9 +895,11 @@ function useTaskDatasetState(): TaskDatasetValue {
         userId,
         lists,
         tasks,
+        taskLabels,
         plannedBlocks,
         imagesByTodo,
         memberCounts,
+        membersByListId,
         projectSummaries,
         orderedProjectSummaries,
         smartViewCounts,
@@ -730,6 +910,7 @@ function useTaskDatasetState(): TaskDatasetValue {
         removePlannedBlock,
         saveProjectOrder,
         upsertPlannedBlock,
+        upsertTaskLabels,
         upsertTask,
         refresh: loadDataset,
     };

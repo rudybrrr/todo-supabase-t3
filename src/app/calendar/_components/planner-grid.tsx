@@ -67,13 +67,14 @@ type PlannerInteraction =
       moved: boolean;
     };
 
-const PLANNER_HOURS = getPlannerHours();
-const PLANNER_DAY_MINUTES = getPlannerDayMinuteRange();
 const MOVE_THRESHOLD_PX = 4;
 
 export function PlannerGrid({
   blockLayoutsByKey,
+  dayEndHour,
+  dayStartHour,
   days,
+  defaultCreateDurationMinutes,
   now,
   selectedDate,
   tasksByKey,
@@ -85,7 +86,10 @@ export function PlannerGrid({
   onUpdateBlock,
 }: {
   blockLayoutsByKey: Map<string, PlannerTimedBlockLayout[]>;
+  dayEndHour: number;
+  dayStartHour: number;
   days: Date[];
+  defaultCreateDurationMinutes: number;
   now: Date;
   selectedDate: Date;
   tasksByKey: Map<string, TaskDatasetRecord[]>;
@@ -98,13 +102,23 @@ export function PlannerGrid({
 }) {
   const timedGridRef = useRef<HTMLDivElement | null>(null);
   const [interaction, setInteraction] = useState<PlannerInteraction | null>(null);
+  const plannerHours = useMemo(() => getPlannerHours(dayStartHour, dayEndHour), [dayEndHour, dayStartHour]);
+  const plannerDayMinutes = useMemo(() => getPlannerDayMinuteRange(dayStartHour, dayEndHour), [dayEndHour, dayStartHour]);
+  const normalizedDefaultCreateDurationMinutes = useMemo(
+    () => clampPlannerMinutes(
+      snapPlannerMinutes(defaultCreateDurationMinutes, { mode: "ceil" }),
+      PLANNER_MIN_BLOCK_MINUTES,
+      plannerDayMinutes,
+    ),
+    [defaultCreateDurationMinutes, plannerDayMinutes],
+  );
   const previewDayKey = interaction ? toDateKey(days[interaction.dayIndex] ?? days[0] ?? new Date()) : null;
   const currentTimeOffset = useMemo(() => {
     if (!days.some((day) => isToday(day))) return null;
-    const minutesIntoPlanner = getPlannerMinutesFromDate(now);
-    if (minutesIntoPlanner < 0 || minutesIntoPlanner > PLANNER_DAY_MINUTES) return null;
+    const minutesIntoPlanner = getPlannerMinutesFromDate(now, dayStartHour);
+    if (minutesIntoPlanner < 0 || minutesIntoPlanner > plannerDayMinutes) return null;
     return getPlannerOffsetFromMinutes(minutesIntoPlanner);
-  }, [days, now]);
+  }, [dayStartHour, days, now, plannerDayMinutes]);
   const todayColumnIndex = useMemo(() => days.findIndex((day) => isToday(day)), [days]);
   const plannerRowStyle = useMemo(() => ({ height: `${PLANNER_HOUR_ROW_HEIGHT}px` }), []);
   const gridTemplateColumns = useMemo(
@@ -136,7 +150,7 @@ export function PlannerGrid({
       const rect = timedGridRef.current.getBoundingClientRect();
       const rawOffset = clientY - rect.top;
       const clampedOffset = Math.min(Math.max(rawOffset, 0), rect.height);
-      return clampPlannerMinutes(getPlannerMinutesFromOffset(clampedOffset), 0, PLANNER_DAY_MINUTES);
+      return clampPlannerMinutes(getPlannerMinutesFromOffset(clampedOffset), 0, plannerDayMinutes);
     };
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -163,8 +177,8 @@ export function PlannerGrid({
           return {
             ...current,
             moved,
-            startMinutes: clampPlannerMinutes(startMinutes, 0, PLANNER_DAY_MINUTES - PLANNER_MIN_BLOCK_MINUTES),
-            endMinutes: clampPlannerMinutes(endMinutes, PLANNER_MIN_BLOCK_MINUTES, PLANNER_DAY_MINUTES),
+            startMinutes: clampPlannerMinutes(startMinutes, 0, plannerDayMinutes - PLANNER_MIN_BLOCK_MINUTES),
+            endMinutes: clampPlannerMinutes(endMinutes, PLANNER_MIN_BLOCK_MINUTES, plannerDayMinutes),
           };
         }
 
@@ -172,7 +186,7 @@ export function PlannerGrid({
           const duration = current.originalEndMinutes - current.originalStartMinutes;
           const dayIndex = getDayIndexFromClientX(event.clientX);
           const nextStart = snapPlannerMinutes(getMinutesFromClientY(event.clientY) - current.pointerOffsetMinutes);
-          const startMinutes = clampPlannerMinutes(nextStart, 0, PLANNER_DAY_MINUTES - duration);
+          const startMinutes = clampPlannerMinutes(nextStart, 0, plannerDayMinutes - duration);
 
           return {
             ...current,
@@ -186,9 +200,9 @@ export function PlannerGrid({
         const nextMinutes = getMinutesFromClientY(event.clientY);
         if (current.edge === "start") {
           const startMinutes = clampPlannerMinutes(
-            snapPlannerMinutes(nextMinutes),
-            0,
-            current.originalEndMinutes - PLANNER_MIN_BLOCK_MINUTES,
+          snapPlannerMinutes(nextMinutes),
+          0,
+          current.originalEndMinutes - PLANNER_MIN_BLOCK_MINUTES,
           );
 
           return {
@@ -201,7 +215,7 @@ export function PlannerGrid({
         const endMinutes = clampPlannerMinutes(
           snapPlannerMinutes(nextMinutes),
           current.originalStartMinutes + PLANNER_MIN_BLOCK_MINUTES,
-          PLANNER_DAY_MINUTES,
+          plannerDayMinutes,
         );
 
         return {
@@ -213,38 +227,41 @@ export function PlannerGrid({
     };
 
     const handlePointerFinish = (event: PointerEvent) => {
-      setInteraction((current) => {
-        if (current?.pointerId !== event.pointerId) return current;
+      if (interaction?.pointerId !== event.pointerId) return;
 
-        if (current.type === "create") {
-          const day = days[current.dayIndex];
-          if (day) {
-            const startMinutes = current.startMinutes;
-            const endMinutes = current.moved
-              ? current.endMinutes
-              : clampPlannerMinutes(startMinutes + 60, PLANNER_MIN_BLOCK_MINUTES, PLANNER_DAY_MINUTES);
-            onSelectDate(day);
-            onCreateRange({ date: day, startMinutes, endMinutes });
-          }
+      setInteraction(null);
 
-          return null;
-        }
+      if (interaction.type === "create") {
+        const day = days[interaction.dayIndex];
+        if (!day) return;
 
-        const day = days[current.dayIndex];
-        if (!day) return null;
-
-        if (!current.moved) {
-          onEditBlock(current.block);
-          return null;
-        }
+        const startMinutes = interaction.startMinutes;
+        const endMinutes = interaction.moved
+          ? interaction.endMinutes
+          : clampPlannerMinutes(
+            startMinutes + normalizedDefaultCreateDurationMinutes,
+            PLANNER_MIN_BLOCK_MINUTES,
+            plannerDayMinutes,
+          );
 
         onSelectDate(day);
-        onUpdateBlock(current.block, {
-          date: day,
-          startMinutes: current.startMinutes,
-          endMinutes: current.endMinutes,
-        });
-        return null;
+        onCreateRange({ date: day, startMinutes, endMinutes });
+        return;
+      }
+
+      const day = days[interaction.dayIndex];
+      if (!day) return;
+
+      if (!interaction.moved) {
+        onEditBlock(interaction.block);
+        return;
+      }
+
+      onSelectDate(day);
+      onUpdateBlock(interaction.block, {
+        date: day,
+        startMinutes: interaction.startMinutes,
+        endMinutes: interaction.endMinutes,
       });
     };
 
@@ -258,7 +275,7 @@ export function PlannerGrid({
       window.removeEventListener("pointerup", handlePointerFinish);
       window.removeEventListener("pointercancel", handlePointerFinish);
     };
-  }, [days, interaction, onCreateRange, onEditBlock, onSelectDate, onUpdateBlock]);
+  }, [days, interaction, normalizedDefaultCreateDurationMinutes, onCreateRange, onEditBlock, onSelectDate, onUpdateBlock, plannerDayMinutes]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-border/70 bg-card/98">
@@ -366,7 +383,7 @@ export function PlannerGrid({
 
           <div ref={timedGridRef} className="relative grid" style={{ gridTemplateColumns }}>
             <div className="sticky left-0 z-20 border-r border-border/70 bg-card/98">
-              {PLANNER_HOURS.map((hour) => (
+              {plannerHours.map((hour) => (
                 <div
                   key={hour}
                   className="flex items-start justify-end border-b border-border/60 px-3 pt-1.5 text-[10px] font-medium text-muted-foreground last:border-b-0"
@@ -401,12 +418,12 @@ export function PlannerGrid({
                     const currentMinutes = clampPlannerMinutes(
                       getPlannerMinutesFromOffset(Math.min(Math.max(event.clientY - rect.top, 0), rect.height)),
                       0,
-                      PLANNER_DAY_MINUTES,
+                      plannerDayMinutes,
                     );
                     const anchorMinutes = clampPlannerMinutes(
                       snapPlannerMinutes(currentMinutes, { mode: "floor" }),
                       0,
-                      PLANNER_DAY_MINUTES - PLANNER_MIN_BLOCK_MINUTES,
+                      plannerDayMinutes - PLANNER_MIN_BLOCK_MINUTES,
                     );
 
                     setInteraction({
@@ -422,7 +439,7 @@ export function PlannerGrid({
                     });
                   }}
                 >
-                  {PLANNER_HOURS.map((hour) => (
+                  {plannerHours.map((hour) => (
                     <div key={`${dayKey}-${hour}`} className="border-b border-border/60 last:border-b-0" style={plannerRowStyle} />
                   ))}
 
@@ -460,7 +477,7 @@ export function PlannerGrid({
                           const pointerMinutes = clampPlannerMinutes(
                             getPlannerMinutesFromOffset(Math.min(Math.max(event.clientY - rect.top, 0), rect.height)),
                             0,
-                            PLANNER_DAY_MINUTES,
+                            plannerDayMinutes,
                           );
                           setInteraction({
                             type: "move",

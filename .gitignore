@@ -51,15 +51,10 @@ todo.md
 # documents
 *.pdf
 
-# system architecture
-system_architecture.md
-
 # other docs
 linkedin_post.md
 meeting_prep.md
-
-# supabase
-/supabase/
+distribution-plan.md
 
 # Sentry Config File
 .env.sentry-build-plugin

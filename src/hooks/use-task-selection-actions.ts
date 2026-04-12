@@ -66,7 +66,7 @@ export function useTaskSelectionActions({
     getBufferPlacement,
     onTaskDeleted,
 }: UseTaskSelectionActionsOptions) {
-    const { profile } = useData();
+    const { profile, userId } = useData();
     const { applyTaskPatch, removeTask, upsertTask } = useTaskDataset();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [selectionMode, setSelectionMode] = useState(false);
@@ -125,7 +125,7 @@ export function useTaskSelectionActions({
                 completed_at: nextIsDone ? optimisticUpdatedAt : null,
                 updated_at: optimisticUpdatedAt,
             });
-            const result = await completeTaskWithRecurrence(supabase, existingTask, nextIsDone, profile?.timezone);
+            const result = await completeTaskWithRecurrence(supabase, existingTask, nextIsDone, profile?.timezone, userId);
             upsertTask(result.completedTask, { suppressRealtimeEcho: true });
             if (result.nextTask) {
                 upsertTask(result.nextTask, { suppressRealtimeEcho: true });
@@ -141,7 +141,7 @@ export function useTaskSelectionActions({
             upsertTask(existingTask);
             toast.error(error instanceof Error ? error.message : "Unable to update task.");
         }
-    }, [allTasks, applyTaskPatch, getBufferPlacement, profile?.timezone, queueBufferedTask, supabase, upsertTask]);
+    }, [allTasks, applyTaskPatch, getBufferPlacement, profile?.timezone, queueBufferedTask, supabase, upsertTask, userId]);
 
     const handleToggleTaskSelection = useCallback((task: TaskDatasetRecord, options?: TaskSelectionGestureOptions) => {
         const shiftKey = options?.shiftKey ?? false;
@@ -222,7 +222,7 @@ export function useTaskSelectionActions({
         }
 
         const results = await Promise.allSettled(
-            tasksToComplete.map((task) => completeTaskWithRecurrence(supabase, task, true, profile?.timezone)),
+            tasksToComplete.map((task) => completeTaskWithRecurrence(supabase, task, true, profile?.timezone, userId)),
         );
 
         let successCount = 0;
@@ -263,7 +263,7 @@ export function useTaskSelectionActions({
             setSelectionMode(false);
         }
         setBulkCompleting(false);
-    }, [applyTaskPatch, getBufferPlacement, profile?.timezone, queueBufferedTask, selectedVisibleTasks, supabase, upsertTask]);
+    }, [applyTaskPatch, getBufferPlacement, profile?.timezone, queueBufferedTask, selectedVisibleTasks, supabase, upsertTask, userId]);
 
     const handleDeleteSelected = useCallback(async () => {
         if (selectedVisibleTasks.length === 0) return;

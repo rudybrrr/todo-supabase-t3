@@ -114,7 +114,7 @@ export function TaskStepsSection({ taskId }: { taskId: string }) {
         <section className="space-y-3 rounded-xl border border-border/70 bg-muted/15 p-3">
             <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Steps</p>
+                    <h3 className="text-sm font-semibold tracking-[-0.02em] text-foreground">Steps</h3>
                     {totalCount > 0 ? (
                         <span className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
                             {completedCount}/{totalCount}

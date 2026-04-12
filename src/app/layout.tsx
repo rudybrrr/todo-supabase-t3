@@ -4,6 +4,7 @@ import { type Metadata } from "next";
 import { IBM_Plex_Mono, Manrope } from "next/font/google";
 
 import { AccentProvider } from "~/components/accent-provider";
+import { CompactModeProvider } from "~/components/compact-mode-provider";
 import { DataProvider } from "~/components/data-provider";
 import { FocusProvider } from "~/components/focus-provider";
 import { ThemeProvider } from "~/components/theme-provider";
@@ -50,17 +51,19 @@ export default function RootLayout({
           attribute="class"
           defaultTheme="system"
           enableSystem
-          themes={["light", "dark", "midnight", "noir"]}
+          themes={["light", "dark"]}
           disableTransitionOnChange
         >
-          <AccentProvider>
-            <DataProvider>
-              <FocusProvider>
-                {children}
-                <Toaster />
-              </FocusProvider>
-            </DataProvider>
-          </AccentProvider>
+          <DataProvider>
+            <CompactModeProvider>
+              <AccentProvider>
+                <FocusProvider>
+                  {children}
+                  <Toaster />
+                </FocusProvider>
+              </AccentProvider>
+            </CompactModeProvider>
+          </DataProvider>
         </ThemeProvider>
         <SpeedInsights />
       </body>

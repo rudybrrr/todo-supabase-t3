@@ -1,74 +1,103 @@
-# Stride
+﻿# Stride
 
-Stride helps students turn plans into progress.
+Stride is an execution-first productivity system for students. It helps convert captured tasks into scheduled work, focused sessions, and weekly review.
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://stride.rudhresh.app)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Profile-blue?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/rudhresh-r/)
 
-## The Vision
+## What Stride Solves
 
-Students usually do not struggle with writing tasks down. They struggle with turning plans into consistent execution.
+Most students are not blocked by writing tasks down. They are blocked by execution drift:
 
-Stride is built around that gap. It combines task management, calendar planning, focus sessions, and lightweight accountability into a single student productivity workflow that is designed to help captured work become scheduled, focused, and finished.
+- too many unscheduled tasks
+- weak connection between plans and actual focus time
+- no tight feedback loop for what slipped and why
 
-Stride is an execution-first academic planner built on Next.js and Supabase. The current product combines smart task views, project workspaces, project sections, task steps, a dedicated focus route, planner scheduling, lightweight community progress, and a premium task-first shell.
+Stride is designed around one loop:
 
-## Current Product Shape
+1. Capture quickly.
+2. Clarify what matters now.
+3. Plan realistic focus time.
+4. Execute with context.
+5. Review outcomes and adjust.
 
-### Primary routes
+## Current Product Surface
 
-- `/tasks` (Today workspace and smart views)
+### Primary Routes
+
+- `/tasks`
 - `/calendar`
 - `/focus`
 - `/projects`
 
-### Secondary routes
+### Secondary Routes
 
 - `/progress`
 - `/community`
 - `/settings`
 
-## Current UX Model
+## Feature Highlights
 
-- Collapsible desktop sidebar with smart views, `Focus`, projects, quick add, and account utilities
-- Mobile drawer navigation instead of a bottom tab bar
-- Smart task views for `Today`, `Upcoming`, `Inbox`, and user-facing `Completed`
-- Inline task capture on main task surfaces plus parser-first shell-level quick add
-- Row-click task opening with a centered desktop modal and mobile full-height task sheet
-- Task detail editing with previous/next navigation, unsaved-change protection, steps, attachments, and project section assignment
-- Project workspaces with inline add, priority filtering, sections, member management, and project settings
-- Dedicated `Focus` route with a Pomodoro timer, daily goal progress, and project-linked focus sessions
-- Calendar planning with persisted `planned_focus_blocks`
-- Focus sessions tied to daily goal tracking, Progress, and Community
+### Tasks
 
-## Core Features
+- Smart views: `Today`, `Upcoming`, `No Due Date`, `Completed`
+- Saved task views with filters
+- Quick Add parser for project, date, time, priority, estimate, reminder, recurrence, and labels
+- Rich task detail: title, description, labels, assignee, priority, deadline, reminder, recurrence, estimate
+- Steps, attachments, comments, and unsaved-change protection
+- Selection mode and bulk task actions
 
-- Smart task views driven by deterministic rules
-- Deterministic `Next Up` recommendation
-- Task priority, due dates, notes, duration estimates, steps, attachments, and completion metadata
-- Parser-first Quick Add with Todoist-style project, date, priority, and duration tokens
-- Project icons, color tokens, members, sections, and per-project workspaces
-- Dedicated Focus page / Pomodoro timer with persisted sessions, daily-goal progress, and project context
-- Planned focus blocks linked to tasks or standalone project work
-- Focus timer with persisted sessions
-- Community leaderboard powered by `weekly_leaderboard`
-- Theme system with `light`, `dark`, `midnight`, and `noir`
+### Planner And Focus
+
+- Calendar planner with persisted focus blocks
+- Week/month planning surfaces
+- Planned blocks linked to tasks
+- Dedicated `/focus` route with focus and break modes
+- Focus sessions saved and attributed to tasks/planned blocks
+
+### Projects And Collaboration
+
+- Project workspaces with list and board views
+- Sections with reorder and cross-section task movement
+- Persistent task ordering
+- Members, assignees, comments, and collaboration-aware summaries
+
+### Progress And Community
+
+- Weekly review in `/progress`:
+  - planned vs actual
+  - slipped work
+  - neglected projects
+  - estimate quality
+- `/community` with weekly commitments and shared-peer accountability
+
+### Shell And Preferences
+
+- Command palette / shell search
+- Shell-level Quick Add
+- Desktop sidebar and mobile drawer navigation
+- Synced preferences (timezone, planner defaults, week start, compact mode)
 
 ## Visual Gallery
 
-| Authentication | Tasks | Calendar |
-| :---: | :---: | :---: |
-| ![Authentication](screenshots/auth.png) | ![Tasks](screenshots/tasks.png) | ![Calendar](screenshots/planner.png) |
+| Login | Tasks |
+| :---: | :---: |
+| ![Login](screenshots/auth.png) | ![Tasks](screenshots/tasks.png) |
 
-## Stack
+| Planner | Progress / Insights |
+| :---: | :---: |
+| ![Planner](screenshots/planner.png) | ![Insights](screenshots/insights.png) |
+
+## Tech Stack
 
 - Next.js 16 App Router
-- React + TypeScript
+- React 19 + TypeScript
 - Tailwind CSS + shadcn/ui + Framer Motion
-- Supabase Postgres + Auth + Realtime + Storage + RLS
+- Supabase (Postgres, Auth, Realtime, Storage, RLS)
 - Sentry + Vercel Speed Insights + PostHog
+- Vitest for semantic utility coverage
 
-## Local Setup
+## Quick Start
 
 ### 1. Install dependencies
 
@@ -78,7 +107,7 @@ npm install
 
 ### 2. Configure environment variables
 
-Create `.env.local` or `.env`:
+Create `.env` (or `.env.local`) with:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
@@ -87,89 +116,112 @@ NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN="phc_your_project_token"
 NEXT_PUBLIC_POSTHOG_HOST="https://us.i.posthog.com"
 ```
 
-If the PostHog variables are omitted in a local environment, analytics initialization is skipped.
+Notes:
 
-### 3. Set up Supabase
+- If PostHog variables are omitted locally, analytics initialization is skipped.
+- Keep secrets out of `.env.example`.
 
-This repo relies on a core schema plus the checked-in migration files.
+### 3. Set up Supabase schema and policies
 
-#### 3A. Core schema
+Recommended path:
 
-Run this once in the Supabase SQL editor if your project is empty.
+```bash
+supabase db push
+```
+
+This applies all SQL in `supabase/migrations/` in order.
+
+### 4. Create required storage buckets
+
+Create these Supabase Storage buckets:
+
+- `todo-images`
+- `profile-avatars`
+
+### 5. Run locally
+
+```bash
+npm run dev
+```
+
+If your PowerShell policy blocks `npm.ps1`, use `npm.cmd run dev`.
+
+## Database Setup (Detailed, SQL-First)
+
+If you want a transparent SQL setup path, this section is the source of truth.
+
+### A. Migration files in this repo
+
+Current migration files are in:
+
+- `supabase/migrations/*.sql`
+
+List them in order:
+
+```powershell
+Get-ChildItem supabase/migrations/*.sql | Sort-Object Name | Select-Object -ExpandProperty Name
+```
+
+### B. Apply SQL manually (without `supabase db push`)
+
+Open Supabase SQL Editor and run each file in ascending timestamp order.
+
+If you have direct Postgres access and `psql` installed:
+
+```powershell
+Get-ChildItem supabase/migrations/*.sql |
+  Sort-Object Name |
+  ForEach-Object { psql $env:SUPABASE_DB_URL -v ON_ERROR_STOP=1 -f $_.FullName }
+```
+
+### C. Key SQL examples used by Stride
+
+These examples are already represented in the checked-in migrations and shown here for clarity.
+
+#### 1) Atomic project/list creation RPC
 
 ```sql
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  username text unique,
-  full_name text,
-  avatar_url text,
-  daily_focus_goal_minutes integer not null default 120,
-  updated_at timestamptz default now(),
-  constraint profiles_daily_focus_goal_minutes_positive
-    check (daily_focus_goal_minutes > 0)
-);
+create or replace function public.create_list_with_owner(list_name text)
+returns table (
+  id uuid,
+  name text,
+  owner_id uuid,
+  inserted_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_list public.todo_lists;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
 
-create table if not exists public.todo_lists (
-  id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  name text not null,
-  color_token text not null default 'cobalt',
-  icon_token text not null default 'book-open',
-  inserted_at timestamptz default now()
-);
+  if list_name is null or btrim(list_name) = '' then
+    raise exception 'List name cannot be empty';
+  end if;
 
-create table if not exists public.todo_list_members (
-  list_id uuid not null references public.todo_lists(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  role text not null default 'editor',
-  inserted_at timestamptz default now(),
-  primary key (list_id, user_id),
-  constraint todo_list_members_role_valid
-    check (role in ('owner', 'editor', 'viewer'))
-);
+  insert into public.todo_lists (owner_id, name)
+  values (auth.uid(), btrim(list_name))
+  returning * into new_list;
 
-create table if not exists public.todos (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  list_id uuid not null references public.todo_lists(id) on delete cascade,
-  title text not null,
-  description text,
-  due_date timestamptz,
-  priority text,
-  is_done boolean not null default false,
-  estimated_minutes integer,
-  completed_at timestamptz,
-  inserted_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint todos_priority_valid
-    check (priority in ('high', 'medium', 'low') or priority is null),
-  constraint todos_estimated_minutes_positive
-    check (estimated_minutes is null or estimated_minutes > 0)
-);
+  insert into public.todo_list_members (list_id, user_id, role)
+  values (new_list.id, auth.uid(), 'owner')
+  on conflict (list_id, user_id) do update set role = excluded.role;
 
-create table if not exists public.focus_sessions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  list_id uuid references public.todo_lists(id) on delete set null,
-  duration_seconds integer not null,
-  mode text not null,
-  inserted_at timestamptz not null default now(),
-  constraint focus_sessions_mode_valid
-    check (mode in ('focus', 'shortBreak', 'longBreak'))
-);
+  return query
+  select new_list.id, new_list.name, new_list.owner_id, new_list.inserted_at;
+end;
+$$;
 
-create table if not exists public.todo_images (
-  id uuid primary key default gen_random_uuid(),
-  todo_id uuid not null references public.todos(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  list_id uuid not null references public.todo_lists(id) on delete cascade,
-  path text not null,
-  original_name text,
-  mime_type text,
-  size_bytes bigint,
-  inserted_at timestamptz not null default now()
-);
+grant execute on function public.create_list_with_owner(text) to authenticated;
+```
 
+#### 2) Planned focus blocks table + RLS enablement
+
+```sql
 create table if not exists public.planned_focus_blocks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -180,381 +232,155 @@ create table if not exists public.planned_focus_blocks (
   scheduled_end timestamptz not null,
   inserted_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint planned_focus_blocks_time_order
-    check (scheduled_end > scheduled_start)
+  constraint planned_focus_blocks_time_order check (scheduled_end > scheduled_start)
 );
 
-create or replace view public.weekly_leaderboard as
-select
-  p.id as user_id,
-  p.username,
-  p.avatar_url,
-  coalesce(sum(fs.duration_seconds), 0) / 60 as total_minutes
-from public.profiles p
-left join public.focus_sessions fs
-  on fs.user_id = p.id
- and fs.mode = 'focus'
- and fs.inserted_at >= date_trunc('week', now())
-group by p.id, p.username, p.avatar_url;
-```
-
-#### 3B. Helper functions, triggers, and RLS
-
-```sql
-create or replace function public.is_list_owner(lid uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.todo_lists
-    where id = lid and owner_id = auth.uid()
-  );
-$$;
-
-create or replace function public.is_list_member(lid uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.todo_list_members
-    where list_id = lid and user_id = auth.uid()
-  );
-$$;
-
-create or replace function public.can_edit_list(lid uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.todo_list_members
-    where list_id = lid
-      and user_id = auth.uid()
-      and role in ('owner', 'editor')
-  );
-$$;
-
-create or replace function public.set_profiles_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_profiles_updated_at on public.profiles;
-create trigger trg_profiles_updated_at
-before update on public.profiles
-for each row
-execute function public.set_profiles_updated_at();
-
-create or replace function public.set_planned_focus_blocks_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_planned_focus_blocks_updated_at on public.planned_focus_blocks;
-create trigger trg_planned_focus_blocks_updated_at
-before update on public.planned_focus_blocks
-for each row
-execute function public.set_planned_focus_blocks_updated_at();
-
-alter table public.profiles enable row level security;
-alter table public.todo_lists enable row level security;
-alter table public.todo_list_members enable row level security;
-alter table public.todos enable row level security;
-alter table public.focus_sessions enable row level security;
-alter table public.todo_images enable row level security;
 alter table public.planned_focus_blocks enable row level security;
-
-drop policy if exists "Anyone can view profiles" on public.profiles;
-create policy "Anyone can view profiles"
-on public.profiles
-for select
-using (true);
-
-drop policy if exists "Users can insert their own profile" on public.profiles;
-create policy "Users can insert their own profile"
-on public.profiles
-for insert
-to authenticated
-with check (auth.uid() = id);
-
-drop policy if exists "Users can update their own profile" on public.profiles;
-create policy "Users can update their own profile"
-on public.profiles
-for update
-to authenticated
-using (auth.uid() = id)
-with check (auth.uid() = id);
-
-drop policy if exists "Members can view lists" on public.todo_lists;
-create policy "Members can view lists"
-on public.todo_lists
-for select
-to authenticated
-using (public.is_list_member(id));
-
-drop policy if exists "Authenticated users can create lists" on public.todo_lists;
-create policy "Authenticated users can create lists"
-on public.todo_lists
-for insert
-to authenticated
-with check (auth.uid() = owner_id);
-
-drop policy if exists "Owners can update lists" on public.todo_lists;
-create policy "Owners can update lists"
-on public.todo_lists
-for update
-to authenticated
-using (public.is_list_owner(id));
-
-drop policy if exists "Owners can delete lists" on public.todo_lists;
-create policy "Owners can delete lists"
-on public.todo_lists
-for delete
-to authenticated
-using (public.is_list_owner(id));
-
-drop policy if exists "Members can view list members" on public.todo_list_members;
-create policy "Members can view list members"
-on public.todo_list_members
-for select
-to authenticated
-using (public.is_list_member(list_id));
-
-drop policy if exists "Owners can manage list members" on public.todo_list_members;
-create policy "Owners can manage list members"
-on public.todo_list_members
-for all
-to authenticated
-using (public.is_list_owner(list_id))
-with check (public.is_list_owner(list_id));
-
-drop policy if exists "Users can view todos in their lists" on public.todos;
-create policy "Users can view todos in their lists"
-on public.todos
-for select
-to authenticated
-using (public.is_list_member(list_id));
-
-drop policy if exists "Editors can insert todos" on public.todos;
-create policy "Editors can insert todos"
-on public.todos
-for insert
-to authenticated
-with check (public.can_edit_list(list_id));
-
-drop policy if exists "Editors can update todos" on public.todos;
-create policy "Editors can update todos"
-on public.todos
-for update
-to authenticated
-using (public.can_edit_list(list_id))
-with check (public.can_edit_list(list_id));
-
-drop policy if exists "Editors can delete todos" on public.todos;
-create policy "Editors can delete todos"
-on public.todos
-for delete
-to authenticated
-using (public.can_edit_list(list_id));
-
-drop policy if exists "Users can view their own focus sessions" on public.focus_sessions;
-create policy "Users can view their own focus sessions"
-on public.focus_sessions
-for select
-to authenticated
-using (auth.uid() = user_id);
-
-drop policy if exists "Users can insert their own focus sessions" on public.focus_sessions;
-create policy "Users can insert their own focus sessions"
-on public.focus_sessions
-for insert
-to authenticated
-with check (auth.uid() = user_id);
-
-drop policy if exists "Users can view images in their lists" on public.todo_images;
-create policy "Users can view images in their lists"
-on public.todo_images
-for select
-to authenticated
-using (public.is_list_member(list_id));
-
-drop policy if exists "Editors can insert images" on public.todo_images;
-create policy "Editors can insert images"
-on public.todo_images
-for insert
-to authenticated
-with check (public.can_edit_list(list_id));
-
-drop policy if exists "Editors can delete images" on public.todo_images;
-create policy "Editors can delete images"
-on public.todo_images
-for delete
-to authenticated
-using (public.can_edit_list(list_id));
-
-drop policy if exists "Users can view own planned focus blocks" on public.planned_focus_blocks;
-create policy "Users can view own planned focus blocks"
-on public.planned_focus_blocks
-for select
-to authenticated
-using (auth.uid() = user_id);
-
-drop policy if exists "Users can insert own planned focus blocks" on public.planned_focus_blocks;
-create policy "Users can insert own planned focus blocks"
-on public.planned_focus_blocks
-for insert
-to authenticated
-with check (
-  auth.uid() = user_id
-  and public.is_list_member(list_id)
-);
-
-drop policy if exists "Users can update own planned focus blocks" on public.planned_focus_blocks;
-create policy "Users can update own planned focus blocks"
-on public.planned_focus_blocks
-for update
-to authenticated
-using (auth.uid() = user_id)
-with check (
-  auth.uid() = user_id
-  and public.is_list_member(list_id)
-);
-
-drop policy if exists "Users can delete own planned focus blocks" on public.planned_focus_blocks;
-create policy "Users can delete own planned focus blocks"
-on public.planned_focus_blocks
-for delete
-to authenticated
-using (auth.uid() = user_id);
 ```
 
-#### 3C. Apply checked-in migrations
-
-Run these in order after the core schema exists:
-
-1. `supabase/migrations/20260306_create_list_with_owner.sql`
-2. `supabase/migrations/20260307_settings_profile_avatar_security.sql`
-3. `supabase/migrations/20260319_planning_hub_v1.sql`
-4. `supabase/migrations/20260320_execution_first_redesign_metadata.sql`
-5. `supabase/migrations/20260322_attachment_metadata.sql`
-6. `supabase/migrations/20260403_baseline_indexes.sql`
-7. `supabase/migrations/20260409_todo_steps_v1.sql`
-8. `supabase/migrations/20260410_project_sections_v1.sql`
-
-If you use the Supabase CLI:
-
-```bash
-supabase db push
-```
-
-#### 3D. Realtime
+#### 3) Profile avatars bucket + policies
 
 ```sql
-alter publication supabase_realtime set (publish = 'insert, update, delete');
+insert into storage.buckets (id, name, public)
+values ('profile-avatars', 'profile-avatars', true)
+on conflict (id) do update set public = excluded.public;
 
-do $$
-begin
-  alter publication supabase_realtime add table public.todos;
-exception when duplicate_object then null;
-end;
-$$;
+create policy "Public can view profile avatars"
+on storage.objects
+for select
+using (bucket_id = 'profile-avatars');
 
-do $$
-begin
-  alter publication supabase_realtime add table public.todo_images;
-exception when duplicate_object then null;
-end;
-$$;
-
-do $$
-begin
-  alter publication supabase_realtime add table public.focus_sessions;
-exception when duplicate_object then null;
-end;
-$$;
-
-do $$
-begin
-  alter publication supabase_realtime add table public.planned_focus_blocks;
-exception when duplicate_object then null;
-end;
-$$;
-
-alter table public.todos replica identity full;
-alter table public.todo_images replica identity full;
-alter table public.focus_sessions replica identity full;
-alter table public.planned_focus_blocks replica identity full;
+create policy "Users can upload own profile avatars"
+on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'profile-avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
 ```
 
-### 4. Storage buckets
+#### 4) Task attachments bucket (`todo-images`) expected policy shape
 
-Create two public buckets:
+The app uploads attachment paths as:
 
-- `todo-images` (task attachments)
-- `profile-avatars`
+- `${userId}/${taskId}/${uuid}-${filename}`
 
-Recommended storage policies:
+Create bucket (if missing):
 
-- `todo-images`
-  - `select`: list members can view attachments in accessible lists
-  - `insert` / `delete`: editors can manage attachments in lists they can edit
-- `profile-avatars`
-  - `select`: public read
-  - `insert` / `delete`: authenticated users can only manage objects in their own top-level folder
+```sql
+insert into storage.buckets (id, name, public)
+values ('todo-images', 'todo-images', true)
+on conflict (id) do update set public = excluded.public;
+```
 
-The checked-in `20260307_settings_profile_avatar_security.sql` migration already creates the `profile-avatars` bucket policies.
-The checked-in migration list above already includes `20260322_attachment_metadata.sql`, which persists original filenames, MIME types, and file sizes for task attachments.
+Recommended policy pattern:
 
-## Smart View Rules
+```sql
+create policy "Public can view todo images"
+on storage.objects
+for select
+using (bucket_id = 'todo-images');
 
-- `Today`: incomplete overdue tasks and incomplete tasks due today
-- `Upcoming`: incomplete tasks due after today, sorted soonest first
-- `Inbox`: incomplete tasks with no due date and no planned focus block
-- Internal key `done`: surfaced to users as `Completed` or `Completed Tasks`, sorted by `completed_at` descending
+create policy "Users can upload own todo images"
+on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'todo-images'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
 
-## Current Database Notes
+create policy "Users can delete own todo images"
+on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'todo-images'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+```
 
-- `todo_lists.color_token` and `todo_lists.icon_token` drive project presentation
-- `todo_sections` groups tasks inside project workspaces
-- `todos.section_id` links a task to an optional project section
-- `todo_steps` stores checklist-style task steps
-- `todos.estimated_minutes` supports task duration, quick add parsing, planning, and next-task selection
-- `todos.completed_at` is used for correct completed-task ordering
-- `todo_images` stores mixed task attachments and supports `original_name`, `mime_type`, and `size_bytes`
-- `profiles.daily_focus_goal_minutes` powers Today, Calendar, and Focus goal progress
-- `planned_focus_blocks.todo_id` is optional, so a planned block can exist without a linked task
-- `20260403_baseline_indexes.sql` adds baseline indexes for common foreign-key and high-frequency query paths across `todo_lists`, `todo_list_members`, `todos`, `focus_sessions`, `todo_images`, and `planned_focus_blocks`
+### D. Migration map (what each group adds)
 
-## Observability And Ops
+| Migration | Purpose | Key areas touched |
+| :--- | :--- | :--- |
+| `20260306_create_list_with_owner.sql` | Adds atomic list creation RPC used by the client. | `create_list_with_owner`, `todo_lists`, `todo_list_members` |
+| `20260307_settings_profile_avatar_security.sql` | Hardens profile and avatar security model. | `profiles` columns/RLS/policies, `profile-avatars` bucket + `storage.objects` policies |
+| `20260319_planning_hub_v1.sql` | Introduces planning hub foundation. | `profiles.daily_focus_goal_minutes`, `planned_focus_blocks`, RLS/realtime |
+| `20260320_execution_first_redesign_metadata.sql` | Adds execution-focused metadata fields. | `todo_lists.color_token/icon_token`, `todos.estimated_minutes/completed_at` |
+| `20260322_attachment_metadata.sql` | Adds attachment metadata support. | `todo_images.original_name/mime_type/size_bytes` |
+| `20260403_baseline_indexes.sql` | Adds baseline performance indexes. | indexes on `todo_lists`, `todo_list_members`, `todos`, planning/query paths |
+| `20260409_todo_steps_v1.sql` | Adds checklist-style task steps. | `todo_steps`, updated_at trigger, RLS/realtime |
+| `20260410_deadline_timezone_planning_foundation.sql` | Splits deadline semantics and adds timezone foundation. | `profiles.timezone`, `todos.deadline_on/deadline_at`, deadline indexes/constraints |
+| `20260410_dedupe_focus_sessions.sql` | Removes near-duplicate focus sessions. | cleanup query on `focus_sessions` |
+| `20260410_project_sections_v1.sql` | Adds project sections and section assignment. | `todo_sections`, `todos.section_id`, RLS/realtime |
+| `20260410_user_bootstrap_inbox.sql` | Auto-bootstraps user profile + Inbox. | bootstrap function/trigger logic, `profiles`, `todo_lists`, `todo_list_members` |
+| `20260411_focus_session_task_attribution_v1.sql` | Links focus sessions to task/planned block context. | `focus_sessions.todo_id`, `focus_sessions.planned_block_id` FKs |
+| `20260411_planner_saved_filters_v1.sql` | Adds saved planner filters. | `planner_saved_filters`, constraints, RLS |
+| `20260411_task_labels_v1.sql` | Adds task labels and links. | `task_labels`, `todo_label_links`, triggers/indexes/RLS |
+| `20260411_task_recurrence_v1.sql` | Adds recurring task rules. | `todos.recurrence_rule` + validation/index |
+| `20260411_task_reminders_v1.sql` | Adds reminders on tasks. | `todos.reminder_offset_minutes`, `todos.reminder_at`, constraint/index |
+| `20260411_task_saved_views_v1.sql` | Adds saved task view presets. | `task_saved_views`, filter constraints, indexes, RLS |
+| `20260412_profile_compact_mode_v1.sql` | Adds compact-mode preference. | `profiles.is_compact_mode` |
+| `20260412_profile_planner_preferences_v1.sql` | Adds planner preference fields and guards. | `profiles.default_block_minutes/week_starts_on/planner_day_*` + constraints |
+| `20260412_profile_shell_preferences_v1.sql` | Adds shell appearance/order preferences. | `profiles.accent_token/project_order_ids` + constraint |
+| `20260412_task_collaboration_foundation_v1.sql` | Adds assignee and stable ordering basics. | `todos.assignee_user_id`, `todos.position`, ordering backfill/constraint |
+| `20260412_todo_activity_events_v1.sql` | Adds collaboration activity event stream. | `todo_activity_events`, validation trigger, RLS/realtime |
+| `20260412_todo_comments_v1.sql` | Adds task comments. | `todo_comments`, triggers, validation, RLS/realtime |
+| `20260412_weekly_commitments_v1.sql` | Adds community weekly commitments. | `weekly_commitments`, constraints/index, RLS/realtime |
 
-- Sentry is integrated through Next.js instrumentation, server and edge config, and the global app error boundary for runtime error tracking. The setup was verified successfully.
-- Vercel Speed Insights is mounted in the root app layout for frontend performance and page-load monitoring.
-- PostHog is initialized client-side for product analytics. Capture was verified locally and in production, but privacy-heavy browsers or blockers may suppress events.
-- Supabase Query Performance was reviewed, but query logging and slow-query verification are still deferred and should not be treated as a completed capability yet.
-- Supavisor and connection pooling are intentionally not used in the current architecture because the app uses `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, not a direct Postgres connection string. Revisit this only if direct server-side database access is introduced later through `DATABASE_URL`, Prisma, Drizzle, `pg`, or similar tooling.
+### E. Post-setup sanity checks
+
+After migrations and bucket setup:
+
+1. Sign in and confirm your profile row is created.
+2. Create a project and task.
+3. Add/edit a planned focus block.
+4. Upload an attachment to verify `todo-images` permissions.
+5. Upload an avatar to verify `profile-avatars` permissions.
+
+## Data Model Notes
+
+Key tables and entities:
+
+- `profiles`: identity + synced preferences
+- `todo_lists` / `todo_list_members`: projects and membership
+- `todos`: task core model
+- `todo_sections`: project sections
+- `task_labels` + `todo_label_links`: labels
+- `planned_focus_blocks`: planner blocks
+- `focus_sessions`: execution sessions
+- `todo_comments`: task discussion
+- `weekly_commitments`: community commitments
+
+Deadline semantics:
+
+- legacy `due_date` (backward compatibility)
+- `deadline_on` for date-only deadlines
+- `deadline_at` for timed deadlines
 
 ## Verification
 
+Run before shipping:
+
 ```bash
-npx tsc --noEmit
+npm run typecheck
 npm run lint
+npm run test
+npm run build
+```
+
+If needed in PowerShell environments:
+
+```bash
 npm.cmd run build
 ```
+
+## Additional Docs
+
+- Architecture: `system_architecture.md`
+- Distribution strategy: `distribution-plan.md`
+- Backlog: `todo.md`
+- Meeting brief: `meeting_prep.md`
+- LinkedIn draft: `linkedin_post.md`

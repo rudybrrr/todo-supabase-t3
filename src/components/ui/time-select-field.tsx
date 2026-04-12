@@ -10,6 +10,10 @@ interface TimeSelectFieldProps {
     value: string;
     onChange: (value: string) => void;
     stepMinutes?: number;
+    allowClear?: boolean;
+    clearLabel?: string;
+    className?: string;
+    placeholder?: string;
 }
 
 function buildTimeOptions(stepMinutes: number) {
@@ -35,15 +39,25 @@ export function TimeSelectField({
     value,
     onChange,
     stepMinutes = 15,
+    allowClear = false,
+    clearLabel = "No time",
+    className,
+    placeholder = "Choose time",
 }: TimeSelectFieldProps) {
     const options = useMemo(() => buildTimeOptions(stepMinutes), [stepMinutes]);
+    const selectValue = value || "none";
 
     return (
-        <Select value={value} onValueChange={onChange}>
-            <SelectTrigger id={id} className="font-mono">
-                <SelectValue placeholder="Choose time" />
+        <Select value={selectValue} onValueChange={(nextValue) => onChange(nextValue === "none" ? "" : nextValue)}>
+            <SelectTrigger id={id} className={className ?? "font-mono"}>
+                <SelectValue placeholder={placeholder} />
             </SelectTrigger>
             <SelectContent className="max-h-80">
+                {allowClear ? (
+                    <SelectItem value="none">
+                        {clearLabel}
+                    </SelectItem>
+                ) : null}
                 {options.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                         {option.label}

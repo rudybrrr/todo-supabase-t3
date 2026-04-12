@@ -3,7 +3,6 @@
 import {
     BarChart3,
     CalendarRange,
-    Circle,
     CheckSquare2,
     ChevronLeft,
     ChevronRight,
@@ -11,12 +10,9 @@ import {
     Inbox,
     LogOut,
     Menu,
-    Moon,
-    MoonStar,
     Plus,
     Search,
     Settings,
-    Sun,
     Timer,
     Users,
 } from "lucide-react";
@@ -24,13 +20,14 @@ import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-p
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 import { ProjectDialog } from "~/components/project-dialog";
 import { QuickAddDialog } from "~/components/quick-add-dialog";
+import { SettingsDialog } from "~/components/settings-dialog";
 import { WorkspaceDataProvider, useTaskDataset } from "~/hooks/use-task-dataset";
 import { useData } from "~/components/data-provider";
+import { useCompactMode } from "~/components/compact-mode-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog";
@@ -38,9 +35,6 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuRadioGroup,
-    DropdownMenuRadioItem,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
@@ -51,11 +45,11 @@ import { getProjectColorClasses, getProjectIcon } from "~/lib/project-appearance
 import { formatTaskReminderScheduledLabel, getReminderOffsetLabel, hasTaskReminder } from "~/lib/task-reminders";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { formatTaskDueLabel, taskMatchesSearch } from "~/lib/task-views";
-import { resolveThemeSelection } from "~/lib/theme-options";
 import { cn } from "~/lib/utils";
 
 interface ShellActionsContextValue {
     openQuickAdd: (defaults?: { listId?: string | null; sectionId?: string | null; title?: string; dueDate?: string | null }) => void;
+    openSettings: (section?: "account" | "appearance" | "shortcuts") => void;
     enterPrimaryActivity: (activityId: string) => void;
     registerPrimaryActivityReset: (activityId: string, reset: () => void) => () => void;
 }
@@ -74,6 +68,10 @@ const PRIMARY_ITEMS = [
     { href: "/focus", label: "Focus", icon: Timer },
 ] as const;
 
+const SECONDARY_ITEMS = [
+    { href: "/progress", label: "Progress", icon: BarChart3 },
+] as const;
+
 const SMART_VIEW_ITEMS = [
     { href: "/tasks?view=upcoming", value: "upcoming", label: "Upcoming", icon: CalendarRange },
     { href: "/tasks?view=inbox", value: "inbox", label: "No Due Date", icon: Inbox },
@@ -84,11 +82,21 @@ const GLOBAL_SEARCH_VIEW_ITEMS = [
     { href: "/tasks", label: "Today", icon: CheckSquare2, keywords: ["tasks", "focus"] },
     { href: "/calendar", label: "Calendar", icon: CalendarRange, keywords: ["plan"] },
     { href: "/focus", label: "Focus", icon: Timer, keywords: ["pomodoro", "timer", "study"] },
+    { href: "/progress", label: "Progress", icon: BarChart3, keywords: ["analytics", "review", "stats"] },
     { href: "/projects", label: "Projects", icon: FolderKanban, keywords: ["workspace"] },
+    { href: "/community", label: "Community", icon: Users, keywords: ["leaderboard", "friends", "feed"] },
     { href: "/tasks?view=upcoming", label: "Upcoming", icon: CalendarRange, keywords: ["schedule"] },
     { href: "/tasks?view=inbox", label: "No Due Date", icon: Inbox, keywords: ["inbox"] },
     { href: "/tasks?view=done", label: "Completed", icon: CheckSquare2, keywords: ["done"] },
 ] as const;
+
+const COMMAND_ACTION_ITEMS = [
+    { id: "quick-add", label: "Quick add task", icon: Plus, keywords: ["new", "capture", "task"] },
+    { id: "create-project", label: "Create project", icon: FolderKanban, keywords: ["new", "workspace", "project"] },
+    { id: "open-settings", label: "Open settings", icon: Settings, keywords: ["preferences", "account", "appearance"] },
+] as const;
+
+type ShellCommandActionId = (typeof COMMAND_ACTION_ITEMS)[number]["id"];
 
 function getActiveSmartView(pathname: string, rawView: string | null) {
     if (pathname !== "/tasks") return null;
@@ -125,9 +133,9 @@ function AppShellLayout({ children }: { children: ReactNode }) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { profile, userId } = useData();
+    const { isCompact } = useCompactMode();
     const { lists, orderedProjectSummaries, saveProjectOrder, smartViewCounts, tasks } = useTaskDataset();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-    const { resolvedTheme, setTheme, theme } = useTheme();
     const [mounted, setMounted] = useState(false);
     const [desktopCollapsed, setDesktopCollapsed] = useState(false);
     const [desktopPreviewOpen, setDesktopPreviewOpen] = useState(false);
@@ -137,6 +145,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
     const [quickAddOpen, setQuickAddOpen] = useState(false);
     const [quickAddDefaults, setQuickAddDefaults] = useState<{ listId?: string | null; sectionId?: string | null; title?: string; dueDate?: string | null } | null>(null);
     const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [settingsSection, setSettingsSection] = useState<"account" | "appearance" | "shortcuts">("account");
     const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
     const [globalSearchQuery, setGlobalSearchQuery] = useState("");
     const suppressProjectClickRef = useRef(false);
@@ -150,8 +160,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
     const activeSmartView = getActiveSmartView(pathname, searchParams.get("view"));
     const activeProjectId = pathname.startsWith("/projects/") ? pathname.split("/")[2] ?? null : null;
+    const settingsRequestedByUrl = searchParams.get("settings") === "true";
     const avatarUrl = getPublicAvatarUrl(supabase, profile?.avatar_url);
-    const activeTheme = resolveThemeSelection(theme, resolvedTheme);
     const normalizedGlobalSearchQuery = globalSearchQuery.trim().toLowerCase();
     const projectNameById = useMemo(
         () => new Map(lists.map((list) => [list.id, list.name])),
@@ -164,6 +174,14 @@ function AppShellLayout({ children }: { children: ReactNode }) {
             const haystack = [item.label, ...(item.keywords ?? [])].join(" ").toLowerCase();
             return haystack.includes(normalizedGlobalSearchQuery);
         }).slice(0, normalizedGlobalSearchQuery ? 6 : 5);
+    }, [normalizedGlobalSearchQuery]);
+
+    const matchingActionResults = useMemo(() => {
+        return COMMAND_ACTION_ITEMS.filter((item) => {
+            if (!normalizedGlobalSearchQuery) return true;
+            const haystack = [item.label, ...(item.keywords ?? [])].join(" ").toLowerCase();
+            return haystack.includes(normalizedGlobalSearchQuery);
+        }).slice(0, normalizedGlobalSearchQuery ? 7 : 5);
     }, [normalizedGlobalSearchQuery]);
 
     const matchingProjectResults = useMemo(() => {
@@ -203,7 +221,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
             .slice(0, 8);
     }, [normalizedGlobalSearchQuery, projectNameById, tasks]);
 
-    const hasGlobalSearchResults = matchingViewResults.length > 0 || matchingProjectResults.length > 0 || matchingTaskResults.length > 0;
+    const hasGlobalSearchResults = matchingActionResults.length > 0 || matchingViewResults.length > 0 || matchingProjectResults.length > 0 || matchingTaskResults.length > 0;
 
     useEffect(() => {
         setMounted(true);
@@ -338,6 +356,9 @@ function AppShellLayout({ children }: { children: ReactNode }) {
         if (except !== "shell:project-dialog") {
             setProjectDialogOpen(false);
         }
+        if (except !== "shell:settings") {
+            setSettingsOpen(false);
+        }
 
         for (const [activityId, reset] of primaryActivityResetsRef.current) {
             if (activityId === except) continue;
@@ -380,11 +401,51 @@ function AppShellLayout({ children }: { children: ReactNode }) {
         setGlobalSearchOpen(open);
     }, [enterPrimaryActivity]);
 
+    const clearSettingsUrlParams = useCallback(() => {
+        if (!settingsRequestedByUrl) return;
+
+        const nextSearchParams = new URLSearchParams(searchParams.toString());
+        nextSearchParams.delete("settings");
+        nextSearchParams.delete("section");
+
+        const nextSearch = nextSearchParams.toString();
+        router.replace(nextSearch ? `${pathname}?${nextSearch}` : pathname, { scroll: false });
+    }, [pathname, router, searchParams, settingsRequestedByUrl]);
+
+    const openSettings = useCallback((section?: "account" | "appearance" | "shortcuts") => {
+        enterPrimaryActivity("shell:settings");
+        if (section) setSettingsSection(section);
+        setSettingsOpen(true);
+    }, [enterPrimaryActivity]);
+
+    const handleSettingsOpenChange = useCallback((open: boolean) => {
+        setSettingsOpen(open);
+
+        if (!open) {
+            clearSettingsUrlParams();
+        }
+    }, [clearSettingsUrlParams]);
+
+    useEffect(() => {
+        if (!settingsRequestedByUrl) return;
+
+        const section = searchParams.get("section");
+        if (section === "appearance" || section === "shortcuts" || section === "account") {
+            setSettingsSection(section);
+        } else {
+            setSettingsSection("account");
+        }
+
+        enterPrimaryActivity("shell:settings");
+        setSettingsOpen(true);
+    }, [enterPrimaryActivity, searchParams, settingsRequestedByUrl]);
+
     const contextValue = useMemo<ShellActionsContextValue>(() => ({
         openQuickAdd,
+        openSettings,
         enterPrimaryActivity,
         registerPrimaryActivityReset,
-    }), [enterPrimaryActivity, openQuickAdd, registerPrimaryActivityReset]);
+    }), [enterPrimaryActivity, openQuickAdd, openSettings, registerPrimaryActivityReset]);
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -484,6 +545,22 @@ function AppShellLayout({ children }: { children: ReactNode }) {
         handleGlobalSearchOpenChange(true);
     }
 
+    function handleCommandAction(actionId: ShellCommandActionId) {
+        setGlobalSearchQuery("");
+
+        switch (actionId) {
+            case "quick-add":
+                openQuickAdd();
+                return;
+            case "create-project":
+                handleProjectDialogOpenChange(true);
+                return;
+            case "open-settings":
+                openSettings();
+                return;
+        }
+    }
+
     function handleGlobalSearchNavigate(href: string) {
         setGlobalSearchQuery("");
         handleNavigate(href);
@@ -525,32 +602,10 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                     <CheckSquare2 className="h-4 w-4" />
                     Completed Tasks
                 </DropdownMenuItem>
-                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => handleNavigate("/settings")}>
+                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => openSettings()}>
                     <Settings className="h-4 w-4" />
                     Settings
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel className="px-2.5 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Theme
-                </DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={activeTheme} onValueChange={(value) => setTheme(value)}>
-                    <DropdownMenuRadioItem value="light" className="rounded-md px-2.5 py-2">
-                        <Sun className="h-4 w-4" />
-                        Light
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="dark" className="rounded-md px-2.5 py-2">
-                        <Moon className="h-4 w-4" />
-                        Dark
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="midnight" className="rounded-md px-2.5 py-2">
-                        <MoonStar className="h-4 w-4" />
-                        Midnight
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="noir" className="rounded-md px-2.5 py-2">
-                        <Circle className="h-4 w-4" />
-                        Noir
-                    </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => void handleLogout()}>
                     <LogOut className="h-4 w-4" />
@@ -667,7 +722,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                         cursor: snapshot.isDragging ? "grabbing" : "pointer",
                                     }}
                                     className={cn(
-                                        "flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent px-2.5 py-2.5 text-left text-sm font-medium transition-colors",
+                                        "flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 text-left font-medium transition-colors",
+                                        isCompact ? "py-1.5 text-[13px]" : "py-2.5 text-sm",
                                         active
                                             ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
                                             : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
@@ -844,8 +900,33 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                         onClick={() => handleNavigate(item.href)}
                                         title={collapsed ? item.label : undefined}
                                         className={cn(
-                                            "flex w-full cursor-pointer items-center rounded-md border border-transparent text-sm font-medium transition-colors",
-                                            collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : "gap-2.5 px-2.5 py-2.5",
+                                            "flex w-full cursor-pointer items-center rounded-md border border-transparent font-medium transition-colors",
+                                            collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : cn("gap-2.5 px-2.5", isCompact ? "py-1.5 text-[13px]" : "py-2.5 text-sm"),
+                                            active
+                                                ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
+                                                : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                                        )}
+                                    >
+                                        <item.icon className="h-4.5 w-4.5 shrink-0" />
+                                        {collapsed ? <span className="sr-only">{item.label}</span> : <span>{item.label}</span>}
+                                    </button>
+                                );
+                            })}
+                        </nav>
+
+                        <nav className="space-y-1">
+                            {SECONDARY_ITEMS.map((item) => {
+                                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+                                return (
+                                    <button
+                                        key={item.href}
+                                        type="button"
+                                        onClick={() => handleNavigate(item.href)}
+                                        title={collapsed ? item.label : undefined}
+                                        className={cn(
+                                            "flex w-full cursor-pointer items-center rounded-md border border-transparent font-medium transition-colors",
+                                            collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : cn("gap-2.5 px-2.5", isCompact ? "py-1.5 text-[13px]" : "py-2.5 text-sm"),
                                             active
                                                 ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
                                                 : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
@@ -873,7 +954,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                 type="button"
                                                 onClick={() => handleNavigate(item.href)}
                                                 className={cn(
-                                                    "flex w-full cursor-pointer items-center justify-between rounded-md border border-transparent px-2.5 py-2.5 text-sm font-medium transition-colors",
+                                                    "flex w-full cursor-pointer items-center justify-between rounded-md border border-transparent px-2.5 font-medium transition-colors",
+                                                    isCompact ? "py-1.5 text-[13px]" : "py-2.5 text-sm",
                                                     active
                                                         ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
                                                         : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
@@ -1102,9 +1184,9 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
             <Dialog open={globalSearchOpen} onOpenChange={handleGlobalSearchOpenChange}>
                 <DialogContent showCloseButton={false} className="max-w-xl overflow-hidden border-border/70 p-0">
-                    <DialogTitle className="sr-only">Global search</DialogTitle>
+                    <DialogTitle className="sr-only">Command palette</DialogTitle>
                     <DialogDescription className="sr-only">
-                        Search destinations, projects, and tasks across your workspace.
+                        Search destinations, projects, and tasks across your workspace, or run quick actions.
                     </DialogDescription>
 
                     <div className="border-b border-border/70 px-4 py-3.5">
@@ -1114,7 +1196,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 autoFocus
                                 value={globalSearchQuery}
                                 onChange={(event) => setGlobalSearchQuery(event.target.value)}
-                                placeholder="Search"
+                                placeholder="Search or run a command"
                                 className="h-10 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0"
                             />
                         </div>
@@ -1123,13 +1205,34 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                     <div className="max-h-[70vh] overflow-y-auto p-2.5">
                         {!hasGlobalSearchResults ? (
                             <div className="rounded-lg border border-dashed border-border px-4 py-7 text-center text-sm text-muted-foreground">
-                                No matches for &quot;{globalSearchQuery.trim()}&quot;.
+                                No commands or results for &quot;{globalSearchQuery.trim()}&quot;.
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                {matchingViewResults.length > 0 ? (
+                                {matchingActionResults.length > 0 ? (
                                     <div className="space-y-1">
                                         <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                            Actions
+                                        </p>
+                                        {matchingActionResults.map((item) => (
+                                            <button
+                                                key={item.id}
+                                                type="button"
+                                                onClick={() => handleCommandAction(item.id)}
+                                                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/70"
+                                            >
+                                                <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+                                                    <item.icon className="h-4 w-4" />
+                                                </span>
+                                                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{item.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
+
+                                {matchingViewResults.length > 0 ? (
+                                    <div className={cn("space-y-1", matchingActionResults.length > 0 && "border-t border-border/60 pt-3")}>
+                                        <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                                             Navigate
                                         </p>
                                         {matchingViewResults.map((item) => (
@@ -1226,6 +1329,14 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                 onOpenChange={setQuickAddOpen}
             />
             <ProjectDialog open={projectDialogOpen} onOpenChange={handleProjectDialogOpenChange} />
+            {userId && (
+                <SettingsDialog 
+                    open={settingsOpen} 
+                    onOpenChange={handleSettingsOpenChange} 
+                    userId={userId} 
+                    initialSection={settingsSection}
+                />
+            )}
         </div>
     );
 

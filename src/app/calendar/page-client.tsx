@@ -21,6 +21,8 @@ import {
     findNextPlannerSlot,
     findPlannerSlotForDate,
     getPlannerDateFromMinutes,
+    getPlannerDefaultStartMinutes,
+    getPlannerPreferences,
     getPlannerRangeLabel,
     getPlannerVisibleDays,
     PLANNED_BLOCK_FIELDS,
@@ -28,6 +30,7 @@ import {
     type PlannerView,
 } from "~/lib/planning";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
+import { buildTaskFocusSummaryMap, getSuggestedTaskBlockMinutes } from "~/lib/task-estimates";
 import {
     applyPlannerTaskFilters,
     arePlannerFilterScopesEqual,
@@ -52,15 +55,26 @@ import { PlannerSidebar } from "./_components/planner-sidebar";
 import { PlannerToolbar } from "./_components/planner-toolbar";
 import type { BlockDialogPrefillOptions, BlockFormState, PlannerDaySummary } from "./_components/planner-types";
 
-function createBlockForm(listId: string, date = toDateKey(new Date())): BlockFormState {
+function createBlockForm(listId: string, date = toDateKey(new Date()), plannerPreferences = getPlannerPreferences()): BlockFormState {
     return {
         id: null,
         title: "",
         listId,
         todoId: null,
         date,
-        startTime: "09:00",
-        durationMinutes: "60",
+        startTime: format(
+            getPlannerDateFromMinutes(
+                dateKeyToDate(date),
+                getPlannerDefaultStartMinutes(
+                    plannerPreferences.dayStartHour,
+                    plannerPreferences.dayEndHour,
+                    plannerPreferences.defaultBlockStartHour,
+                ),
+                plannerPreferences.dayStartHour,
+            ),
+            "HH:mm",
+        ),
+        durationMinutes: String(plannerPreferences.defaultBlockMinutes),
     };
 }
 
@@ -191,10 +205,11 @@ function CalendarContent() {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const { profile, userId } = useData();
+    const { focusSessions, profile, userId } = useData();
     const { lists, tasks, plannedBlocks, todayFocusMinutes, loading, removePlannedBlock, upsertPlannedBlock } = useTaskDataset();
     const { handleModeChange, setCurrentBlockId, setCurrentListId, setCurrentTaskId, setIsActive } = useFocus();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+    const plannerPreferences = useMemo(() => getPlannerPreferences(profile), [profile]);
 
     const searchListId = searchParams.get("listId");
     const searchBlockId = searchParams.get("blockId");
@@ -216,7 +231,7 @@ function CalendarContent() {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const [savingFilter, setSavingFilter] = useState(false);
-    const [form, setForm] = useState<BlockFormState>(() => createBlockForm(""));
+    const [form, setForm] = useState<BlockFormState>(() => createBlockForm("", undefined, getPlannerPreferences()));
     const [now, setNow] = useState(() => new Date());
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [isWideSidebar, setIsWideSidebar] = useState(() => {
@@ -256,6 +271,44 @@ function CalendarContent() {
     useEffect(() => {
         plannedBlocksRef.current = plannedBlocks;
     }, [plannedBlocks]);
+
+    const taskFocusSummaryById = useMemo(
+        () => buildTaskFocusSummaryMap(focusSessions),
+        [focusSessions],
+    );
+    const getTaskDefaultDuration = useCallback((task: TaskDatasetRecord, options?: { durationMinutes?: number }) => {
+        return options?.durationMinutes ?? getSuggestedTaskBlockMinutes(
+            task,
+            taskFocusSummaryById.get(task.id),
+            { fallbackMinutes: plannerPreferences.defaultBlockMinutes },
+        );
+    }, [plannerPreferences.defaultBlockMinutes, taskFocusSummaryById]);
+
+    const getDefaultPlannerStartTime = useCallback((date: Date, durationMinutes: number) => {
+        const slot = findPlannerSlotForDate(plannedBlocksRef.current, date, durationMinutes, {
+            after: isSameDay(date, new Date()) ? new Date() : undefined,
+            dayEndHour: plannerPreferences.dayEndHour,
+            dayStartHour: plannerPreferences.dayStartHour,
+            defaultBlockStartHour: plannerPreferences.defaultBlockStartHour,
+        });
+
+        if (slot) {
+            return format(getPlannerDateFromMinutes(slot.date, slot.startMinutes, plannerPreferences.dayStartHour), "HH:mm");
+        }
+
+        return format(
+            getPlannerDateFromMinutes(
+                date,
+                getPlannerDefaultStartMinutes(
+                    plannerPreferences.dayStartHour,
+                    plannerPreferences.dayEndHour,
+                    plannerPreferences.defaultBlockStartHour,
+                ),
+                plannerPreferences.dayStartHour,
+            ),
+            "HH:mm",
+        );
+    }, [plannerPreferences.dayEndHour, plannerPreferences.dayStartHour, plannerPreferences.defaultBlockStartHour]);
 
     useEffect(() => {
         const mediaQuery = window.matchMedia("(min-width: 1280px)");
@@ -401,15 +454,15 @@ function CalendarContent() {
             listId: task.list_id,
             todoId: task.id,
             date: toDateKey(taskDate),
-            startTime: searchStartTime ?? "09:00",
-            durationMinutes: String(requestedDuration ?? task.remaining_estimated_minutes ?? task.estimated_minutes ?? 60),
+            startTime: searchStartTime ?? getDefaultPlannerStartTime(taskDate, requestedDuration ?? getTaskDefaultDuration(task)),
+            durationMinutes: String(requestedDuration ?? getTaskDefaultDuration(task)),
         });
         setSelectedDate(taskDate);
         setAnchorDate(taskDate);
         setSelectedListId(task.list_id);
         setDialogOpen(true);
         clearDeepLinkParams(["taskId", "date", "duration", "startTime"]);
-    }, [clearDeepLinkParams, profile?.timezone, searchBlockId, searchDate, searchDuration, searchListId, searchStartTime, searchTaskId, searchView, tasks]);
+    }, [clearDeepLinkParams, getDefaultPlannerStartTime, getTaskDefaultDuration, profile?.timezone, searchBlockId, searchDate, searchDuration, searchListId, searchStartTime, searchTaskId, searchView, tasks]);
 
     const currentFilterState = useMemo<PlannerFilterState>(() => createPlannerFilterState({
         listId: selectedListId,
@@ -473,8 +526,8 @@ function CalendarContent() {
     }, [filteredBlocks, filteredTasks, profile?.timezone]);
 
     const plannerDays = useMemo(
-        () => view === "month" ? [] : getPlannerVisibleDays(view, anchorDate, selectedDate),
-        [anchorDate, selectedDate, view],
+        () => view === "month" ? [] : getPlannerVisibleDays(view, anchorDate, selectedDate, plannerPreferences.weekStartsOn),
+        [anchorDate, plannerPreferences.weekStartsOn, selectedDate, view],
     );
     const dailyGoal = profile?.daily_focus_goal_minutes ?? 120;
     const focusProgress = clamp((todayFocusMinutes / Math.max(dailyGoal, 1)) * 100, 0, 100);
@@ -497,18 +550,21 @@ function CalendarContent() {
     const plannerBlockLayoutsByKey = useMemo(() => {
         const byKey = new Map<string, ReturnType<typeof buildTimedBlockLayouts>>();
         plannerDays.forEach((day) => {
-            byKey.set(toDateKey(day), buildTimedBlockLayouts(filteredBlocks, day));
+            byKey.set(toDateKey(day), buildTimedBlockLayouts(filteredBlocks, day, {
+                dayEndHour: plannerPreferences.dayEndHour,
+                dayStartHour: plannerPreferences.dayStartHour,
+            }));
         });
         return byKey;
-    }, [filteredBlocks, plannerDays]);
-    const plannerRangeLabel = useMemo(() => getPlannerRangeLabel(view, anchorDate, selectedDate), [anchorDate, selectedDate, view]);
+    }, [filteredBlocks, plannerDays, plannerPreferences.dayEndHour, plannerPreferences.dayStartHour]);
+    const plannerRangeLabel = useMemo(
+        () => getPlannerRangeLabel(view, anchorDate, selectedDate, plannerPreferences.weekStartsOn),
+        [anchorDate, plannerPreferences.weekStartsOn, selectedDate, view],
+    );
     const selectedScopeLabel = useMemo(() => {
         if (selectedListId === "all") return "All projects";
         return listMap.get(selectedListId)?.name ?? "Project";
     }, [listMap, selectedListId]);
-    const getTaskDefaultDuration = useCallback((task: TaskDatasetRecord, options?: { durationMinutes?: number }) => {
-        return options?.durationMinutes ?? task.remaining_estimated_minutes ?? task.estimated_minutes ?? 60;
-    }, []);
     const handleSetView = useCallback((nextView: PlannerView) => {
         setView(nextView);
         if (nextView !== "month") {
@@ -673,9 +729,8 @@ function CalendarContent() {
         const date = startOfDay(options?.date ?? selectedDate);
         const listId = task?.list_id ?? (selectedListId === "all" ? lists[0]?.id ?? "" : selectedListId);
         const defaultDurationMinutes = options?.durationMinutes
-            ?? task?.remaining_estimated_minutes
-            ?? task?.estimated_minutes
-            ?? 60;
+            ?? (task ? getTaskDefaultDuration(task) : undefined)
+            ?? plannerPreferences.defaultBlockMinutes;
 
         if (options?.view) {
             setView(options.view);
@@ -690,11 +745,11 @@ function CalendarContent() {
             listId,
             todoId: task?.id ?? null,
             date: toDateKey(date),
-            startTime: options?.startTime ?? "09:00",
+            startTime: options?.startTime ?? getDefaultPlannerStartTime(date, defaultDurationMinutes),
             durationMinutes: String(defaultDurationMinutes),
         });
         setDialogOpen(true);
-    }, [lists, selectedDate, selectedListId, tasks]);
+    }, [getDefaultPlannerStartTime, getTaskDefaultDuration, lists, plannerPreferences.defaultBlockMinutes, selectedDate, selectedListId, tasks]);
 
     const editBlock = useCallback((block: PlannedFocusBlock) => {
         setForm(createBlockFormFromPlannedBlock(block));
@@ -857,11 +912,14 @@ function CalendarContent() {
             const targetDate = startOfDay(intent === "today" ? new Date() : addDays(new Date(), 1));
             const slot = findPlannerSlotForDate(plannedBlocksRef.current, targetDate, durationMinutes, {
                 after: intent === "today" ? new Date() : undefined,
+                dayEndHour: plannerPreferences.dayEndHour,
+                dayStartHour: plannerPreferences.dayStartHour,
+                defaultBlockStartHour: plannerPreferences.defaultBlockStartHour,
             });
 
             openBlockDialog(task.id, {
                 date: targetDate,
-                startTime: slot ? format(getPlannerDateFromMinutes(slot.date, slot.startMinutes), "HH:mm") : undefined,
+                startTime: slot ? format(getPlannerDateFromMinutes(slot.date, slot.startMinutes, plannerPreferences.dayStartHour), "HH:mm") : undefined,
                 durationMinutes,
                 view: "day",
             });
@@ -870,28 +928,31 @@ function CalendarContent() {
 
         const slot = findNextPlannerSlot(plannedBlocksRef.current, {
             after: new Date(),
+            dayEndHour: plannerPreferences.dayEndHour,
+            dayStartHour: plannerPreferences.dayStartHour,
+            defaultBlockStartHour: plannerPreferences.defaultBlockStartHour,
             durationMinutes,
         });
 
         openBlockDialog(task.id, {
             date: slot.date,
-            startTime: format(getPlannerDateFromMinutes(slot.date, slot.startMinutes), "HH:mm"),
+            startTime: format(getPlannerDateFromMinutes(slot.date, slot.startMinutes, plannerPreferences.dayStartHour), "HH:mm"),
             durationMinutes,
             view: "day",
         });
-    }, [getTaskDefaultDuration, openBlockDialog]);
+    }, [getTaskDefaultDuration, openBlockDialog, plannerPreferences.dayEndHour, plannerPreferences.dayStartHour, plannerPreferences.defaultBlockStartHour]);
 
     const handleCreateRange = useCallback((draft: { date: Date; endMinutes: number; startMinutes: number }) => {
         openBlockDialog(undefined, {
             date: draft.date,
-            startTime: format(getPlannerDateFromMinutes(draft.date, draft.startMinutes), "HH:mm"),
+            startTime: format(getPlannerDateFromMinutes(draft.date, draft.startMinutes, plannerPreferences.dayStartHour), "HH:mm"),
             durationMinutes: draft.endMinutes - draft.startMinutes,
         });
-    }, [openBlockDialog]);
+    }, [openBlockDialog, plannerPreferences.dayStartHour]);
 
     const handleUpdateBlockRange = useCallback((block: PlannedFocusBlock, next: { date: Date; endMinutes: number; startMinutes: number }) => {
-        const nextStart = getPlannerDateFromMinutes(next.date, next.startMinutes).toISOString();
-        const nextEnd = getPlannerDateFromMinutes(next.date, next.endMinutes).toISOString();
+        const nextStart = getPlannerDateFromMinutes(next.date, next.startMinutes, plannerPreferences.dayStartHour).toISOString();
+        const nextEnd = getPlannerDateFromMinutes(next.date, next.endMinutes, plannerPreferences.dayStartHour).toISOString();
 
         void persistBlockUpdate(block, {
             title: block.title,
@@ -903,14 +964,14 @@ function CalendarContent() {
             successMessage: "Focus block rescheduled.",
             undoSnapshot: block,
         });
-    }, [persistBlockUpdate]);
+    }, [persistBlockUpdate, plannerPreferences.dayStartHour]);
 
     async function handleSaveBlock() {
         if (!userId || !form.listId || !form.title.trim()) return;
 
         const start = combineDateAndTime(form.date, form.startTime);
         const end = new Date(start);
-        end.setMinutes(start.getMinutes() + Number.parseInt(form.durationMinutes || "60", 10));
+        end.setMinutes(start.getMinutes() + Number.parseInt(form.durationMinutes || String(plannerPreferences.defaultBlockMinutes), 10));
         const scheduledStart = start.toISOString();
         const scheduledEnd = end.toISOString();
         const normalizedTitle = form.title.trim();
@@ -1173,7 +1234,10 @@ function CalendarContent() {
                 <div>
                     <PlannerGrid
                         blockLayoutsByKey={plannerBlockLayoutsByKey}
+                        dayEndHour={plannerPreferences.dayEndHour}
+                        dayStartHour={plannerPreferences.dayStartHour}
                         days={plannerDays}
+                        defaultCreateDurationMinutes={plannerPreferences.defaultBlockMinutes}
                         now={now}
                         selectedDate={selectedDate}
                         tasksByKey={plannerTasksByKey}
@@ -1212,6 +1276,7 @@ function CalendarContent() {
                             setAnchorDate(normalizedDate);
                         }}
                         className="w-full bg-transparent p-3 sm:p-4 [--cell-size:clamp(4rem,6.2vw,5.2rem)]"
+                        weekStartsOn={plannerPreferences.weekStartsOn}
                         classNames={{
                             root: "w-full",
                             months: "w-full",

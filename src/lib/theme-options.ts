@@ -1,16 +1,16 @@
 export const APP_THEMES = [
+    { value: "system", label: "System" },
     { value: "light", label: "Light" },
     { value: "dark", label: "Dark" },
-    { value: "midnight", label: "Midnight" },
-    { value: "noir", label: "Noir" },
 ] as const;
 
 export type AppTheme = (typeof APP_THEMES)[number]["value"];
 
-export function resolveThemeSelection(theme: string | undefined, resolvedTheme: string | undefined): AppTheme {
-    if (theme === "noir") return "noir";
-    if (theme === "midnight") return "midnight";
-    if (theme === "dark") return "dark";
+export function resolveThemeSelection(theme: string | undefined, _resolvedTheme: string | undefined): AppTheme {
+    if (theme === "system") return "system";
     if (theme === "light") return "light";
-    return resolvedTheme === "dark" ? "dark" : "light";
+    if (theme === "paperback") return "light";
+    if (theme === "dark") return "dark";
+    if (theme === "noir") return "dark";
+    return "system";
 }

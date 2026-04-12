@@ -36,6 +36,33 @@ export const MODE_CONFIG = {
     },
 };
 
+interface FocusSessionAttributionSnapshot {
+    listId: string | null;
+    plannedBlockId: string | null;
+    todoId: string | null;
+}
+
+function createFocusSessionAttributionSnapshot(
+    mode: TimerMode,
+    listId: string | null,
+    todoId: string | null,
+    plannedBlockId: string | null,
+): FocusSessionAttributionSnapshot {
+    if (mode !== "focus") {
+        return {
+            listId,
+            todoId: null,
+            plannedBlockId: null,
+        };
+    }
+
+    return {
+        listId,
+        todoId,
+        plannedBlockId,
+    };
+}
+
 interface FocusContextType {
     mode: TimerMode;
     timeLeft: number;
@@ -69,6 +96,8 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     const [currentBlockId, setCurrentBlockId] = useState<string | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
     const completionHandledRef = useRef(false);
+    const activeSessionContextRef = useRef<FocusSessionAttributionSnapshot | null>(null);
+    const previousIsActiveRef = useRef(false);
 
     // Initial Load from localStorage
     useEffect(() => {
@@ -91,6 +120,8 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
         setCurrentTaskId(savedTaskId ?? null);
         setCurrentBlockId(savedBlockId ?? null);
         completionHandledRef.current = false;
+        activeSessionContextRef.current = null;
+        previousIsActiveRef.current = false;
         setIsInitialized(true);
     }, []);
 
@@ -138,12 +169,14 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
 
     const resetTimer = useCallback(() => {
         completionHandledRef.current = false;
+        activeSessionContextRef.current = null;
         setIsActive(false);
         setTimeLeft(MODE_CONFIG[mode].duration);
     }, [mode]);
 
     const handleModeChange = useCallback((newMode: TimerMode) => {
         completionHandledRef.current = false;
+        activeSessionContextRef.current = null;
         setMode(newMode);
         setIsActive(false);
         setTimeLeft(MODE_CONFIG[newMode].duration);
@@ -152,21 +185,26 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     const saveSession = useCallback(async () => {
         if (!userId) return;
 
+        const sessionContext = activeSessionContextRef.current
+            ?? createFocusSessionAttributionSnapshot(mode, currentListId, currentTaskId, currentBlockId);
         const sessionPayload = {
             user_id: userId,
             duration_seconds: MODE_CONFIG[mode].duration,
             mode,
-            list_id: currentListId,
+            list_id: sessionContext.listId,
+            todo_id: sessionContext.todoId,
+            planned_block_id: sessionContext.plannedBlockId,
         };
 
         const { data, error } = await supabase
             .from("focus_sessions")
             .insert(sessionPayload)
-            .select("id, inserted_at")
+            .select("id, inserted_at, list_id, todo_id, planned_block_id")
             .single();
 
         if (error) {
             console.error("Error saving focus session:", error);
+            activeSessionContextRef.current = null;
             return;
         }
 
@@ -174,10 +212,28 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
             sessionId: typeof data?.id === "string" ? data.id : `${userId}-${mode}-${Date.now()}`,
             durationSeconds: MODE_CONFIG[mode].duration,
             mode,
-            listId: currentListId,
+            listId: typeof data?.list_id === "string" ? data.list_id : sessionContext.listId,
+            todoId: typeof data?.todo_id === "string" ? data.todo_id : sessionContext.todoId,
+            plannedBlockId: typeof data?.planned_block_id === "string" ? data.planned_block_id : sessionContext.plannedBlockId,
             insertedAt: typeof data?.inserted_at === "string" ? data.inserted_at : new Date().toISOString(),
         });
-    }, [supabase, mode, currentListId, userId]);
+        activeSessionContextRef.current = null;
+    }, [supabase, currentBlockId, currentListId, currentTaskId, mode, userId]);
+
+    useEffect(() => {
+        const startedThisTick = isActive && !previousIsActiveRef.current;
+
+        if (startedThisTick && (!activeSessionContextRef.current || timeLeft === MODE_CONFIG[mode].duration)) {
+            activeSessionContextRef.current = createFocusSessionAttributionSnapshot(
+                mode,
+                currentListId,
+                currentTaskId,
+                currentBlockId,
+            );
+        }
+
+        previousIsActiveRef.current = isActive;
+    }, [currentBlockId, currentListId, currentTaskId, isActive, mode, timeLeft]);
 
     useEffect(() => {
         let interval: NodeJS.Timeout;

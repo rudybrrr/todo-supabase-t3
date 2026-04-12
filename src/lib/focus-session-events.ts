@@ -5,6 +5,8 @@ export interface FocusSessionCompletedEventDetail {
     durationSeconds: number;
     mode: TimerMode;
     listId: string | null;
+    todoId: string | null;
+    plannedBlockId: string | null;
     insertedAt: string;
 }
 
@@ -20,6 +22,8 @@ function isFocusSessionCompletedEventDetail(value: unknown): value is FocusSessi
         && typeof detail.durationSeconds === "number"
         && typeof detail.mode === "string"
         && (typeof detail.listId === "string" || detail.listId === null)
+        && (typeof detail.todoId === "string" || detail.todoId === null)
+        && (typeof detail.plannedBlockId === "string" || detail.plannedBlockId === null)
         && typeof detail.insertedAt === "string"
     );
 }

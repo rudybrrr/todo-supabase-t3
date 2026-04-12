@@ -4,7 +4,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { bootstrapUserWorkspace } from "~/lib/bootstrap-user";
 import { subscribeToFocusSessionCompleted } from "~/lib/focus-session-events";
-import { formatMinutesCompact } from "~/lib/planning";
+import { formatMinutesCompact, getPlannerPreferences } from "~/lib/planning";
+import { getProgressWeekWindow } from "~/lib/progress-review";
+import { toDateKeyInTimeZone } from "~/lib/task-deadlines";
 import type { FocusSession, TodoList, TodoRow } from "~/lib/types";
 
 interface WeeklyStatPoint {
@@ -33,9 +35,17 @@ interface DataProfile {
     avatar_url?: string | null;
     daily_focus_goal_minutes?: number | null;
     timezone?: string | null;
+    accent_token?: string | null;
+    project_order_ids?: string[] | null;
+    default_block_minutes?: number | null;
+    week_starts_on?: number | null;
+    planner_day_start_hour?: number | null;
+    planner_day_end_hour?: number | null;
+    is_compact_mode?: boolean | null;
 }
 
 interface DataContextType {
+    focusSessions: FocusSession[];
     lists: TodoList[];
     profile: DataProfile | null;
     stats: AppStats | null;
@@ -63,25 +73,24 @@ function normalizeList(value: TodoList | TodoList[] | null): TodoList | null {
     return value;
 }
 
-function calculateStreak(sessions: FocusSession[]) {
+function calculateStreak(sessions: FocusSession[], preferredTimeZone?: string | null, now = new Date()) {
     if (!sessions.length) return 0;
 
     const rawDates = sessions.flatMap((session) => {
         if (!session.inserted_at) return [];
-        const day = new Date(session.inserted_at).toISOString().split("T")[0] ?? "";
+        const day = toDateKeyInTimeZone(session.inserted_at, preferredTimeZone);
         return [day];
     });
 
     const dates = Array.from(new Set(rawDates)).sort().reverse();
 
     let streak = 0;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayDateKey = toDateKeyInTimeZone(now, preferredTimeZone);
+    const today = new Date(`${todayDateKey}T00:00:00`);
 
     let expectedDiff = 0;
     for (let i = 0; i < dates.length; i++) {
-        const date = new Date(dates[i] ?? "");
-        date.setHours(0, 0, 0, 0);
+        const date = new Date(`${dates[i] ?? ""}T00:00:00`);
         const diffDays = Math.round((today.getTime() - date.getTime()) / (1000 * 3600 * 24));
 
         if (diffDays === expectedDiff) {
@@ -98,23 +107,28 @@ function calculateStreak(sessions: FocusSession[]) {
     return streak;
 }
 
-function getWeeklyDataSkeleton() {
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function getWeeklyDataSkeleton(preferredTimeZone?: string | null, weekStartsOn?: number | null, now = new Date()) {
+    const window = getProgressWeekWindow(preferredTimeZone, now, getPlannerPreferences({ week_starts_on: weekStartsOn }).weekStartsOn);
 
-    return Array.from({ length: 7 }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() - (6 - i));
+    return window.dateKeys.map((dateKey) => {
+        const date = new Date(`${dateKey}T00:00:00`);
 
         return {
-            day: days[date.getDay()] ?? "Unknown",
-            date: date.toISOString().split("T")[0] ?? "",
+            day: date.toLocaleDateString("en-US", { weekday: "short" }),
+            date: dateKey,
             minutes: 0,
         };
     });
 }
 
-function buildStatsFromSessions(sessions: FocusSession[], tasksCompleted: number): AppStats {
-    const weeklyData = getWeeklyDataSkeleton();
+function buildStatsFromSessions(
+    sessions: FocusSession[],
+    tasksCompleted: number,
+    preferredTimeZone?: string | null,
+    weekStartsOn?: number | null,
+    now = new Date(),
+): AppStats {
+    const weeklyData = getWeeklyDataSkeleton(preferredTimeZone, weekStartsOn, now);
     let totalSeconds = 0;
     let focusSessionCount = 0;
     const subjects: Record<string, number> = {};
@@ -125,14 +139,15 @@ function buildStatsFromSessions(sessions: FocusSession[], tasksCompleted: number
         totalSeconds += session.duration_seconds;
         focusSessionCount += 1;
 
-        const sessionDate = new Date(session.inserted_at).toISOString().split("T")[0] ?? "";
+        const sessionDate = toDateKeyInTimeZone(session.inserted_at, preferredTimeZone);
         const dayData = weeklyData.find((day) => day.date === sessionDate);
         if (dayData) {
-            dayData.minutes += Math.round(session.duration_seconds / 60);
-        }
+            const sessionMinutes = Math.round(session.duration_seconds / 60);
+            dayData.minutes += sessionMinutes;
 
-        const subjectName = session.todo_lists?.name ?? "General";
-        subjects[subjectName] = (subjects[subjectName] ?? 0) + Math.round(session.duration_seconds / 60);
+            const subjectName = session.todo_lists?.name ?? "General";
+            subjects[subjectName] = (subjects[subjectName] ?? 0) + sessionMinutes;
+        }
     });
 
     const totalMinutes = Math.round(totalSeconds / 60);
@@ -141,20 +156,20 @@ function buildStatsFromSessions(sessions: FocusSession[], tasksCompleted: number
     return {
         totalFocus: formatMinutesCompact(totalMinutes),
         tasksCompleted,
-        streak: calculateStreak(sessions),
+        streak: calculateStreak(sessions, preferredTimeZone, now),
         avgSession: formatMinutesCompact(averageSessionMinutes),
         weeklyData,
         subjectData: Object.entries(subjects).map(([name, value]) => ({ name, value })),
     };
 }
 
-function createEmptyStats(tasksCompleted = 0): AppStats {
+function createEmptyStats(tasksCompleted = 0, preferredTimeZone?: string | null, weekStartsOn?: number | null, now = new Date()): AppStats {
     return {
         totalFocus: "0m",
         tasksCompleted,
         streak: 0,
         avgSession: "0m",
-        weeklyData: getWeeklyDataSkeleton(),
+        weeklyData: getWeeklyDataSkeleton(preferredTimeZone, weekStartsOn, now),
         subjectData: [],
     };
 }
@@ -184,7 +199,50 @@ function areProfilesEqual(current: DataProfile | null, next: DataProfile | null)
         && (current.full_name ?? null) === (next.full_name ?? null)
         && (current.avatar_url ?? null) === (next.avatar_url ?? null)
         && (current.daily_focus_goal_minutes ?? null) === (next.daily_focus_goal_minutes ?? null)
-        && (current.timezone ?? null) === (next.timezone ?? null);
+        && (current.timezone ?? null) === (next.timezone ?? null)
+        && (current.accent_token ?? null) === (next.accent_token ?? null)
+        && (current.default_block_minutes ?? null) === (next.default_block_minutes ?? null)
+        && (current.week_starts_on ?? null) === (next.week_starts_on ?? null)
+        && (current.planner_day_start_hour ?? null) === (next.planner_day_start_hour ?? null)
+        && (current.planner_day_end_hour ?? null) === (next.planner_day_end_hour ?? null)
+        && (current.is_compact_mode ?? false) === (next.is_compact_mode ?? false)
+        && JSON.stringify(current.project_order_ids ?? null) === JSON.stringify(next.project_order_ids ?? null);
+}
+
+function isMissingProfilePreferenceColumnError(error: unknown) {
+    if (!error || typeof error !== "object") return false;
+
+    const code = "code" in error ? String(error.code) : "";
+    const message = "message" in error ? String(error.message) : "";
+
+    return code === "PGRST204"
+        && (
+            message.includes("accent_token")
+            || message.includes("project_order_ids")
+            || message.includes("default_block_minutes")
+            || message.includes("week_starts_on")
+            || message.includes("planner_day_start_hour")
+            || message.includes("planner_day_end_hour")
+        );
+}
+
+function areFocusSessionsEqual(current: FocusSession[], next: FocusSession[]) {
+    if (current.length !== next.length) return false;
+
+    return current.every((session, index) => {
+        const nextSession = next[index];
+        if (!nextSession) return false;
+
+        return session.id === nextSession.id
+            && session.user_id === nextSession.user_id
+            && (session.list_id ?? null) === (nextSession.list_id ?? null)
+            && (session.todo_id ?? null) === (nextSession.todo_id ?? null)
+            && (session.planned_block_id ?? null) === (nextSession.planned_block_id ?? null)
+            && session.duration_seconds === nextSession.duration_seconds
+            && session.mode === nextSession.mode
+            && session.inserted_at === nextSession.inserted_at
+            && (session.todo_lists?.name ?? null) === (nextSession.todo_lists?.name ?? null);
+    });
 }
 
 function areWeeklyDataEqual(current: WeeklyStatPoint[], next: WeeklyStatPoint[]) {
@@ -235,6 +293,7 @@ function getRealtimeInsertedRowId(payload: { new?: unknown }) {
 export function DataProvider({ children }: { children: React.ReactNode }) {
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [userId, setUserId] = useState<string | null>(null);
+    const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
     const [lists, setLists] = useState<TodoList[]>([]);
     const [profile, setProfile] = useState<DataProfile | null>(null);
     const [stats, setStats] = useState<AppStats | null>(null);
@@ -247,11 +306,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const fetchShellData = useCallback(async (uid: string) => {
         const [listsRes, profileRes] = await Promise.all([
             supabase.from("todo_list_members").select("list_id, role, todo_lists(*)").eq("user_id", uid),
-            supabase.from("profiles").select("username, full_name, avatar_url, daily_focus_goal_minutes, timezone").eq("id", uid).maybeSingle(),
+            supabase
+                .from("profiles")
+                .select("username, full_name, avatar_url, daily_focus_goal_minutes, timezone, accent_token, project_order_ids, default_block_minutes, week_starts_on, planner_day_start_hour, planner_day_end_hour, is_compact_mode")
+                .eq("id", uid)
+                .maybeSingle(),
         ]);
 
         if (listsRes.error) throw listsRes.error;
-        if (profileRes.error) throw profileRes.error;
+        if (profileRes.error && !isMissingProfilePreferenceColumnError(profileRes.error)) throw profileRes.error;
 
         const membershipRows = (listsRes.data ?? []) as ListMembershipRow[];
         const userLists: TodoList[] = membershipRows.flatMap((membership) => {
@@ -263,19 +326,42 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             }];
         });
 
-        const nextProfile = profileRes.data
+        let rawProfile = profileRes.data as DataProfile | null;
+
+        if (profileRes.error && isMissingProfilePreferenceColumnError(profileRes.error)) {
+            const { data: fallbackProfile, error: fallbackError } = await supabase
+                .from("profiles")
+                .select("username, full_name, avatar_url, daily_focus_goal_minutes, timezone")
+                .eq("id", uid)
+                .maybeSingle();
+
+            if (fallbackError) throw fallbackError;
+            rawProfile = fallbackProfile as DataProfile | null;
+        }
+
+        const nextProfile = rawProfile
             ? {
-                ...(profileRes.data as DataProfile),
-                daily_focus_goal_minutes: (profileRes.data as DataProfile).daily_focus_goal_minutes ?? 120,
-                timezone: (profileRes.data as DataProfile).timezone ?? null,
+                ...rawProfile,
+                daily_focus_goal_minutes: rawProfile.daily_focus_goal_minutes ?? 120,
+                timezone: rawProfile.timezone ?? null,
+                accent_token: rawProfile.accent_token ?? null,
+                default_block_minutes: rawProfile.default_block_minutes ?? null,
+                week_starts_on: rawProfile.week_starts_on ?? null,
+                planner_day_start_hour: rawProfile.planner_day_start_hour ?? null,
+                planner_day_end_hour: rawProfile.planner_day_end_hour ?? null,
+                is_compact_mode: rawProfile.is_compact_mode ?? false,
+                project_order_ids: Array.isArray(rawProfile.project_order_ids)
+                    ? rawProfile.project_order_ids.filter((value): value is string => typeof value === "string")
+                    : null,
             }
             : null;
 
         setLists((current) => areListsEqual(current, userLists) ? current : userLists);
         setProfile((current) => areProfilesEqual(current, nextProfile) ? current : nextProfile);
+        return nextProfile;
     }, [supabase]);
 
-    const fetchStatsData = useCallback(async (uid: string) => {
+    const fetchStatsData = useCallback(async (uid: string, preferredTimeZone?: string | null, weekStartsOn?: number | null) => {
         const [sessionsRes, todosRes] = await Promise.all([
             supabase.from("focus_sessions").select("*, todo_lists (name)").eq("user_id", uid).order("inserted_at", { ascending: true }),
             supabase.from("todos").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("is_done", true),
@@ -286,13 +372,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         const nextSessions = (sessionsRes.data ?? []) as FocusSession[];
         focusSessionsRef.current = nextSessions;
+        setFocusSessions((current) => areFocusSessionsEqual(current, nextSessions) ? current : nextSessions);
         knownFocusSessionIdsRef.current = new Set(nextSessions.map((session) => session.id));
         for (const sessionId of Array.from(locallyPatchedFocusSessionIdsRef.current)) {
             if (knownFocusSessionIdsRef.current.has(sessionId)) {
                 locallyPatchedFocusSessionIdsRef.current.delete(sessionId);
             }
         }
-        const nextStats = buildStatsFromSessions(nextSessions, todosRes.count ?? 0);
+        const nextStats = buildStatsFromSessions(nextSessions, todosRes.count ?? 0, preferredTimeZone, weekStartsOn);
         setStats((current) => areStatsEqual(current, nextStats) ? current : nextStats);
     }, [supabase]);
 
@@ -307,7 +394,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         const nextCount = count ?? 0;
         setStats((current) => {
-            const baseStats = current ?? createEmptyStats(nextCount);
+            const baseStats = current ?? createEmptyStats(nextCount, profile?.timezone, profile?.week_starts_on);
             const nextStats = {
                 ...baseStats,
                 tasksCompleted: nextCount,
@@ -315,9 +402,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
             return areStatsEqual(current, nextStats) ? current : nextStats;
         });
-    }, [supabase]);
+    }, [profile?.timezone, profile?.week_starts_on, supabase]);
 
-    const fetchFocusStats = useCallback(async (uid: string) => {
+    const fetchFocusStats = useCallback(async (uid: string, preferredTimeZone?: string | null, weekStartsOn?: number | null) => {
         const { data, error } = await supabase
             .from("focus_sessions")
             .select("*, todo_lists (name)")
@@ -327,6 +414,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (error) throw error;
         const nextSessions = (data ?? []) as FocusSession[];
         focusSessionsRef.current = nextSessions;
+        setFocusSessions((current) => areFocusSessionsEqual(current, nextSessions) ? current : nextSessions);
         knownFocusSessionIdsRef.current = new Set(nextSessions.map((session) => session.id));
         for (const sessionId of Array.from(locallyPatchedFocusSessionIdsRef.current)) {
             if (knownFocusSessionIdsRef.current.has(sessionId)) {
@@ -336,7 +424,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         setStats((current) => {
             const tasksCompleted = current?.tasksCompleted ?? 0;
-            const nextStats = buildStatsFromSessions(nextSessions, tasksCompleted);
+            const nextStats = buildStatsFromSessions(nextSessions, tasksCompleted, preferredTimeZone, weekStartsOn);
             return areStatsEqual(current, nextStats) ? current : nextStats;
         });
     }, [supabase]);
@@ -364,7 +452,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
 
         setStats((current) => {
-            const baseStats = current ?? createEmptyStats();
+            const baseStats = current ?? createEmptyStats(0, profile?.timezone, profile?.week_starts_on);
             const nextStats = {
                 ...baseStats,
                 tasksCompleted: Math.max(0, baseStats.tasksCompleted + delta),
@@ -374,15 +462,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         });
 
         return true;
-    }, []);
+    }, [profile?.timezone, profile?.week_starts_on]);
 
     const loadUserData = useCallback(async (uid: string) => {
         try {
             setLoading(true);
-            await Promise.all([
-                fetchShellData(uid),
-                fetchStatsData(uid),
-            ]);
+            const nextProfile = await fetchShellData(uid);
+            await fetchStatsData(uid, nextProfile?.timezone, nextProfile?.week_starts_on);
         } catch (error) {
             console.error("Global Data fetch error:", error);
         } finally {
@@ -396,16 +482,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             lists,
             hasProfile: Boolean(profile),
         });
-        await Promise.all([
-            fetchShellData(uid),
-            fetchStatsData(uid),
-        ]);
+        const nextProfile = await fetchShellData(uid);
+        await fetchStatsData(uid, nextProfile?.timezone, nextProfile?.week_starts_on);
     }, [fetchShellData, fetchStatsData, lists, profile, supabase]);
 
     useEffect(() => {
         focusSessionsRef.current = [];
         knownFocusSessionIdsRef.current = new Set();
         locallyPatchedFocusSessionIdsRef.current = new Set();
+        setFocusSessions([]);
     }, [userId]);
 
     useEffect(() => {
@@ -421,6 +506,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
             inboxProvisionAttemptedForRef.current = null;
             setUserId(null);
+            setFocusSessions([]);
             setLists([]);
             setProfile(null);
             setStats(null);
@@ -442,6 +528,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
             inboxProvisionAttemptedForRef.current = null;
             setUserId(null);
+            setFocusSessions([]);
             setLists([]);
             setProfile(null);
             setStats(null);
@@ -454,15 +541,28 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const refreshData = useCallback(async () => {
         if (userId) {
             try {
-                await Promise.all([
-                    fetchShellData(userId),
-                    fetchStatsData(userId),
-                ]);
+                const nextProfile = await fetchShellData(userId);
+                await fetchStatsData(userId, nextProfile?.timezone, nextProfile?.week_starts_on);
             } catch (error) {
                 console.error("Global Data refresh error:", error);
             }
         }
     }, [fetchShellData, fetchStatsData, userId]);
+
+    useEffect(() => {
+        setStats((current) => {
+            if (!current && focusSessionsRef.current.length === 0) return current;
+
+            const tasksCompleted = current?.tasksCompleted ?? 0;
+            const nextStats = buildStatsFromSessions(
+                focusSessionsRef.current,
+                tasksCompleted,
+                profile?.timezone,
+                profile?.week_starts_on,
+            );
+            return areStatsEqual(current, nextStats) ? current : nextStats;
+        });
+    }, [profile?.timezone, profile?.week_starts_on]);
 
     useEffect(() => {
         if (!userId || loading) return;
@@ -510,7 +610,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                         return;
                     }
 
-                    void fetchFocusStats(userId);
+                    void fetchFocusStats(userId, profile?.timezone, profile?.week_starts_on);
                 },
             )
             .subscribe();
@@ -518,7 +618,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return () => {
             void supabase.removeChannel(syncChannel);
         };
-    }, [fetchCompletedTaskCount, fetchFocusStats, supabase, updateCompletedTaskCountFromPayload, userId]);
+    }, [fetchCompletedTaskCount, fetchFocusStats, profile?.timezone, profile?.week_starts_on, supabase, updateCompletedTaskCountFromPayload, userId]);
 
     useEffect(() => {
         if (!userId) return;
@@ -536,6 +636,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 id: detail.sessionId,
                 user_id: userId,
                 list_id: detail.listId,
+                todo_id: detail.todoId,
+                planned_block_id: detail.plannedBlockId,
                 duration_seconds: detail.durationSeconds,
                 mode: detail.mode,
                 inserted_at: detail.insertedAt,
@@ -545,23 +647,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             locallyPatchedFocusSessionIdsRef.current.add(detail.sessionId);
             knownFocusSessionIdsRef.current.add(detail.sessionId);
             focusSessionsRef.current = [...focusSessionsRef.current, nextSession];
+            setFocusSessions((current) => {
+                const nextSessions = [...current, nextSession];
+                return areFocusSessionsEqual(current, nextSessions) ? current : nextSessions;
+            });
 
             setStats((current) => {
                 const tasksCompleted = current?.tasksCompleted ?? 0;
-                const nextStats = buildStatsFromSessions(focusSessionsRef.current, tasksCompleted);
+                const nextStats = buildStatsFromSessions(
+                    focusSessionsRef.current,
+                    tasksCompleted,
+                    profile?.timezone,
+                    profile?.week_starts_on,
+                );
                 return areStatsEqual(current, nextStats) ? current : nextStats;
             });
         });
-    }, [lists, userId]);
+    }, [lists, profile?.timezone, profile?.week_starts_on, userId]);
 
     const value = useMemo(() => ({
+        focusSessions,
         lists,
         profile,
         stats,
         loading,
         refreshData,
         userId,
-    }), [lists, profile, stats, loading, refreshData, userId]);
+    }), [focusSessions, lists, profile, stats, loading, refreshData, userId]);
 
     return (
         <DataContext.Provider value={value}>

@@ -51,6 +51,7 @@ export function useTaskSections(listId: string | null, options?: { enabled?: boo
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const [sections, setSections] = useState<TodoSectionRow[]>([]);
     const [loading, setLoading] = useState(false);
+    const [lastLoadedListId, setLastLoadedListId] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
     const [pendingSectionIds, setPendingSectionIds] = useState<string[]>([]);
     const activeListIdRef = useRef<string | null>(listId);
@@ -63,8 +64,23 @@ export function useTaskSections(listId: string | null, options?: { enabled?: boo
         setPendingSectionIds((current) => (current.includes(sectionId) ? current : [...current, sectionId]));
     }, []);
 
+    const addPendingSectionIds = useCallback((sectionIds: string[]) => {
+        setPendingSectionIds((current) => {
+            const nextIds = new Set(current);
+            sectionIds.forEach((sectionId) => {
+                nextIds.add(sectionId);
+            });
+            return Array.from(nextIds);
+        });
+    }, []);
+
     const removePendingSectionId = useCallback((sectionId: string) => {
         setPendingSectionIds((current) => current.filter((id) => id !== sectionId));
+    }, []);
+
+    const removePendingSectionIds = useCallback((sectionIds: string[]) => {
+        const idsToRemove = new Set(sectionIds);
+        setPendingSectionIds((current) => current.filter((id) => !idsToRemove.has(id)));
     }, []);
 
     useEffect(() => {
@@ -86,14 +102,17 @@ export function useTaskSections(listId: string | null, options?: { enabled?: boo
             .then((loadedSections) => {
                 if (!active || activeListIdRef.current !== listId) return;
                 setSections(loadedSections);
+                setLastLoadedListId(listId);
             })
             .catch((error) => {
                 if (!active || activeListIdRef.current !== listId) return;
                 if (isMissingTaskSectionsError(error)) {
                     setSections([]);
+                    setLastLoadedListId(listId);
                     toast.error(getTaskSectionsErrorMessage(error));
                     return;
                 }
+                setLastLoadedListId(listId);
                 toast.error(getTaskSectionsErrorMessage(error));
             })
             .finally(() => {
@@ -216,13 +235,83 @@ export function useTaskSections(listId: string | null, options?: { enabled?: boo
         }
     }, [addPendingSectionId, enabled, listId, removePendingSectionId, sections, supabase]);
 
+    const reorderSections = useCallback(async (orderedSectionIds: string[]) => {
+        const scopeListId = listId;
+
+        if (!enabled || !scopeListId || sections.length <= 1) return false;
+
+        const uniqueOrderedIds = Array.from(new Set(orderedSectionIds));
+        if (uniqueOrderedIds.length !== sections.length) return false;
+
+        const sectionById = new Map(sections.map((section) => [section.id, section]));
+        const previousSections = sections;
+        const optimisticUpdatedAt = new Date().toISOString();
+        const nextSections = uniqueOrderedIds.map((sectionId, index) => {
+            const section = sectionById.get(sectionId);
+            if (!section) return null;
+
+            return {
+                ...section,
+                position: index,
+                updated_at: optimisticUpdatedAt,
+            };
+        }).filter((section): section is TodoSectionRow => Boolean(section));
+
+        if (nextSections.length !== sections.length) return false;
+
+        const changedSectionIds = nextSections
+            .filter((section) => {
+                const previousSection = sectionById.get(section.id);
+                return previousSection?.position !== section.position;
+            })
+            .map((section) => section.id);
+
+        if (changedSectionIds.length === 0) return true;
+
+        addPendingSectionIds(changedSectionIds);
+        setSections(sortTaskSections(nextSections));
+
+        try {
+            const updatedSections = await Promise.all(changedSectionIds.map((sectionId) => {
+                const nextSection = nextSections.find((section) => section.id === sectionId);
+                if (!nextSection) {
+                    throw new Error("Section not found.");
+                }
+
+                return updateTaskSection(supabase, {
+                    sectionId,
+                    position: nextSection.position,
+                });
+            }));
+
+            if (activeListIdRef.current !== scopeListId) return true;
+
+            setSections((current) => updatedSections.reduce(
+                (nextCurrentSections, updatedSection) => upsertTaskSection(nextCurrentSections, updatedSection),
+                current,
+            ));
+            return true;
+        } catch (error) {
+            if (activeListIdRef.current === scopeListId) {
+                setSections(previousSections);
+                toast.error(getTaskSectionsErrorMessage(error));
+            }
+            return false;
+        } finally {
+            if (activeListIdRef.current === scopeListId) {
+                removePendingSectionIds(changedSectionIds);
+            }
+        }
+    }, [addPendingSectionIds, enabled, listId, removePendingSectionIds, sections, supabase]);
+
     return {
         sections,
-        loading,
+        loading: loading || (enabled ? Boolean(listId && lastLoadedListId !== listId) : false),
         creating,
         pendingSectionIds: new Set(pendingSectionIds),
         createSection,
         renameSection,
         removeSection,
+        reorderSections,
     };
 }

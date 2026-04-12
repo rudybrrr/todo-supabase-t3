@@ -1,16 +1,20 @@
 "use client";
 
+import { DragDropContext, Draggable, Droppable, type DraggableProvidedDragHandleProps, type DropResult } from "@hello-pangea/dnd";
 import { AnimatePresence } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarRange, CheckSquare2, Filter, FolderKanban, MoreHorizontal, PencilLine, Plus, Rows3, Share2, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { AlertTriangle, CalendarRange, CheckSquare2, Clock3, Filter, FolderKanban, ListTodo, MoreHorizontal, PencilLine, Plus, Rows3, Share2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { AppShell, useShellActions } from "~/components/app-shell";
 import { EmptyState, PageHeader } from "~/components/app-primitives";
+import { useData } from "~/components/data-provider";
+import { useCompactMode } from "~/components/compact-mode-provider";
 import { ProjectDialog } from "~/components/project-dialog";
 import { ProjectMembersDialog } from "~/components/project-members-dialog";
 import { TaskDetailPanel } from "~/components/task-detail-panel";
-import { TaskList } from "~/components/task-list";
+import { TaskList, TaskListItem } from "~/components/task-list";
 import { TaskSelectionBar } from "~/components/task-selection-bar";
 import { Button } from "~/components/ui/button";
 import {
@@ -46,6 +50,11 @@ import { useTaskSections } from "~/hooks/use-task-sections";
 import { useTaskDataset } from "~/hooks/use-task-dataset";
 import { dedupeTasks, useTaskSelectionActions } from "~/hooks/use-task-selection-actions";
 import { mergeBufferedTasks, useTaskTransitionBuffer } from "~/hooks/use-task-transition-buffer";
+import { formatProjectScheduledLabel, getProjectScheduledBlockState } from "~/lib/project-summaries";
+import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
+import { updateTask } from "~/lib/task-actions";
+import { getDateInputValue, getTimeInputValue } from "~/lib/task-deadlines";
+import { buildProjectTaskMovePatches, sortTasksByWorkspaceOrder } from "~/lib/task-ordering";
 import type { TaskPriority } from "~/lib/task-views";
 import type { TodoList, TodoSectionRow } from "~/lib/types";
 import { cn } from "~/lib/utils";
@@ -66,6 +75,27 @@ const PROJECT_STATUS_OPTIONS = [
     { value: "all", label: "All" },
 ] as const;
 
+const SECTION_ORDER_DROPPABLE_ID = "project-section-order";
+const NO_SECTION_DROPPABLE_ID = "project-section:none";
+const TASK_DRAG_TYPE = "project-task";
+const SECTION_DRAG_TYPE = "project-section";
+
+function getSectionDroppableId(sectionId: string | null) {
+    return sectionId ? `project-section:${sectionId}` : NO_SECTION_DROPPABLE_ID;
+}
+
+function parseSectionDroppableId(droppableId: string) {
+    if (droppableId === NO_SECTION_DROPPABLE_ID) return null;
+    if (!droppableId.startsWith("project-section:")) return null;
+
+    const sectionId = droppableId.slice("project-section:".length);
+    return sectionId || null;
+}
+
+function getSectionDraggableId(sectionId: string) {
+    return `section:${sectionId}`;
+}
+
 interface PendingTaskLeaveAction {
     run: () => void;
 }
@@ -80,8 +110,19 @@ export default function ProjectWorkspaceClient({ projectId }: { projectId: strin
 
 function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
     const router = useRouter();
+    const { profile, userId } = useData();
+    const { isCompact } = useCompactMode();
     const { enterPrimaryActivity, openQuickAdd, registerPrimaryActivityReset } = useShellActions();
-    const { userId, lists, tasks, projectSummaries, imagesByTodo, loading } = useTaskDataset();
+    const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+    const {
+        lists,
+        tasks,
+        projectSummaries,
+        imagesByTodo,
+        loading,
+        applyTaskPatch,
+        upsertTask,
+    } = useTaskDataset();
     const { bufferedTasks, queueBufferedTask } = useTaskTransitionBuffer();
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
     const [projectDialogOpen, setProjectDialogOpen] = useState(false);
@@ -97,12 +138,15 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
     const [renameSectionTarget, setRenameSectionTarget] = useState<TodoSectionRow | null>(null);
     const [renameSectionValue, setRenameSectionValue] = useState("");
     const [deleteSectionTarget, setDeleteSectionTarget] = useState<TodoSectionRow | null>(null);
+    const [projectView, setProjectView] = useState<"list" | "board">("list");
+    const [desktopDragEnabled, setDesktopDragEnabled] = useState(false);
+    const [pendingTaskMoveIds, setPendingTaskMoveIds] = useState<string[]>([]);
 
     const project = lists.find((list) => list.id === projectId) ?? null;
     const projectSummary = projectSummaries.find((summary) => summary.list.id === projectId) ?? null;
     const supportsSections = project ? project.name.toLowerCase() !== "inbox" : false;
     const projectTasks = useMemo(
-        () => tasks.filter((task) => task.list_id === projectId),
+        () => sortTasksByWorkspaceOrder(tasks.filter((task) => task.list_id === projectId)),
         [projectId, tasks],
     );
     const {
@@ -112,6 +156,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
         createSection,
         renameSection,
         removeSection,
+        reorderSections,
     } = useTaskSections(projectId, { enabled: supportsSections });
     const priorityScopedTasks = useMemo(() => projectTasks.filter((task) => {
         if (priorityFilter === "all") return true;
@@ -170,6 +215,11 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
 
     const resolvedUnsectionedTasks = shouldShowSectionGroups ? unsectionedTasks : [];
     const resolvedSectionGroups = shouldShowSectionGroups ? sectionGroups : [];
+    const needsCoverageCount = projectSummary
+        ? projectSummary.unplannedCount + projectSummary.partiallyPlannedCount
+        : 0;
+    const projectScheduledLabel = formatProjectScheduledLabel(projectSummary?.nextScheduledBlock);
+    const projectScheduledState = getProjectScheduledBlockState(projectSummary?.nextScheduledBlock);
 
     useEffect(() => {
         if (!selectedTaskId) return;
@@ -213,6 +263,12 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
             setSelectedTaskId((current) => current === taskId ? null : current);
         },
     });
+    const canUseProjectDragAndDrop = supportsSections
+        && shouldShowSectionGroups
+        && !selectionMode
+        && desktopDragEnabled
+        && taskFilter === "open"
+        && priorityFilter === "all";
 
     async function handleConfirmDeleteSelected() {
         await handleDeleteSelected();
@@ -303,6 +359,120 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
         setMembersDialogOpen(open);
     }, [enterPrimaryActivity]);
 
+    const pendingTaskMoveIdSet = useMemo(() => new Set(pendingTaskMoveIds), [pendingTaskMoveIds]);
+
+    const addPendingTaskMoveIds = useCallback((taskIds: string[]) => {
+        setPendingTaskMoveIds((current) => Array.from(new Set([...current, ...taskIds])));
+    }, []);
+
+    const removePendingTaskMoveIds = useCallback((taskIds: string[]) => {
+        const taskIdSet = new Set(taskIds);
+        setPendingTaskMoveIds((current) => current.filter((id) => !taskIdSet.has(id)));
+    }, []);
+
+    const handleProjectDragEnd = useCallback((result: DropResult) => {
+        if (!result.destination) return;
+
+        if (result.type === SECTION_DRAG_TYPE) {
+            if (result.destination.index === result.source.index) return;
+
+            const orderedSectionIds = sections.map((section) => section.id);
+            const [movedSectionId] = orderedSectionIds.splice(result.source.index, 1);
+            if (!movedSectionId) return;
+
+            orderedSectionIds.splice(result.destination.index, 0, movedSectionId);
+            void reorderSections(orderedSectionIds);
+            return;
+        }
+
+        const task = projectTasks.find((item) => item.id === result.draggableId);
+        if (!task) return;
+
+        if (detailDirty && selectedTaskId === task.id) {
+            toast.error("Save or discard changes before moving this task.");
+            return;
+        }
+
+        const sourceSectionId = parseSectionDroppableId(result.source.droppableId);
+        const destinationSectionId = parseSectionDroppableId(result.destination.droppableId);
+
+        if (sourceSectionId === destinationSectionId && result.destination.index === result.source.index) {
+            return;
+        }
+
+        const sourceTasks = projectTasks.filter((candidateTask) => (candidateTask.section_id ?? null) === sourceSectionId);
+        const destinationTasks = sourceSectionId === destinationSectionId
+            ? sourceTasks
+            : projectTasks.filter((candidateTask) => (candidateTask.section_id ?? null) === destinationSectionId);
+        const patches = buildProjectTaskMovePatches({
+            movedTaskId: task.id,
+            sourceTasks,
+            destinationTasks,
+            sourceSectionId,
+            destinationSectionId,
+            destinationIndex: result.destination.index,
+        });
+
+        if (patches.length === 0) return;
+
+        const previousTasksById = new Map(
+            patches
+                .map((patch) => {
+                    const previousTask = projectTasks.find((candidateTask) => candidateTask.id === patch.id);
+                    return previousTask ? [patch.id, previousTask] : null;
+                })
+                .filter((entry): entry is [string, TaskDatasetRecord] => Boolean(entry)),
+        );
+        const pendingTaskIds = patches.map((patch) => patch.id);
+        addPendingTaskMoveIds(pendingTaskIds);
+
+        patches.forEach((patch) => {
+            applyTaskPatch(patch.id, {
+                section_id: patch.section_id,
+                position: patch.position,
+                updated_at: new Date().toISOString(),
+            });
+        });
+
+        void Promise.all(patches.map(async (patch) => {
+            const previousTask = previousTasksById.get(patch.id);
+            if (!previousTask) {
+                throw new Error("Task not found.");
+            }
+
+            return updateTask(supabase, {
+                id: previousTask.id,
+                title: previousTask.title,
+                description: previousTask.description ?? null,
+                dueDate: getDateInputValue(previousTask, profile?.timezone),
+                dueTime: getTimeInputValue(previousTask, profile?.timezone),
+                reminderOffsetMinutes: previousTask.reminder_offset_minutes ?? null,
+                recurrenceRule: previousTask.recurrence_rule ?? null,
+                priority: previousTask.priority ?? null,
+                estimatedMinutes: previousTask.estimated_minutes ?? null,
+                listId: previousTask.list_id,
+                sectionId: patch.section_id,
+                assigneeUserId: previousTask.assignee_user_id ?? null,
+                position: patch.position,
+                preferredTimeZone: profile?.timezone,
+            });
+        }))
+            .then(async (updatedTasks) => {
+                updatedTasks.forEach((updatedTask) => {
+                    upsertTask(updatedTask, { suppressRealtimeEcho: true });
+                });
+            })
+            .catch((error) => {
+                previousTasksById.forEach((previousTask) => {
+                    upsertTask(previousTask);
+                });
+                toast.error(error instanceof Error ? error.message : "Unable to reorder tasks.");
+            })
+            .finally(() => {
+                removePendingTaskMoveIds(pendingTaskIds);
+            });
+    }, [addPendingTaskMoveIds, applyTaskPatch, detailDirty, profile?.timezone, projectTasks, removePendingTaskMoveIds, reorderSections, sections, selectedTaskId, supabase, upsertTask, userId]);
+
     useEffect(() => registerPrimaryActivityReset("project-workspace:selection", () => {
         setBulkDeletingOpen(false);
         setPendingTaskLeaveAction(null);
@@ -337,6 +507,20 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
         setSelectedTaskId(null);
         setDetailDirty(false);
     }, [selectionMode]);
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia("(min-width: 640px)");
+        const syncDragCapability = () => {
+            setDesktopDragEnabled(mediaQuery.matches);
+        };
+
+        syncDragCapability();
+        mediaQuery.addEventListener("change", syncDragCapability);
+
+        return () => {
+            mediaQuery.removeEventListener("change", syncDragCapability);
+        };
+    }, []);
 
     useEffect(() => {
         setRenameSectionValue(renameSectionTarget?.name ?? "");
@@ -465,6 +649,28 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
 
                             {!selectionMode ? (
                                 <>
+                                    {shouldShowSectionGroups ? (
+                                        <div className="hidden items-center rounded-lg border border-border/70 bg-card/70 p-0.5 sm:inline-flex">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className={cn("h-8 rounded-md px-2.5", projectView === "list" && "bg-secondary text-foreground")}
+                                                onClick={() => setProjectView("list")}
+                                            >
+                                                <ListTodo className="h-4 w-4" />
+                                                List
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className={cn("h-8 rounded-md px-2.5", projectView === "board" && "bg-secondary text-foreground")}
+                                                onClick={() => setProjectView("board")}
+                                            >
+                                                <Rows3 className="h-4 w-4" />
+                                                Board
+                                            </Button>
+                                        </div>
+                                    ) : null}
                                     {supportsSections ? (
                                         <Button
                                             variant="outline"
@@ -509,6 +715,15 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                             </DropdownMenu>
                         </>
                     }
+                />
+
+                <ProjectWorkspaceSummaryStrip
+                    incompleteCount={projectSummary.incompleteCount}
+                    overdueCount={projectSummary.overdueCount}
+                    needsCoverageCount={needsCoverageCount}
+                    partiallyPlannedCount={projectSummary.partiallyPlannedCount}
+                    scheduledLabel={projectScheduledLabel}
+                    scheduledState={projectScheduledState}
                 />
 
                 <AnimatePresence>
@@ -591,34 +806,22 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                         {loading ? (
                             <div className="surface-muted px-3 py-4 text-sm text-muted-foreground">Loading tasks...</div>
                         ) : shouldShowSectionGroups ? (
-                            <div className="space-y-4">
-                                {resolvedUnsectionedTasks.length > 0 ? (
-                                    <TaskList
-                                        tasks={resolvedUnsectionedTasks}
+                            <DragDropContext onDragEnd={handleProjectDragEnd}>
+                                {projectView === "board" ? (
+                                    <ProjectBoardView
+                                        unsectionedTasks={resolvedUnsectionedTasks}
+                                        sectionGroups={resolvedSectionGroups}
                                         lists={lists}
                                         selectedTaskId={selectedTaskId}
                                         selectedTaskIds={selectedTaskIdSet}
                                         selectionMode={selectionMode}
-                                        onSelectionToggle={handleTaskSelection}
-                                        onSelect={handleTaskSelect}
-                                        onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
-                                    />
-                                ) : null}
-
-                                {resolvedSectionGroups.map((group) => (
-                                    <ProjectSectionGroup
-                                        key={group.key}
-                                        section={group.section}
-                                        tasks={group.tasks}
-                                        lists={lists}
-                                        selectedTaskId={selectedTaskId}
-                                        selectedTaskIds={selectedTaskIdSet}
-                                        selectionMode={selectionMode}
-                                        pending={pendingSectionIds.has(group.section.id)}
-                                        emptyMessage={activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
-                                        onAddTask={() => openQuickAdd({
+                                        dragEnabled={canUseProjectDragAndDrop}
+                                        pendingSectionIds={pendingSectionIds}
+                                        pendingTaskMoveIds={pendingTaskMoveIdSet}
+                                        activeFilterCount={activeFilterCount}
+                                        onAddTask={(sectionId) => openQuickAdd({
                                             listId: project.id,
-                                            sectionId: group.section.id,
+                                            sectionId,
                                         })}
                                         onRenameSection={(section) => {
                                             enterPrimaryActivity("project-workspace:section-edit");
@@ -632,8 +835,82 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                                         onSelect={handleTaskSelect}
                                         onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
                                     />
-                                ))}
-                            </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {resolvedUnsectionedTasks.length > 0 || canUseProjectDragAndDrop ? (
+                                            <ProjectTaskDroppableList
+                                                title="No section"
+                                                droppableId={NO_SECTION_DROPPABLE_ID}
+                                                tasks={resolvedUnsectionedTasks}
+                                                lists={lists}
+                                                selectedTaskId={selectedTaskId}
+                                                selectedTaskIds={selectedTaskIdSet}
+                                                selectionMode={selectionMode}
+                                                dragEnabled={canUseProjectDragAndDrop}
+                                                pendingTaskMoveIds={pendingTaskMoveIdSet}
+                                                emptyMessage={canUseProjectDragAndDrop ? "Drag tasks here to clear their section." : activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
+                                                onSelectionToggle={handleTaskSelection}
+                                                onSelect={handleTaskSelect}
+                                                onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
+                                            />
+                                        ) : null}
+
+                                        <Droppable droppableId={SECTION_ORDER_DROPPABLE_ID} type={SECTION_DRAG_TYPE}>
+                                            {(provided) => (
+                                                <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-4">
+                                                    {resolvedSectionGroups.map((group, index) => (
+                                                        <Draggable
+                                                            key={group.key}
+                                                            draggableId={getSectionDraggableId(group.section.id)}
+                                                            index={index}
+                                                            isDragDisabled={!canUseProjectDragAndDrop || pendingSectionIds.has(group.section.id)}
+                                                        >
+                                                            {(draggableProvided, snapshot) => (
+                                                                <div
+                                                                    ref={draggableProvided.innerRef}
+                                                                    {...draggableProvided.draggableProps}
+                                                                    style={draggableProvided.draggableProps.style}
+                                                                >
+                                                                    <ProjectSectionGroup
+                                                                        section={group.section}
+                                                                        tasks={group.tasks}
+                                                                        lists={lists}
+                                                                        selectedTaskId={selectedTaskId}
+                                                                        selectedTaskIds={selectedTaskIdSet}
+                                                                        selectionMode={selectionMode}
+                                                                        dragEnabled={canUseProjectDragAndDrop}
+                                                                        pending={pendingSectionIds.has(group.section.id)}
+                                                                        pendingTaskMoveIds={pendingTaskMoveIdSet}
+                                                                        sectionDragging={snapshot.isDragging}
+                                                                        emptyMessage={activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
+                                                                        dragHandleProps={draggableProvided.dragHandleProps}
+                                                                        onAddTask={() => openQuickAdd({
+                                                                            listId: project.id,
+                                                                            sectionId: group.section.id,
+                                                                        })}
+                                                                        onRenameSection={(section) => {
+                                                                            enterPrimaryActivity("project-workspace:section-edit");
+                                                                            setRenameSectionTarget(section);
+                                                                        }}
+                                                                        onDeleteSection={(section) => {
+                                                                            enterPrimaryActivity("project-workspace:section-edit");
+                                                                            setDeleteSectionTarget(section);
+                                                                        }}
+                                                                        onSelectionToggle={handleTaskSelection}
+                                                                        onSelect={handleTaskSelect}
+                                                                        onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </Draggable>
+                                                    ))}
+                                                    {provided.placeholder}
+                                                </div>
+                                            )}
+                                        </Droppable>
+                                    </div>
+                                )}
+                            </DragDropContext>
                         ) : visibleDisplayTasks.length > 0 ? (
                             <TaskList
                                 tasks={visibleDisplayTasks}
@@ -641,6 +918,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                                 selectedTaskId={selectedTaskId}
                                 selectedTaskIds={selectedTaskIdSet}
                                 selectionMode={selectionMode}
+                                compact
                                 onSelectionToggle={handleTaskSelection}
                                 onSelect={handleTaskSelect}
                                 onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
@@ -824,6 +1102,310 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
     );
 }
 
+function ProjectWorkspaceSummaryStrip({
+    incompleteCount,
+    overdueCount,
+    needsCoverageCount,
+    partiallyPlannedCount,
+    scheduledLabel,
+    scheduledState,
+}: {
+    incompleteCount: number;
+    overdueCount: number;
+    needsCoverageCount: number;
+    partiallyPlannedCount: number;
+    scheduledLabel: string | null;
+    scheduledState: "current" | "upcoming" | null;
+}) {
+    return (
+        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ProjectSummaryCard
+                icon={<ListTodo className="h-4 w-4" />}
+                eyebrow="Open"
+                value={`${incompleteCount}`}
+                note={incompleteCount === 1 ? "1 active task" : `${incompleteCount} active tasks`}
+            />
+            <ProjectSummaryCard
+                icon={<AlertTriangle className="h-4 w-4" />}
+                eyebrow="Overdue"
+                value={`${overdueCount}`}
+                note={overdueCount > 0 ? "Needs attention now" : "Nothing overdue"}
+                tone={overdueCount > 0 ? "danger" : "muted"}
+            />
+            <ProjectSummaryCard
+                icon={<Rows3 className="h-4 w-4" />}
+                eyebrow="Needs Coverage"
+                value={`${needsCoverageCount}`}
+                note={partiallyPlannedCount > 0 ? `${partiallyPlannedCount} partially planned` : "Planning looks clear"}
+                tone={needsCoverageCount > 0 ? "warning" : "muted"}
+            />
+            <ProjectSummaryCard
+                icon={<Clock3 className="h-4 w-4" />}
+                eyebrow="Next Work"
+                value={scheduledLabel ? (scheduledState === "current" ? "In progress" : "Scheduled") : "No block"}
+                note={scheduledLabel ?? "Nothing planned yet"}
+                tone={scheduledState === "current" ? "success" : "muted"}
+            />
+        </div>
+    );
+}
+
+function ProjectSummaryCard({
+    icon,
+    eyebrow,
+    value,
+    note,
+    tone = "muted",
+}: {
+    icon: ReactNode;
+    eyebrow: string;
+    value: string;
+    note: string;
+    tone?: "danger" | "muted" | "success" | "warning";
+}) {
+    return (
+        <div
+            className={cn(
+                "rounded-2xl border px-4 py-3.5",
+                tone === "danger" && "border-destructive/25 bg-destructive/6",
+                tone === "warning" && "border-amber-500/20 bg-amber-500/6",
+                tone === "success" && "border-emerald-500/20 bg-emerald-500/6",
+                tone === "muted" && "border-border/70 bg-card/70",
+            )}
+        >
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/70 bg-background/80 text-foreground">
+                    {icon}
+                </span>
+                {eyebrow}
+            </div>
+            <p className="mt-3 text-lg font-semibold tracking-[-0.03em] text-foreground">{value}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{note}</p>
+        </div>
+    );
+}
+
+function ProjectBoardView({
+    unsectionedTasks,
+    sectionGroups,
+    lists,
+    selectedTaskId,
+    selectedTaskIds,
+    selectionMode,
+    dragEnabled,
+    pendingSectionIds,
+    pendingTaskMoveIds,
+    activeFilterCount,
+    onAddTask,
+    onRenameSection,
+    onDeleteSection,
+    onSelectionToggle,
+    onSelect,
+    onToggle,
+}: {
+    unsectionedTasks: TaskDatasetRecord[];
+    sectionGroups: Array<{ key: string; section: TodoSectionRow; tasks: TaskDatasetRecord[] }>;
+    lists: TodoList[];
+    selectedTaskId: string | null;
+    selectedTaskIds: Set<string>;
+    selectionMode: boolean;
+    dragEnabled: boolean;
+    pendingSectionIds: Set<string>;
+    pendingTaskMoveIds: Set<string>;
+    activeFilterCount: number;
+    onAddTask: (sectionId: string | null) => void;
+    onRenameSection: (section: TodoSectionRow) => void;
+    onDeleteSection: (section: TodoSectionRow) => void;
+    onSelectionToggle: (task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => void;
+    onSelect: (task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => void;
+    onToggle: (task: TaskDatasetRecord, nextIsDone: boolean) => void;
+}) {
+    return (
+        <div className="overflow-x-auto pb-2">
+            <div className="flex min-w-max gap-4">
+                <div className="w-[20rem] shrink-0">
+                    <ProjectTaskDroppableList
+                        title="No section"
+                        droppableId={NO_SECTION_DROPPABLE_ID}
+                        tasks={unsectionedTasks}
+                        lists={lists}
+                        selectedTaskId={selectedTaskId}
+                        selectedTaskIds={selectedTaskIds}
+                        selectionMode={selectionMode}
+                        dragEnabled={dragEnabled}
+                        pendingTaskMoveIds={pendingTaskMoveIds}
+                        emptyMessage={dragEnabled ? "Drag tasks here to clear their section." : activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
+                        onSelectionToggle={onSelectionToggle}
+                        onSelect={onSelect}
+                        onToggle={onToggle}
+                    />
+                    {!selectionMode ? (
+                        <div className="mt-2 flex justify-end">
+                            <Button variant="ghost" size="sm" onClick={() => onAddTask(null)}>
+                                <Plus className="h-4 w-4" />
+                                Add
+                            </Button>
+                        </div>
+                    ) : null}
+                </div>
+
+                <Droppable droppableId={SECTION_ORDER_DROPPABLE_ID} type={SECTION_DRAG_TYPE} direction="horizontal">
+                    {(provided) => (
+                        <div ref={provided.innerRef} {...provided.droppableProps} className="flex gap-4">
+                            {sectionGroups.map((group, index) => (
+                                <Draggable
+                                    key={group.key}
+                                    draggableId={getSectionDraggableId(group.section.id)}
+                                    index={index}
+                                    isDragDisabled={!dragEnabled || pendingSectionIds.has(group.section.id)}
+                                >
+                                    {(draggableProvided) => (
+                                        <div
+                                            ref={draggableProvided.innerRef}
+                                            {...draggableProvided.draggableProps}
+                                            style={draggableProvided.draggableProps.style}
+                                            className="w-[20rem] shrink-0"
+                                        >
+                                            <ProjectSectionGroup
+                                                section={group.section}
+                                                tasks={group.tasks}
+                                                lists={lists}
+                                                selectedTaskId={selectedTaskId}
+                                                selectedTaskIds={selectedTaskIds}
+                                                selectionMode={selectionMode}
+                                                dragEnabled={dragEnabled}
+                                                pending={pendingSectionIds.has(group.section.id)}
+                                                pendingTaskMoveIds={pendingTaskMoveIds}
+                                                sectionDragging={false}
+                                                emptyMessage={activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
+                                                dragHandleProps={draggableProvided.dragHandleProps}
+                                                onAddTask={() => onAddTask(group.section.id)}
+                                                onRenameSection={onRenameSection}
+                                                onDeleteSection={onDeleteSection}
+                                                onSelectionToggle={onSelectionToggle}
+                                                onSelect={onSelect}
+                                                onToggle={onToggle}
+                                            />
+                                        </div>
+                                    )}
+                                </Draggable>
+                            ))}
+                            {provided.placeholder}
+                        </div>
+                    )}
+                </Droppable>
+            </div>
+        </div>
+    );
+}
+
+function ProjectTaskDroppableList({
+    title,
+    droppableId,
+    tasks,
+    lists,
+    selectedTaskId,
+    selectedTaskIds,
+    selectionMode,
+    dragEnabled,
+    pendingTaskMoveIds,
+    emptyMessage,
+    onSelectionToggle,
+    onSelect,
+    onToggle,
+}: {
+    title?: string;
+    droppableId: string;
+    tasks: TaskDatasetRecord[];
+    lists: TodoList[];
+    selectedTaskId: string | null;
+    selectedTaskIds: Set<string>;
+    selectionMode: boolean;
+    dragEnabled: boolean;
+    pendingTaskMoveIds: Set<string>;
+    emptyMessage: string;
+    onSelectionToggle: (task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => void;
+    onSelect: (task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => void;
+    onToggle: (task: TaskDatasetRecord, nextIsDone: boolean) => void;
+}) {
+    const { isCompact } = useCompactMode();
+    return (
+        <section className="space-y-2">
+            {title ? (
+                <div className={cn("flex min-w-0 items-center gap-2", isCompact ? "px-2" : "px-3")}>
+                    <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        {title}
+                    </p>
+                    <span className="rounded-full border border-border/70 bg-muted/45 px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                        {tasks.length}
+                    </span>
+                </div>
+            ) : null}
+
+            <Droppable droppableId={droppableId} type={TASK_DRAG_TYPE} isDropDisabled={!dragEnabled}>
+                {(provided, snapshot) => (
+                    <div ref={provided.innerRef} {...provided.droppableProps}>
+                        {tasks.length > 0 ? (
+                            <div
+                                className={cn(
+                                    "rounded-xl border border-border bg-card/70 p-2",
+                                    snapshot.isDraggingOver && dragEnabled && "border-primary/35 bg-primary/6",
+                                )}
+                            >
+                                <AnimatePresence initial={false}>
+                                    {tasks.map((task, index) => (
+                                        <Draggable
+                                            key={task.id}
+                                            draggableId={task.id}
+                                            index={index}
+                                            isDragDisabled={!dragEnabled || pendingTaskMoveIds.has(task.id)}
+                                        >
+                                            {(draggableProvided, dragSnapshot) => (
+                                                <div
+                                                    ref={draggableProvided.innerRef}
+                                                    {...draggableProvided.draggableProps}
+                                                    {...(dragEnabled ? draggableProvided.dragHandleProps ?? {} : {})}
+                                                    style={draggableProvided.draggableProps.style}
+                                                    className={cn(index !== tasks.length - 1 && "mb-2")}
+                                                >
+                                                    <TaskListItem
+                                                        task={task}
+                                                        lists={lists}
+                                                        selected={task.id === selectedTaskId}
+                                                        bulkSelected={selectedTaskIds.has(task.id)}
+                                                        selectionMode={selectionMode}
+                                                        divider={index !== tasks.length - 1}
+                                                        isDragging={dragSnapshot.isDragging}
+                                                        compact
+                                                        onSelectionToggle={onSelectionToggle}
+                                                        onSelect={onSelect}
+                                                        onToggle={onToggle}
+                                                    />
+                                                </div>
+                                            )}
+                                        </Draggable>
+                                    ))}
+                                </AnimatePresence>
+                                {provided.placeholder}
+                            </div>
+                        ) : (
+                            <div
+                                className={cn(
+                                    "surface-muted rounded-xl border border-dashed border-border/70 px-3 py-4 text-sm text-muted-foreground",
+                                    snapshot.isDraggingOver && dragEnabled && "border-primary/40 bg-primary/6 text-foreground",
+                                )}
+                            >
+                                {emptyMessage}
+                                {provided.placeholder}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </Droppable>
+        </section>
+    );
+}
+
 function ProjectSectionGroup({
     section,
     tasks,
@@ -831,8 +1413,12 @@ function ProjectSectionGroup({
     selectedTaskId,
     selectedTaskIds,
     selectionMode,
+    dragEnabled,
     pending,
+    pendingTaskMoveIds,
+    sectionDragging,
     emptyMessage,
+    dragHandleProps,
     onAddTask,
     onRenameSection,
     onDeleteSection,
@@ -846,8 +1432,12 @@ function ProjectSectionGroup({
     selectedTaskId: string | null;
     selectedTaskIds: Set<string>;
     selectionMode: boolean;
+    dragEnabled: boolean;
     pending: boolean;
+    pendingTaskMoveIds: Set<string>;
+    sectionDragging: boolean;
     emptyMessage: string;
+    dragHandleProps: DraggableProvidedDragHandleProps | null | undefined;
     onAddTask: () => void;
     onRenameSection: (section: TodoSectionRow) => void;
     onDeleteSection: (section: TodoSectionRow) => void;
@@ -855,14 +1445,22 @@ function ProjectSectionGroup({
     onSelect: (task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => void;
     onToggle: (task: TaskDatasetRecord, nextIsDone: boolean) => void;
 }) {
+    const { isCompact } = useCompactMode();
     return (
-        <section className="space-y-2">
-            <div className="flex items-center justify-between gap-3 px-1">
-                <div className="flex min-w-0 items-center gap-2">
+        <section className={cn("space-y-2", sectionDragging && "rounded-2xl border border-border/70 bg-card/50 p-2")}>
+            <div 
+                {...(dragEnabled ? dragHandleProps ?? {} : {})}
+                className={cn(
+                    "group/section flex items-center justify-between gap-2 py-0.5",
+                    isCompact ? "px-2" : "px-3",
+                    dragEnabled && !selectionMode && "cursor-grab select-none active:cursor-grabbing",
+                )}
+            >
+                <div className="relative flex min-w-0 items-center gap-2">
                     <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                         {section.name}
                     </p>
-                    <span className="rounded-full border border-border/70 bg-card px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                    <span className="rounded-full border border-border/70 bg-muted/45 px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
                         {tasks.length}
                     </span>
                 </div>
@@ -897,22 +1495,22 @@ function ProjectSectionGroup({
                 ) : null}
             </div>
 
-            {tasks.length > 0 ? (
-                <TaskList
+            <div className={cn(sectionDragging && "hidden")}>
+                <ProjectTaskDroppableList
+                    droppableId={getSectionDroppableId(section.id)}
                     tasks={tasks}
                     lists={lists}
                     selectedTaskId={selectedTaskId}
                     selectedTaskIds={selectedTaskIds}
                     selectionMode={selectionMode}
+                    dragEnabled={dragEnabled}
+                    pendingTaskMoveIds={pendingTaskMoveIds}
+                    emptyMessage={emptyMessage}
                     onSelectionToggle={onSelectionToggle}
                     onSelect={onSelect}
                     onToggle={onToggle}
                 />
-            ) : (
-                <div className="surface-muted px-3 py-3 text-sm text-muted-foreground">
-                    {emptyMessage}
-                </div>
-            )}
+            </div>
         </section>
     );
 }

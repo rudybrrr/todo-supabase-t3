@@ -1,4 +1,4 @@
-import { resolveTaskDeadline, resolveTimeZone, toDateKeyInTimeZone } from "~/lib/task-deadlines";
+import { resolveTaskDeadline, resolveTimeZone, toDateKeyInTimeZone, toUtcIsoForDateKeyAtLocalTime } from "~/lib/task-deadlines";
 import type { TodoRow } from "~/lib/types";
 
 type ReminderFields = Pick<TodoRow, "due_date" | "deadline_on" | "deadline_at" | "reminder_offset_minutes" | "reminder_at">;
@@ -14,7 +14,6 @@ export const REMINDER_OFFSET_OPTIONS = [
 ] as const;
 
 const zonedDateTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
-const zonedPartsFormatterCache = new Map<string, Intl.DateTimeFormat>();
 const zonedTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
 
 function getZonedDateTimeFormatter(timeZone: string) {
@@ -33,25 +32,6 @@ function getZonedDateTimeFormatter(timeZone: string) {
     return formatter;
 }
 
-function getZonedPartsFormatter(timeZone: string) {
-    const cacheKey = timeZone;
-    const existing = zonedPartsFormatterCache.get(cacheKey);
-    if (existing) return existing;
-
-    const formatter = new Intl.DateTimeFormat("en-US", {
-        timeZone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hourCycle: "h23",
-    });
-    zonedPartsFormatterCache.set(cacheKey, formatter);
-    return formatter;
-}
-
 function getZonedTimeFormatter(timeZone: string) {
     const cacheKey = timeZone;
     const existing = zonedTimeFormatterCache.get(cacheKey);
@@ -64,45 +44,6 @@ function getZonedTimeFormatter(timeZone: string) {
     });
     zonedTimeFormatterCache.set(cacheKey, formatter);
     return formatter;
-}
-
-function getZonedDateTimeParts(date: Date, timeZone: string) {
-    const parts = getZonedPartsFormatter(timeZone).formatToParts(date);
-    const partByType = new Map(parts.map((part) => [part.type, part.value]));
-
-    return {
-        year: Number.parseInt(partByType.get("year") ?? "0", 10),
-        month: Number.parseInt(partByType.get("month") ?? "0", 10),
-        day: Number.parseInt(partByType.get("day") ?? "0", 10),
-        hour: Number.parseInt(partByType.get("hour") ?? "0", 10),
-        minute: Number.parseInt(partByType.get("minute") ?? "0", 10),
-        second: Number.parseInt(partByType.get("second") ?? "0", 10),
-    };
-}
-
-function getTimeZoneOffsetMilliseconds(date: Date, timeZone: string) {
-    const parts = getZonedDateTimeParts(date, timeZone);
-    const utcMs = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
-    return utcMs - date.getTime();
-}
-
-function toUtcIsoForDateKeyAtLocalTime(dateKey: string, hour: number, minute: number, preferredTimeZone?: string | null) {
-    const timeZone = resolveTimeZone(preferredTimeZone);
-    const [yearString, monthString, dayString] = dateKey.split("-");
-    const year = Number.parseInt(yearString ?? "", 10);
-    const month = Number.parseInt(monthString ?? "", 10);
-    const day = Number.parseInt(dayString ?? "", 10);
-
-    if (!year || !month || !day) {
-        return null;
-    }
-
-    const naiveUtcMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
-    let utcMs = naiveUtcMs - getTimeZoneOffsetMilliseconds(new Date(naiveUtcMs), timeZone);
-    const adjustedOffset = getTimeZoneOffsetMilliseconds(new Date(utcMs), timeZone);
-    utcMs = naiveUtcMs - adjustedOffset;
-
-    return new Date(utcMs).toISOString();
 }
 
 export function normalizeReminderOffsetMinutes(value: unknown): number | null {

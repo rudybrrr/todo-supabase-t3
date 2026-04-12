@@ -2,16 +2,20 @@
 
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckSquare2, Filter, Plus, X } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { Check, CheckSquare2, Filter, Plus } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 
 import { AppShell, useShellActions } from "~/components/app-shell";
 import { EmptyState, PageHeader } from "~/components/app-primitives";
+import { cn } from "~/lib/utils";
 import { useData } from "~/components/data-provider";
 import { TaskDetailPanel } from "~/components/task-detail-panel";
 import { TaskList } from "~/components/task-list";
+import { useCompactMode } from "~/components/compact-mode-provider";
 import { TaskSelectionBar } from "~/components/task-selection-bar";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import {
     Dialog,
     DialogContent,
@@ -38,29 +42,41 @@ import type { TaskDatasetRecord } from "~/hooks/use-task-dataset";
 import { useTaskDataset } from "~/hooks/use-task-dataset";
 import { dedupeTasks, useTaskSelectionActions } from "~/hooks/use-task-selection-actions";
 import { mergeBufferedTasks, useTaskTransitionBuffer } from "~/hooks/use-task-transition-buffer";
+import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
+import { normalizeTaskSavedViewLabelIds } from "~/lib/task-labels";
+import {
+    PLANNER_DEADLINE_SCOPE_OPTIONS,
+    PLANNER_PLANNING_STATUS_FILTER_OPTIONS,
+    type PlannerDeadlineScope,
+    type PlannerPlanningStatusFilter,
+} from "~/lib/planner-filters";
+import {
+    applyTaskViewFilters,
+    areTaskViewFilterStatesEqual,
+    createTaskViewFilterState,
+    isTaskSavedViewDeadlineScope,
+    isTaskSavedViewPlanningStatusFilter,
+    normalizeTaskSavedViewRow,
+    TASK_PRIORITY_FILTER_OPTIONS,
+    TASK_SAVED_VIEW_FIELDS,
+    taskSavedViewToState,
+    type TaskPriorityFilter,
+    type TaskViewFilterState,
+} from "~/lib/task-filters";
 import {
     getSmartViewTasks,
     isTaskDueToday,
     isTaskOverdue,
-    type TaskPriority,
     type SmartView,
 } from "~/lib/task-views";
+import type { TaskLabel, TaskSavedViewRow } from "~/lib/types";
+import { TaskSavedViewBar } from "./_components/task-saved-view-bar";
 
 const VIEW_OPTIONS: Array<{ value: SmartView; label: string }> = [
     { value: "today", label: "Today" },
     { value: "upcoming", label: "Upcoming" },
     { value: "inbox", label: "No Due Date" },
     { value: "done", label: "Completed" },
-];
-
-type PriorityFilterValue = "all" | "none" | TaskPriority;
-
-const PRIORITY_OPTIONS: Array<{ value: PriorityFilterValue; label: string }> = [
-    { value: "all", label: "All Priority" },
-    { value: "high", label: "High" },
-    { value: "medium", label: "Medium" },
-    { value: "low", label: "Low" },
-    { value: "none", label: "No Priority" },
 ];
 
 interface PendingTaskLeaveAction {
@@ -81,6 +97,23 @@ function getRouteView(value: string | null): SmartView {
         return value;
     }
     return "today";
+}
+
+function sortTaskSavedViews(views: TaskSavedViewRow[]) {
+    return [...views].sort((a, b) => {
+        const updatedAtComparison = b.updated_at.localeCompare(a.updated_at);
+        if (updatedAtComparison !== 0) return updatedAtComparison;
+        return a.name.localeCompare(b.name);
+    });
+}
+
+function isMissingTaskSavedViewsTableError(error: unknown) {
+    if (!error || typeof error !== "object") return false;
+
+    const code = "code" in error ? String(error.code) : "";
+    const message = "message" in error ? String(error.message) : "";
+
+    return code === "PGRST205" || code === "42P01" || message.includes("task_saved_views");
 }
 
 export default function TasksClient({
@@ -104,18 +137,29 @@ function TasksContent({
     initialView?: string | null;
     initialTaskId?: string | null;
 }) {
+    const router = useRouter();
+    const pathname = usePathname();
     const searchParams = useSearchParams();
     const { enterPrimaryActivity, openQuickAdd, registerPrimaryActivityReset } = useShellActions();
     const { profile } = useData();
-    const { userId, tasks, lists, imagesByTodo, loading } = useTaskDataset();
+    const { isCompact } = useCompactMode();
+    const { userId, tasks, taskLabels, lists, imagesByTodo, loading } = useTaskDataset();
     const { bufferedTasks, queueBufferedTask } = useTaskTransitionBuffer();
+    const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
     const routeView = getRouteView(searchParams.get("view"));
     const routeTaskId = searchParams.get("taskId");
 
     const [view, setView] = useState<SmartView>(() => getRouteView(initialView ?? null));
     const [projectFilter, setProjectFilter] = useState("all");
-    const [priorityFilter, setPriorityFilter] = useState<PriorityFilterValue>("all");
+    const [priorityFilter, setPriorityFilter] = useState<TaskPriorityFilter>("all");
+    const [planningStatusFilter, setPlanningStatusFilter] = useState<PlannerPlanningStatusFilter>("all");
+    const [deadlineScope, setDeadlineScope] = useState<PlannerDeadlineScope>("all");
+    const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([]);
+    const [savedViews, setSavedViews] = useState<TaskSavedViewRow[]>([]);
+    const [activeSavedViewId, setActiveSavedViewId] = useState<string | null>(null);
+    const [saveViewName, setSaveViewName] = useState("");
+    const [savingView, setSavingView] = useState(false);
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTaskId ?? null);
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const [bulkDeletingOpen, setBulkDeletingOpen] = useState(false);
@@ -126,21 +170,24 @@ function TasksContent({
         setView(routeView);
     }, [routeView]);
 
-    const projectScopedTasks = useMemo(() => {
-        return tasks.filter((task) => projectFilter === "all" || task.list_id === projectFilter);
-    }, [projectFilter, tasks]);
-
-    const priorityScopedTasks = useMemo(() => {
-        if (priorityFilter === "all") return projectScopedTasks;
-        if (priorityFilter === "none") {
-            return projectScopedTasks.filter((task) => !task.priority);
-        }
-        return projectScopedTasks.filter((task) => task.priority === priorityFilter);
-    }, [priorityFilter, projectScopedTasks]);
+    const currentFilterState = useMemo<TaskViewFilterState>(() => createTaskViewFilterState({
+        smartView: view,
+        listId: projectFilter,
+        priorityFilter,
+        planningStatusFilter,
+        deadlineScope,
+        labelIds: selectedLabelIds,
+    }), [deadlineScope, planningStatusFilter, priorityFilter, projectFilter, selectedLabelIds, view]);
+    const labelMap = useMemo(() => new Map(taskLabels.map((label) => [label.id, label])), [taskLabels]);
+    const listMap = useMemo(() => new Map(lists.map((list) => [list.id, list])), [lists]);
+    const filteredTasks = useMemo(
+        () => applyTaskViewFilters(tasks, currentFilterState, profile?.timezone),
+        [currentFilterState, profile?.timezone, tasks],
+    );
 
     const visibleTasks = useMemo(
-        () => getSmartViewTasks(priorityScopedTasks, view, new Date(), profile?.timezone),
-        [priorityScopedTasks, profile?.timezone, view],
+        () => getSmartViewTasks(filteredTasks, view, new Date(), profile?.timezone),
+        [filteredTasks, profile?.timezone, view],
     );
     const overdueTasks = useMemo(
         () => visibleTasks.filter((task) => isTaskOverdue(task, new Date(), profile?.timezone)),
@@ -158,10 +205,232 @@ function TasksContent({
         [lists, projectFilter],
     );
     const currentViewLabel = VIEW_OPTIONS.find((option) => option.value === view)?.label ?? "Today";
-    const activeFilterCount = Number(projectFilter !== "all") + Number(priorityFilter !== "all");
-    const activeProjectName = projectFilter === "all"
-        ? null
-        : (lists.find((list) => list.id === projectFilter)?.name ?? "Project");
+    const activeSavedView = useMemo(
+        () => activeSavedViewId ? savedViews.find((savedView) => savedView.id === activeSavedViewId) ?? null : null,
+        [activeSavedViewId, savedViews],
+    );
+    const activeSavedViewState = useMemo(
+        () => activeSavedView ? taskSavedViewToState(activeSavedView) : null,
+        [activeSavedView],
+    );
+    const activeSavedViewStateApplied = useMemo(
+        () => activeSavedViewState ? areTaskViewFilterStatesEqual(currentFilterState, activeSavedViewState) : false,
+        [activeSavedViewState, currentFilterState],
+    );
+    const activeFilterCount = Number(projectFilter !== "all")
+        + Number(priorityFilter !== "all")
+        + Number(planningStatusFilter !== "all")
+        + Number(deadlineScope !== "all")
+        + Number(selectedLabelIds.length > 0);
+
+    const setRouteView = useCallback((nextView: SmartView) => {
+        const nextParams = new URLSearchParams(searchParams.toString());
+
+        if (nextView === "today") {
+            nextParams.delete("view");
+        } else {
+            nextParams.set("view", nextView);
+        }
+
+        const nextQuery = nextParams.toString();
+        router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+    }, [pathname, router, searchParams]);
+
+    useEffect(() => {
+        if (!userId) {
+            setSavedViews([]);
+            setActiveSavedViewId(null);
+            setSaveViewName("");
+            return;
+        }
+
+        let cancelled = false;
+
+        async function loadSavedViews() {
+            const { data, error } = await supabase
+                .from("task_saved_views")
+                .select(TASK_SAVED_VIEW_FIELDS)
+                .eq("user_id", userId)
+                .order("updated_at", { ascending: false });
+
+            if (cancelled) return;
+
+            if (error) {
+                if (isMissingTaskSavedViewsTableError(error)) {
+                    setSavedViews([]);
+                    return;
+                }
+
+                toast.error(error.message || "Unable to load saved task views.");
+                return;
+            }
+
+            setSavedViews(sortTaskSavedViews(((data ?? []) as TaskSavedViewRow[]).map(normalizeTaskSavedViewRow)));
+        }
+
+        void loadSavedViews();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [supabase, userId]);
+
+    useEffect(() => {
+        if (!activeSavedViewId) return;
+        if (savedViews.some((savedView) => savedView.id === activeSavedViewId)) return;
+        setActiveSavedViewId(null);
+    }, [activeSavedViewId, savedViews]);
+
+    useEffect(() => {
+        setSaveViewName(activeSavedView?.name ?? "");
+    }, [activeSavedView]);
+
+    const clearTaskFilters = useCallback(() => {
+        setActiveSavedViewId(null);
+        setSaveViewName("");
+        setProjectFilter("all");
+        setPriorityFilter("all");
+        setPlanningStatusFilter("all");
+        setDeadlineScope("all");
+        setSelectedLabelIds([]);
+    }, []);
+
+    const handleApplySavedView = useCallback((viewId: string) => {
+        const savedView = savedViews.find((item) => item.id === viewId);
+        if (!savedView) return;
+
+        const nextState = taskSavedViewToState(savedView);
+        setActiveSavedViewId(savedView.id);
+        setProjectFilter(nextState.listId);
+        setPriorityFilter(nextState.priorityFilter);
+        setPlanningStatusFilter(nextState.planningStatusFilter);
+        setDeadlineScope(nextState.deadlineScope);
+        setSelectedLabelIds(nextState.labelIds);
+        setSaveViewName(savedView.name);
+        setRouteView(nextState.smartView);
+    }, [savedViews, setRouteView]);
+
+    const canUpdateActiveSavedView = useMemo(() => {
+        if (!activeSavedView || !activeSavedViewState) return false;
+
+        const normalizedName = saveViewName.trim();
+        if (!normalizedName) return false;
+
+        return normalizedName !== activeSavedView.name
+            || !areTaskViewFilterStatesEqual(currentFilterState, activeSavedViewState);
+    }, [activeSavedView, activeSavedViewState, currentFilterState, saveViewName]);
+
+    const handleSaveCurrentView = useCallback(async () => {
+        if (!userId) return;
+
+        const normalizedName = saveViewName.trim();
+        if (!normalizedName) {
+            toast.error("Name the saved view first.");
+            return;
+        }
+
+        if (savedViews.some((savedView) => savedView.name.trim().toLowerCase() === normalizedName.toLowerCase())) {
+            toast.error("A saved view with that name already exists.");
+            return;
+        }
+
+        try {
+            setSavingView(true);
+            const { data, error } = await supabase
+                .from("task_saved_views")
+                .insert({
+                    user_id: userId,
+                    name: normalizedName,
+                    smart_view: currentFilterState.smartView,
+                    list_id: currentFilterState.listId === "all" ? null : currentFilterState.listId,
+                    priority_filter: currentFilterState.priorityFilter,
+                    planning_status_filter: currentFilterState.planningStatusFilter,
+                    deadline_scope: currentFilterState.deadlineScope,
+                    label_ids: currentFilterState.labelIds,
+                })
+                .select(TASK_SAVED_VIEW_FIELDS)
+                .single();
+
+            if (error) throw error;
+
+            const savedView = normalizeTaskSavedViewRow(data as TaskSavedViewRow);
+            setSavedViews((current) => sortTaskSavedViews([savedView, ...current.filter((item) => item.id !== savedView.id)]));
+            setActiveSavedViewId(savedView.id);
+            setSaveViewName(savedView.name);
+            toast.success("Saved view created.");
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Unable to save this view.");
+        } finally {
+            setSavingView(false);
+        }
+    }, [currentFilterState, saveViewName, savedViews, supabase, userId]);
+
+    const handleUpdateActiveSavedView = useCallback(async () => {
+        if (!activeSavedView) return;
+
+        const normalizedName = saveViewName.trim();
+        if (!normalizedName) {
+            toast.error("Name the saved view first.");
+            return;
+        }
+
+        if (savedViews.some((savedView) => savedView.id !== activeSavedView.id && savedView.name.trim().toLowerCase() === normalizedName.toLowerCase())) {
+            toast.error("A saved view with that name already exists.");
+            return;
+        }
+
+        try {
+            setSavingView(true);
+            const { data, error } = await supabase
+                .from("task_saved_views")
+                .update({
+                    name: normalizedName,
+                    smart_view: currentFilterState.smartView,
+                    list_id: currentFilterState.listId === "all" ? null : currentFilterState.listId,
+                    priority_filter: currentFilterState.priorityFilter,
+                    planning_status_filter: currentFilterState.planningStatusFilter,
+                    deadline_scope: currentFilterState.deadlineScope,
+                    label_ids: currentFilterState.labelIds,
+                })
+                .eq("id", activeSavedView.id)
+                .select(TASK_SAVED_VIEW_FIELDS)
+                .single();
+
+            if (error) throw error;
+
+            const updatedView = normalizeTaskSavedViewRow(data as TaskSavedViewRow);
+            setSavedViews((current) => sortTaskSavedViews(current.map((savedView) => savedView.id === updatedView.id ? updatedView : savedView)));
+            setSaveViewName(updatedView.name);
+            toast.success("Saved view updated.");
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Unable to update this saved view.");
+        } finally {
+            setSavingView(false);
+        }
+    }, [activeSavedView, currentFilterState, saveViewName, savedViews, supabase]);
+
+    const handleDeleteActiveSavedView = useCallback(async () => {
+        if (!activeSavedView) return;
+
+        try {
+            setSavingView(true);
+            const { error } = await supabase
+                .from("task_saved_views")
+                .delete()
+                .eq("id", activeSavedView.id);
+
+            if (error) throw error;
+
+            setSavedViews((current) => current.filter((savedView) => savedView.id !== activeSavedView.id));
+            setActiveSavedViewId(null);
+            setSaveViewName("");
+            toast.success("Saved view deleted.");
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Unable to delete this saved view.");
+        } finally {
+            setSavingView(false);
+        }
+    }, [activeSavedView, supabase]);
 
     const overdueDisplayTasks = useMemo(
         () => mergeBufferedTasks(overdueTasks, bufferedTasks.filter((item) => item.bucket === "today-overdue")),
@@ -418,7 +687,7 @@ function TasksContent({
             <div className="space-y-4">
                 {overdueDisplayTasks.length > 0 ? (
                     <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
+                        <div className={cn("flex items-center justify-between", isCompact ? "px-2" : "px-3")}>
                             <p className="eyebrow">Overdue</p>
                             <span className="text-xs text-muted-foreground">{overdueTasks.length}</span>
                         </div>
@@ -438,7 +707,7 @@ function TasksContent({
                 ) : null}
 
                 <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
+                    <div className={cn("flex items-center justify-between", isCompact ? "px-2" : "px-3")}>
                         <p className="eyebrow">Due today</p>
                         <span className="text-xs text-muted-foreground">{dueTodayTasks.length}</span>
                     </div>
@@ -515,14 +784,34 @@ function TasksContent({
                                 <SheetContent side="bottom" className="rounded-t-xl border-x-0 border-t border-border">
                                     <SheetHeader className="sr-only">
                                         <SheetTitle>Filters</SheetTitle>
-                                        <SheetDescription>Refine this task view by project or priority.</SheetDescription>
+                                        <SheetDescription>Refine this task view and save reusable task views.</SheetDescription>
                                     </SheetHeader>
                                     <TasksFilterPanel
                                         lists={lists}
+                                        taskLabels={taskLabels}
+                                        saveViewName={saveViewName}
+                                        savingView={savingView}
+                                        canDeleteActiveSavedView={Boolean(activeSavedView)}
+                                        canUpdateActiveSavedView={canUpdateActiveSavedView}
                                         projectFilter={projectFilter}
                                         priorityFilter={priorityFilter}
+                                        planningStatusFilter={planningStatusFilter}
+                                        deadlineScope={deadlineScope}
+                                        selectedLabelIds={selectedLabelIds}
                                         onProjectFilterChange={setProjectFilter}
                                         onPriorityFilterChange={setPriorityFilter}
+                                        onPlanningStatusFilterChange={setPlanningStatusFilter}
+                                        onDeadlineScopeChange={setDeadlineScope}
+                                        onToggleLabelId={(labelId) => setSelectedLabelIds((current) => {
+                                            return current.includes(labelId)
+                                                ? current.filter((currentLabelId) => currentLabelId !== labelId)
+                                                : normalizeTaskSavedViewLabelIds([...current, labelId]);
+                                        })}
+                                        onChangeSaveViewName={setSaveViewName}
+                                        onClearFilters={clearTaskFilters}
+                                        onDeleteActiveSavedView={() => void handleDeleteActiveSavedView()}
+                                        onSaveCurrentView={() => void handleSaveCurrentView()}
+                                        onUpdateActiveSavedView={() => void handleUpdateActiveSavedView()}
                                     />
                                 </SheetContent>
                             </Sheet>
@@ -539,13 +828,33 @@ function TasksContent({
                                         <span className="sr-only">Open filters</span>
                                     </Button>
                                 </PopoverTrigger>
-                                <PopoverContent align="end" className="w-72 p-3">
+                                <PopoverContent align="end" className="w-[22rem] p-3">
                                     <TasksFilterPanel
                                         lists={lists}
+                                        taskLabels={taskLabels}
+                                        saveViewName={saveViewName}
+                                        savingView={savingView}
+                                        canDeleteActiveSavedView={Boolean(activeSavedView)}
+                                        canUpdateActiveSavedView={canUpdateActiveSavedView}
                                         projectFilter={projectFilter}
                                         priorityFilter={priorityFilter}
+                                        planningStatusFilter={planningStatusFilter}
+                                        deadlineScope={deadlineScope}
+                                        selectedLabelIds={selectedLabelIds}
                                         onProjectFilterChange={setProjectFilter}
                                         onPriorityFilterChange={setPriorityFilter}
+                                        onPlanningStatusFilterChange={setPlanningStatusFilter}
+                                        onDeadlineScopeChange={setDeadlineScope}
+                                        onToggleLabelId={(labelId) => setSelectedLabelIds((current) => {
+                                            return current.includes(labelId)
+                                                ? current.filter((currentLabelId) => currentLabelId !== labelId)
+                                                : normalizeTaskSavedViewLabelIds([...current, labelId]);
+                                        })}
+                                        onChangeSaveViewName={setSaveViewName}
+                                        onClearFilters={clearTaskFilters}
+                                        onDeleteActiveSavedView={() => void handleDeleteActiveSavedView()}
+                                        onSaveCurrentView={() => void handleSaveCurrentView()}
+                                        onUpdateActiveSavedView={() => void handleUpdateActiveSavedView()}
                                     />
                                 </PopoverContent>
                             </Popover>
@@ -571,6 +880,24 @@ function TasksContent({
                     }
                 />
 
+                <div className="flex flex-wrap gap-2 sm:hidden">
+                    {VIEW_OPTIONS.map((option) => {
+                        const active = view === option.value;
+
+                        return (
+                            <Button
+                                key={option.value}
+                                type="button"
+                                size="xs"
+                                variant={active ? "tonal" : "outline"}
+                                onClick={() => setRouteView(option.value)}
+                            >
+                                {option.label}
+                            </Button>
+                        );
+                    })}
+                </div>
+
                 <AnimatePresence>
                     {selectionMode ? (
                         <TaskSelectionBar
@@ -592,30 +919,16 @@ function TasksContent({
                     ) : null}
                 </AnimatePresence>
 
-                {activeFilterCount > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                        {activeProjectName ? (
-                            <button
-                                type="button"
-                                onClick={() => setProjectFilter("all")}
-                                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                            >
-                                {activeProjectName}
-                                <X className="h-3 w-3" />
-                            </button>
-                        ) : null}
-                        {priorityFilter !== "all" ? (
-                            <button
-                                type="button"
-                                onClick={() => setPriorityFilter("all")}
-                                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                            >
-                                {PRIORITY_OPTIONS.find((option) => option.value === priorityFilter)?.label}
-                                <X className="h-3 w-3" />
-                            </button>
-                        ) : null}
-                    </div>
-                ) : null}
+                <TaskSavedViewBar
+                    activeSavedViewId={activeSavedViewId}
+                    activeSavedViewStateApplied={activeSavedViewStateApplied}
+                    currentFilterState={currentFilterState}
+                    labelMap={labelMap}
+                    listMap={listMap}
+                    savedViews={savedViews}
+                    onApplySavedView={handleApplySavedView}
+                    onClearFilters={clearTaskFilters}
+                />
 
                 <div className="grid gap-5 lg:flex lg:items-start lg:gap-0">
                     <div className="min-w-0 flex-1">{taskContent}</div>
@@ -702,19 +1015,55 @@ function TasksContent({
 }
 
 function TasksFilterPanel({
+    canDeleteActiveSavedView,
+    canUpdateActiveSavedView,
+    deadlineScope,
     lists,
+    onChangeSaveViewName,
+    onClearFilters,
+    onDeadlineScopeChange,
+    onDeleteActiveSavedView,
+    onPlanningStatusFilterChange,
     projectFilter,
     priorityFilter,
+    planningStatusFilter,
+    saveViewName,
+    savingView,
+    selectedLabelIds,
+    taskLabels,
     onProjectFilterChange,
     onPriorityFilterChange,
+    onSaveCurrentView,
+    onToggleLabelId,
+    onUpdateActiveSavedView,
 }: {
+    canDeleteActiveSavedView: boolean;
+    canUpdateActiveSavedView: boolean;
+    deadlineScope: PlannerDeadlineScope;
     lists: { id: string; name: string }[];
+    onChangeSaveViewName: (value: string) => void;
+    onClearFilters: () => void;
+    onDeadlineScopeChange: (value: PlannerDeadlineScope) => void;
+    onDeleteActiveSavedView: () => void;
+    onPlanningStatusFilterChange: (value: PlannerPlanningStatusFilter) => void;
     projectFilter: string;
-    priorityFilter: PriorityFilterValue;
+    priorityFilter: TaskPriorityFilter;
+    planningStatusFilter: PlannerPlanningStatusFilter;
+    saveViewName: string;
+    savingView: boolean;
+    selectedLabelIds: string[];
+    taskLabels: TaskLabel[];
     onProjectFilterChange: (value: string) => void;
-    onPriorityFilterChange: (value: PriorityFilterValue) => void;
+    onPriorityFilterChange: (value: TaskPriorityFilter) => void;
+    onSaveCurrentView: () => void;
+    onToggleLabelId: (labelId: string) => void;
+    onUpdateActiveSavedView: () => void;
 }) {
-    const hasActiveFilters = projectFilter !== "all" || priorityFilter !== "all";
+    const hasActiveFilters = projectFilter !== "all"
+        || priorityFilter !== "all"
+        || planningStatusFilter !== "all"
+        || deadlineScope !== "all"
+        || selectedLabelIds.length > 0;
 
     return (
         <div className="space-y-4 p-1">
@@ -738,7 +1087,7 @@ function TasksFilterPanel({
             <div className="space-y-2">
                 <p className="eyebrow">Priority</p>
                 <div className="flex flex-wrap gap-2">
-                    {PRIORITY_OPTIONS.map((option) => (
+                    {TASK_PRIORITY_FILTER_OPTIONS.map((option) => (
                         <button
                             key={option.value}
                             type="button"
@@ -751,15 +1100,108 @@ function TasksFilterPanel({
                 </div>
             </div>
 
+            <div className="space-y-2">
+                <p className="eyebrow">Planning</p>
+                <Select value={planningStatusFilter} onValueChange={(value) => {
+                    if (!isTaskSavedViewPlanningStatusFilter(value)) return;
+                    onPlanningStatusFilterChange(value);
+                }}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="All planning" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {PLANNER_PLANNING_STATUS_FILTER_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+
+            <div className="space-y-2">
+                <p className="eyebrow">Deadline</p>
+                <Select value={deadlineScope} onValueChange={(value) => {
+                    if (!isTaskSavedViewDeadlineScope(value)) return;
+                    onDeadlineScopeChange(value);
+                }}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="All deadlines" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {PLANNER_DEADLINE_SCOPE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+
+            {taskLabels.length > 0 ? (
+                <div className="space-y-2">
+                    <p className="eyebrow">Labels</p>
+                    <div className="flex flex-wrap gap-2">
+                        {taskLabels.map((label) => {
+                            const active = selectedLabelIds.includes(label.id);
+
+                            return (
+                                <button
+                                    key={label.id}
+                                    type="button"
+                                    onClick={() => onToggleLabelId(label.id)}
+                                    className={cnFilterChip(active, active ? "normal-case tracking-normal" : "normal-case tracking-normal")}
+                                >
+                                    {active ? <Check className="h-3 w-3" /> : null}
+                                    {label.name}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            ) : null}
+
+            <div className="space-y-2 border-t border-border/60 pt-3">
+                <p className="eyebrow">Saved view</p>
+                <Input
+                    value={saveViewName}
+                    onChange={(event) => onChangeSaveViewName(event.target.value)}
+                    placeholder="Exam prep, deep work, backlog"
+                />
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={savingView}
+                        onClick={onSaveCurrentView}
+                    >
+                        Save current
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={savingView || !canUpdateActiveSavedView}
+                        onClick={onUpdateActiveSavedView}
+                    >
+                        Update
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={savingView || !canDeleteActiveSavedView}
+                        onClick={onDeleteActiveSavedView}
+                    >
+                        Delete
+                    </Button>
+                </div>
+            </div>
+
             {hasActiveFilters ? (
                 <Button
                     variant="ghost"
                     size="sm"
                     className="h-9 w-full justify-center"
-                    onClick={() => {
-                        onProjectFilterChange("all");
-                        onPriorityFilterChange("all");
-                    }}
+                    onClick={onClearFilters}
                 >
                     Clear filters
                 </Button>
@@ -768,8 +1210,8 @@ function TasksFilterPanel({
     );
 }
 
-function cnFilterChip(active: boolean) {
+function cnFilterChip(active: boolean, className?: string) {
     return active
-        ? "rounded-full border border-primary bg-primary px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-foreground"
-        : "rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
+        ? `inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-foreground ${className ?? ""}`.trim()
+        : `inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground ${className ?? ""}`.trim();
 }
