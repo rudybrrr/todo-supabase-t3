@@ -1,212 +1,91 @@
-﻿# Stride: System Architecture
+# Stride: System Architecture
 
-## 1. Product Framing
+Status: Ongoing (the codebase and data model are actively evolving).
 
-Stride is an execution-first student productivity system.
+## High-Level Architecture
 
-Core loop:
+- Frontend: Next.js App Router application (React + TypeScript).
+- Backend: Supabase (Postgres + Auth + Realtime + Storage) with RLS-heavy authorization.
+- Pattern: client-heavy interaction surfaces with optimistic updates, plus selective realtime subscriptions to reduce stale collaboration state.
 
-1. Capture work quickly.
-2. Clarify what matters now.
-3. Plan realistic focus time.
-4. Execute in focused sessions.
-5. Review outcomes and adjust.
+## Frontend Structure
 
-The architecture favors coherent end-to-end flow over isolated feature growth.
+- Routing: `src/app/*` (App Router).
+  - Auth entry: `/login`
+  - Authenticated surfaces: `/tasks`, `/calendar`, `/focus`, `/projects`, `/progress`, `/community`, `/settings`
+- Layout: `src/app/layout.tsx` mounts global providers and Vercel Speed Insights.
+- “Shell” UI: pages render inside a shared `AppShell` (navigation + global actions).
+- State layers (high-level):
+  - `DataProvider`: authenticated user context + profile/preferences + list membership + top-level stats.
+  - `useTaskDataset` and related hooks: route-focused task/planning datasets, optimistic helpers, and realtime wiring.
+  - `FocusProvider`: timer state + focus session lifecycle persistence.
 
-## 2. Runtime Stack
+## Backend / Data Layer
 
-- Framework: Next.js 16 (App Router)
-- Language: TypeScript
-- UI: Tailwind CSS, shadcn/ui, Framer Motion
-- Backend: Supabase (Postgres, Auth, Realtime, Storage, RLS)
-- Observability: Sentry, Vercel Speed Insights, PostHog
-- Testing: Vitest for semantic utility coverage
+Schema management:
 
-## 3. Route Architecture
+- SQL-first migrations live in `supabase/migrations/*.sql` and define tables, indexes, triggers, and policies.
 
-### Primary routes
+Key entities (representative, not exhaustive):
 
-- `/tasks`: task execution workspace
-- `/calendar`: planning and focus-block scheduling
-- `/focus`: dedicated execution timer surface
-- `/projects`: project index + per-project workspace
+- `profiles`: user preferences (timezone, week start, compact mode, planner defaults, shell ordering/accent tokens).
+- `todo_lists` + `todo_list_members`: projects and membership.
+- `todos`: tasks (including deadlines, recurrence, reminders, estimates, assignee foundation, stable ordering).
+- `todo_sections`: project sections for grouping and board organization.
+- `planned_focus_blocks`: calendar/planner blocks.
+- `focus_sessions`: execution sessions (optionally attributed to a task and/or planned block).
+- `task_saved_views` and `planner_saved_filters`: persisted filter presets.
+- `task_labels` + `todo_label_links`: labels.
+- `todo_steps`: checklist steps.
+- `todo_comments`: task comments.
+- `weekly_commitments`: community commitments.
 
-### Secondary routes
+Storage:
 
-- `/progress`: weekly execution review
-- `/community`: accountability and commitments
-- `/settings`: profile, appearance, shortcuts, planner defaults
+- Buckets are expected for attachments and avatars (see `README.md` for names).
+- Attachment metadata is stored in tables alongside Storage objects.
 
-## 4. Shell Architecture
+## Authentication
 
-Stride runs inside a shared authenticated shell.
+- Supabase Auth (email/password) is used for login and session management.
+- Server-side gating: authenticated routes call a helper that redirects unauthenticated users to `/login`.
+- Client-side usage: browser Supabase client is used for queries/mutations and realtime subscriptions.
+- New-user bootstrap: on first login, the app attempts to provision a usable workspace (profile + Inbox).
 
-### Desktop shell
+## Analytics / Observability
 
-- Collapsible sidebar
-- Primary route navigation
-- Smart view links and project list
-- Shell-level Quick Add
-- Command palette / global search
-- Profile utilities (Progress, Community, Settings, logout)
+- Sentry is integrated via `@sentry/nextjs` (client/server/edge config + App Router global error boundary).
+- PostHog is initialized client-side only when `NEXT_PUBLIC_POSTHOG_*` env vars are present.
+- Vercel Speed Insights is mounted at the root layout.
 
-### Mobile shell
+## Main App Surfaces / Routing
 
-- Drawer navigation (same model as desktop)
-- Top-right account menu
-- No bottom-tab dependency
+- `/tasks`: execution workspace (smart views, saved views, bulk actions, deep task detail editing).
+- `/calendar`: planning surface around persisted focus blocks + filters.
+- `/focus`: timer surface that persists focus sessions and ties them back to planned work when possible.
+- `/projects`: per-project workspace with list/board views, sections, and ordering.
+- `/progress`: weekly review computed from tasks + planned blocks + focus sessions.
+- `/community`: commitments and early accountability/peer visibility (additional insights are still WIP).
+- `/settings`: profile + preference management.
 
-## 5. State And Data Layers
+## Realtime, Mutations, and Consistency
 
-### 5.1 `DataProvider`
+- Primary approach: optimistic local patching for responsive UI.
+- Realtime is used selectively (channels scoped by user/list/task) for freshness in collaboration-sensitive areas (e.g., task lists, steps, comments, sections).
+- Fallback behavior is defensive: when a table is missing (e.g., during partial migration rollout), some surfaces treat it as “feature unavailable” instead of hard failing.
 
-Responsibilities:
+## Deployment (Inferred)
 
-- authenticated `userId`
-- profile and preference data
-- accessible project list
-- high-level counters and shared app context
+- The repository is structured like a standard Next.js deployment and includes Vercel Speed Insights integration.
+- The live demo URL is documented in `README.md`, but the repo does not enforce a single deployment target in code.
 
-### 5.2 `WorkspaceDataProvider`
+## Limitations / Future Work
 
-Responsibilities:
+Grounded in `todo.md` (kept intentionally conservative here):
 
-- tasks and task labels
-- planned focus blocks
-- task images
-- project summaries
-- members by project
-- local patching and upsert/remove helpers
-
-This layer powers Tasks, Calendar, Focus, and Projects surfaces.
-
-### 5.3 `FocusProvider`
-
-Responsibilities:
-
-- timer mode/state (`focus`, `shortBreak`, `longBreak`)
-- time-left state and persistence
-- session lifecycle persistence into `focus_sessions`
-- binding focus context to task/planned-block references
-
-### 5.4 Route-scoped hooks
-
-Used for domain-specific data that should not inflate global state:
-
-- `useTaskSections`
-- `useTaskComments`
-- other task- or route-local helpers
-
-## 6. Task Domain Model
-
-The task model is richer than basic checklist semantics.
-
-### Core fields and semantics
-
-- `title`, `description`, `is_done`, completion metadata
-- deadline model:
-  - legacy `due_date` (compatibility)
-  - `deadline_on` (date-only)
-  - `deadline_at` (timed)
-- `priority`, `estimated_minutes`
-- `reminder_offset_minutes` / reminder fields
-- `recurrence_rule`
-- `section_id` and `assignee_user_id`
-
-### Related entities
-
-- labels (`task_labels` relationships)
-- comments (`todo_comments`)
-- attachments (Supabase Storage + metadata rows)
-
-## 7. Planning And Focus Pipeline
-
-### Planner (`/calendar`)
-
-- Persisted planned blocks in `planned_focus_blocks`
-- Week and month planning surfaces
-- Task-linked and generic planning blocks
-- Saved planning filters
-- Optimistic mutations with reconciliation
-
-### Focus (`/focus`)
-
-- timer-first execution interface
-- session attribution to task/planned block when available
-- persistence into `focus_sessions`
-- feeds execution signals to Progress and Community surfaces
-
-## 8. Projects And Collaboration
-
-Projects (lists) are enriched with:
-
-- section structure (`todo_sections`)
-- list/board workspace views
-- persistent task ordering
-- shared membership (`todo_list_members`)
-- assignee context and task comments
-
-Project workspace behavior emphasizes direct execution and ordering stability.
-
-## 9. Progress And Community Surfaces
-
-### Progress
-
-Weekly review behavior includes:
-
-- planned vs actual focus
-- slipped/overdue work
-- neglected projects
-- estimate quality signals
-
-### Community
-
-- weekly commitments (`weekly_commitments`)
-- shared-peer comparisons based on collaboration context
-- lightweight accountability tied to execution activity
-
-## 10. Mutation And Realtime Strategy
-
-Stride favors targeted local patching plus selective server reconciliation.
-
-Typical mutation flow:
-
-1. UI action updates local state optimistically when safe.
-2. Mutation is persisted to Supabase.
-3. On success: keep local state and reconcile as needed.
-4. On failure: rollback/refresh and surface actionable error feedback.
-
-Realtime updates are used where they materially improve collaboration freshness, without forcing universal full-list reloads.
-
-## 11. Observability And Operational Signals
-
-- Sentry wired through Next.js instrumentation + app error boundary
-- Vercel Speed Insights mounted at root layout
-- PostHog initialized client-side when env vars are present
-
-Current design goal: actionable failure visibility for task, planner, and settings flows without noisy telemetry.
-
-## 12. Current Constraints And Tradeoffs
-
-- Supabase-centric architecture keeps backend complexity low but couples product velocity to migration discipline.
-- Rich optimistic UI improves responsiveness but requires careful regression coverage.
-- Offline-first behavior is not yet a product guarantee; network-connected usage remains the primary mode.
-
-## 13. Extension Priorities (Architecture Lens)
-
-Near-term architecture priorities:
-
-- stronger interaction-level regression coverage
-- clearer error instrumentation in high-risk flows
-- tighter cross-route consistency for mobile and dense workspaces
-- continued shell command depth and recovery ergonomics
-
-## 14. Verification Standard
-
-```bash
-npm run typecheck
-npm run lint
-npm run test
-npm run build
-```
+- Add interaction-level regression protection for high-risk flows (planner blocks, quick add, task detail leave-guard, focus persistence).
+- Harden rollback/error paths for optimistic updates and improve failure instrumentation.
+- Reduce UX drift across core routes (especially dense mobile interactions).
+- Deepen shell actions beyond navigation while keeping state manageable.
+- Distribution packaging (PWA → wrappers) is tracked as a parallel path after reliability.
+- Offline-first behavior is not yet a guaranteed contract.

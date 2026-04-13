@@ -11,6 +11,5 @@ export function resolveThemeSelection(theme: string | undefined, _resolvedTheme:
     if (theme === "light") return "light";
     if (theme === "paperback") return "light";
     if (theme === "dark") return "dark";
-    if (theme === "noir") return "dark";
     return "system";
 }

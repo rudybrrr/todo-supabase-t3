@@ -3,10 +3,7 @@
 import * as React from "react"
 import { ThemeProvider as NextThemesProvider } from "next-themes"
 
-const LEGACY_THEME_MAP: Record<string, "light" | "dark"> = {
-    paperback: "light",
-    noir: "dark",
-}
+const KNOWN_THEMES = new Set(["system", "light", "dark"])
 
 export function ThemeProvider({
     children,
@@ -17,7 +14,9 @@ export function ThemeProvider({
         const storedTheme = window.localStorage.getItem(storageKey)
         if (!storedTheme) return
 
-        const migratedTheme = LEGACY_THEME_MAP[storedTheme]
+        let migratedTheme: "light" | "dark" | null = null
+        if (storedTheme === "paperback") migratedTheme = "light"
+        else if (!KNOWN_THEMES.has(storedTheme)) migratedTheme = "dark"
         if (!migratedTheme) return
 
         window.localStorage.setItem(storageKey, migratedTheme)
