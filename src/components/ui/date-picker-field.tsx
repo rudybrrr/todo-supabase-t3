@@ -53,7 +53,7 @@ export function DatePickerField({
                     type="button"
                     disabled={disabled}
                     className={cn(
-                        "border-input focus-visible:border-ring focus-visible:ring-ring/50 inline-flex h-11 w-full items-center justify-between gap-3 rounded-lg border bg-card px-3.5 text-left text-sm outline-none transition-[color,box-shadow,border-color,background-color] focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+                        "border-input focus-visible:border-ring focus-visible:ring-ring/50 inline-flex h-10 w-full items-center justify-between gap-3 rounded-md border bg-card px-3 text-left text-sm outline-none transition-[color,box-shadow,border-color,background-color] focus-visible:ring-[2px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
                         className,
                     )}
                 >
@@ -65,7 +65,7 @@ export function DatePickerField({
                     </span>
                 </button>
             </PopoverTrigger>
-            <PopoverContent align={popoverAlign} className="w-auto rounded-xl border border-border p-3">
+            <PopoverContent align={popoverAlign} className="w-auto rounded-lg border border-border p-2.5">
                 <div className="space-y-3">
                     <Calendar
                         mode="single"
@@ -77,13 +77,13 @@ export function DatePickerField({
                             onChange(format(date, "yyyy-MM-dd"));
                             setOpen(false);
                         }}
-                        className="rounded-lg bg-transparent p-0"
+                        className="rounded-md bg-transparent p-0"
                         classNames={{
                             month_caption: "flex h-9 items-center justify-center px-10",
                             weekday: "flex-1 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground",
                         }}
                     />
-                    <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+                    <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-2.5">
                         <Button
                             type="button"
                             size="sm"

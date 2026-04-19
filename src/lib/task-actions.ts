@@ -168,7 +168,7 @@ export async function setTaskCompletion(
     supabase: SupabaseClient,
     taskId: string,
     nextIsDone: boolean,
-    actorUserId?: string | null,
+    _actorUserId?: string | null,
 ): Promise<TodoRow> {
     const { data, error } = await supabase
         .from("todos")

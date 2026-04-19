@@ -27,7 +27,7 @@ function SelectTrigger({
         <SelectPrimitive.Trigger
             data-slot="select-trigger"
             className={cn(
-                "border-input data-[placeholder]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 inline-flex h-11 w-full items-center justify-between gap-2 rounded-lg border bg-card px-3.5 text-left text-sm outline-none transition-[color,box-shadow,border-color,background-color] focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+                "border-input data-[placeholder]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 inline-flex h-10 w-full items-center justify-between gap-2 rounded-md border bg-card px-3 text-left text-sm outline-none transition-[color,box-shadow,border-color,background-color] focus-visible:ring-[2px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
                 className,
             )}
             {...props}
@@ -82,7 +82,7 @@ function SelectContent({
                 data-slot="select-content"
                 position={position}
                 className={cn(
-                    "bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-80 min-w-[10rem] overflow-hidden rounded-lg border border-border p-1 shadow-[0_18px_36px_rgba(17,18,15,0.16)]",
+                    "bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-80 min-w-[10rem] overflow-hidden rounded-lg border border-border/80 p-1 shadow-[0_14px_32px_rgba(15,23,42,0.16)]",
                     position === "popper" &&
                         "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
                     className,
@@ -112,7 +112,7 @@ function SelectLabel({
     return (
         <SelectPrimitive.Label
             data-slot="select-label"
-            className={cn("px-2.5 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground", className)}
+            className={cn("px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground", className)}
             {...props}
         />
     );
@@ -127,7 +127,7 @@ function SelectItem({
         <SelectPrimitive.Item
             data-slot="select-item"
             className={cn(
-                "focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-md py-2 pr-8 pl-2.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+                "focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-md py-1.5 pr-8 pl-2.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
                 "data-[state=checked]:bg-accent/85 data-[state=checked]:text-accent-foreground",
                 className,
             )}
@@ -150,7 +150,7 @@ function SelectSeparator({
     return (
         <SelectPrimitive.Separator
             data-slot="select-separator"
-            className={cn("-mx-1 my-1 h-px bg-border", className)}
+            className={cn("-mx-1 my-1 h-px bg-border/80", className)}
             {...props}
         />
     );

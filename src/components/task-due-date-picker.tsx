@@ -1,22 +1,21 @@
 "use client";
 
-import { addDays, format, isValid, nextMonday, parseISO } from "date-fns";
+import { addDays, format, isValid, parseISO } from "date-fns";
 import { CalendarDays, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Calendar } from "~/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "~/components/ui/sheet";
 import { cn } from "~/lib/utils";
 
 type PopoverAlign = "start" | "center" | "end";
-type SmallScreenCalendarPlacement = "inline" | "left";
 
 interface TaskDueDateMenuProps {
     value?: string | null;
     onChange: (value: string) => void;
     allowClear?: boolean;
     onClose?: () => void;
-    smallScreenCalendarPlacement?: SmallScreenCalendarPlacement;
 }
 
 interface TaskDueDatePickerProps {
@@ -27,7 +26,6 @@ interface TaskDueDatePickerProps {
     allowClear?: boolean;
     disabled?: boolean;
     popoverAlign?: PopoverAlign;
-    smallScreenCalendarPlacement?: SmallScreenCalendarPlacement;
     className?: string;
 }
 
@@ -42,17 +40,15 @@ export function TaskDueDateMenu({
     onChange,
     allowClear = false,
     onClose,
-    smallScreenCalendarPlacement = "inline",
 }: TaskDueDateMenuProps) {
     const selectedDate = useMemo(() => getSelectedDate(value), [value]);
     const [calendarOpen, setCalendarOpen] = useState(false);
     const [displayMonth, setDisplayMonth] = useState<Date>(selectedDate ?? new Date());
-    const closeTimerRef = useRef<number | null>(null);
     const currentValue = value ?? "";
     const presets = useMemo(() => {
         const today = new Date();
         const tomorrow = addDays(today, 1);
-        const nextWeek = nextMonday(today);
+        const nextWeek = addDays(today, 7);
 
         return [
             {
@@ -81,36 +77,12 @@ export function TaskDueDateMenu({
         setDisplayMonth(selectedDate ?? new Date());
     }, [calendarOpen, selectedDate]);
 
-    useEffect(() => {
-        return () => {
-            if (closeTimerRef.current !== null) {
-                window.clearTimeout(closeTimerRef.current);
-            }
-        };
-    }, []);
-
-    function clearCloseTimer() {
-        if (closeTimerRef.current === null) return;
-        window.clearTimeout(closeTimerRef.current);
-        closeTimerRef.current = null;
-    }
-
     function openCalendar() {
-        clearCloseTimer();
-        setCalendarOpen(true);
-    }
-
-    function queueCalendarClose() {
-        clearCloseTimer();
-        closeTimerRef.current = window.setTimeout(() => {
-            setCalendarOpen(false);
-            closeTimerRef.current = null;
-        }, 140);
+        setCalendarOpen((current) => !current);
     }
 
     function apply(nextValue: string) {
         onChange(nextValue);
-        clearCloseTimer();
         setCalendarOpen(false);
         onClose?.();
     }
@@ -139,12 +111,9 @@ export function TaskDueDateMenu({
 
     return (
         <div
-            className="relative w-[16.5rem]"
-            onMouseEnter={clearCloseTimer}
-            onMouseLeave={queueCalendarClose}
+            className="w-full min-w-0"
             onBlurCapture={(event) => {
                 if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-                clearCloseTimer();
                 setCalendarOpen(false);
             }}
         >
@@ -177,12 +146,11 @@ export function TaskDueDateMenu({
 
                 <div
                     className="relative"
-                    onMouseEnter={openCalendar}
-                    onFocusCapture={openCalendar}
                 >
                     <button
                         type="button"
                         onClick={openCalendar}
+                        aria-expanded={calendarOpen}
                         className={cn(
                             "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors",
                             calendarOpen
@@ -192,29 +160,16 @@ export function TaskDueDateMenu({
                     >
                         <div>
                             <div className="text-sm font-medium">Pick date...</div>
-                            <div className="text-xs text-muted-foreground">Choose any day from the calendar</div>
                         </div>
                         <ChevronRight className="h-4 w-4" />
-                        </button>
+                    </button>
                 </div>
             </div>
 
             {calendarOpen ? (
-                <>
-                    {smallScreenCalendarPlacement === "inline" ? (
-                        <div className="mt-2 rounded-xl border border-border bg-popover p-2.5 text-popover-foreground shadow-[0_18px_36px_rgba(17,18,15,0.16)] lg:hidden">
-                            {renderCalendar()}
-                        </div>
-                    ) : (
-                        <div className="absolute top-0 right-full z-10 rounded-xl border border-border bg-popover p-2.5 text-popover-foreground shadow-[0_18px_36px_rgba(17,18,15,0.16)] origin-right motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:slide-in-from-right-1 lg:hidden">
-                            {renderCalendar()}
-                        </div>
-                    )}
-
-                    <div className="absolute top-0 left-full z-10 hidden rounded-xl border border-border bg-popover p-2.5 text-popover-foreground shadow-[0_18px_36px_rgba(17,18,15,0.16)] origin-left motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:slide-in-from-left-1 lg:block">
-                        {renderCalendar()}
-                    </div>
-                </>
+                <div className="mt-2 rounded-xl border border-border bg-popover p-2.5 text-popover-foreground shadow-[0_18px_36px_rgba(17,18,15,0.16)]">
+                    {renderCalendar()}
+                </div>
             ) : null}
         </div>
     );
@@ -228,11 +183,57 @@ export function TaskDueDatePicker({
     allowClear = false,
     disabled = false,
     popoverAlign = "start",
-    smallScreenCalendarPlacement = "inline",
     className,
 }: TaskDueDatePickerProps) {
     const [open, setOpen] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
     const selectedDate = useMemo(() => getSelectedDate(value), [value]);
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia("(max-width: 639px)");
+        const syncMobileState = () => setIsMobile(mediaQuery.matches);
+
+        syncMobileState();
+        mediaQuery.addEventListener("change", syncMobileState);
+
+        return () => {
+            mediaQuery.removeEventListener("change", syncMobileState);
+        };
+    }, []);
+
+    if (isMobile) {
+        return (
+            <Sheet open={open} onOpenChange={setOpen}>
+                <div className="px-0">
+                    <button
+                        id={id}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setOpen(true)}
+                        className={cn(
+                            "border-input focus-visible:border-ring focus-visible:ring-ring/50 inline-flex h-11 w-full items-center justify-between gap-3 rounded-lg border bg-card px-3.5 text-left text-sm outline-none transition-[color,box-shadow,border-color,background-color] focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+                            className,
+                        )}
+                    >
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                            <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className={cn("truncate", selectedDate ? "text-foreground" : "text-muted-foreground")}>
+                                {selectedDate ? format(selectedDate, "dd MMM yyyy") : placeholder}
+                            </span>
+                        </span>
+                    </button>
+                </div>
+                <SheetContent side="bottom" className="h-[min(90vh,44rem)] rounded-t-2xl border-x-0 border-t border-border bg-background p-0">
+                    <SheetHeader className="border-b border-border/60 px-4 py-3 text-left">
+                        <SheetTitle>Change due date</SheetTitle>
+                    </SheetHeader>
+                    <div className="max-h-[calc(90vh-4rem)] overflow-y-auto p-3">
+                        <TaskDueDateMenu value={value} onChange={onChange} allowClear={allowClear} onClose={() => setOpen(false)} />
+                    </div>
+                </SheetContent>
+            </Sheet>
+        );
+    }
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -254,14 +255,8 @@ export function TaskDueDatePicker({
                     </span>
                 </button>
             </PopoverTrigger>
-            <PopoverContent align={popoverAlign} className="w-auto rounded-xl border border-border p-2.5">
-                <TaskDueDateMenu
-                    value={value}
-                    onChange={onChange}
-                    allowClear={allowClear}
-                    onClose={() => setOpen(false)}
-                    smallScreenCalendarPlacement={smallScreenCalendarPlacement}
-                />
+            <PopoverContent align={popoverAlign} className="w-[min(22rem,calc(100vw-1rem))] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-border p-2.5">
+                <TaskDueDateMenu value={value} onChange={onChange} allowClear={allowClear} onClose={() => setOpen(false)} />
             </PopoverContent>
         </Popover>
     );

@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { toast } from "sonner";
 import { Check, KeyRound, Loader2, Upload } from "lucide-react";
 
+import { SectionCard } from "~/components/app-primitives";
 import { useData } from "~/components/data-provider";
 import { getPublicAvatarUrl, isAvatarPathOwnedByUser, PROFILE_AVATAR_BUCKET } from "~/lib/avatar";
 import { getPlannerPreferences } from "~/lib/planning";
@@ -435,35 +436,22 @@ export function ProfileForm({ userId }: { userId: string }) {
     }
 
     return (
-        <div className="space-y-5">
-            <form onSubmit={updateProfile}>
-                <div className="rounded-2xl border border-border/40 bg-card/50 shadow-sm p-5 space-y-5">
-                    <h3 className="text-sm font-bold text-foreground">Profile</h3>
-
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                        <Avatar className="w-16 h-16 border-2 border-border shadow-sm shrink-0">
+        <div className="space-y-4">
+            <SectionCard title="Account" dense>
+                <form onSubmit={updateProfile} className="space-y-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <Avatar className="h-14 w-14 shrink-0 border border-border/70">
                             <AvatarImage src={avatarPreviewUrl ?? ""} alt="Profile picture preview" />
-                            <AvatarFallback className="bg-primary/10 text-primary font-bold text-lg">
+                            <AvatarFallback className="bg-primary/10 text-primary text-base font-semibold">
                                 {avatarFallbackText}
                             </AvatarFallback>
                         </Avatar>
-                        <div className="space-y-1.5 min-w-0">
-                            <p className="text-xs text-muted-foreground">JPG, PNG, or WEBP up to 3 MB.</p>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="rounded-xl gap-2 font-bold shadow-sm text-xs h-8"
-                                disabled={avatarUploading}
-                                asChild
-                            >
+                        <div className="space-y-2">
+                            <p className="text-xs leading-5 text-muted-foreground">JPG, PNG, or WEBP, up to 3 MB.</p>
+                            <Button type="button" variant="outline" size="sm" disabled={avatarUploading} asChild>
                                 <label className={avatarUploading ? "cursor-not-allowed" : "cursor-pointer"}>
-                                    {avatarUploading ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    ) : (
-                                        <Upload className="w-3.5 h-3.5" />
-                                    )}
-                                    {avatarUploading ? "Uploading..." : "Upload Picture"}
+                                    {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                                    {avatarUploading ? "Uploading..." : "Upload picture"}
                                     <input
                                         type="file"
                                         accept="image/jpeg,image/png,image/webp"
@@ -478,59 +466,52 @@ export function ProfileForm({ userId }: { userId: string }) {
                         </div>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2 max-w-lg">
+                    <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
-                            <Label htmlFor="username" className="text-xs font-bold uppercase tracking-wider opacity-70">
+                            <Label htmlFor="username" className="text-sm font-medium text-foreground">
                                 Username
                             </Label>
                             <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold opacity-50">@</span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
                                 <Input
                                     id="username"
                                     placeholder="your_handle"
                                     value={username}
                                     onChange={(event) => setUsername(event.target.value)}
-                                    className="pl-8 rounded-xl border-border/40 bg-background/50 shadow-sm h-10 font-medium"
+                                    className="h-9 rounded-xl border-border/60 bg-background/70 pl-8"
                                     required
                                 />
                             </div>
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="fullName" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                Full Name
+                            <Label htmlFor="fullName" className="text-sm font-medium text-foreground">
+                                Full name
                             </Label>
                             <Input
                                 id="fullName"
-                                placeholder="Display Name"
+                                placeholder="Display name"
                                 value={fullName}
                                 onChange={(event) => setFullName(event.target.value)}
-                                className="rounded-xl border-border/40 bg-background/50 shadow-sm h-10 font-medium"
+                                className="h-9 rounded-xl border-border/60 bg-background/70"
                             />
                         </div>
                     </div>
 
                     <div className="flex justify-end">
-                        <Button
-                            type="submit"
-                            disabled={profileSaving}
-                            size="sm"
-                            className="rounded-xl px-5 font-bold gap-2 shadow-sm text-xs h-8"
-                        >
-                            {profileSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            {profileSaving ? "Saving..." : "Save Profile"}
+                        <Button type="submit" disabled={profileSaving} size="sm" className="gap-2 rounded-xl px-4">
+                            {profileSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                            {profileSaving ? "Saving..." : "Save profile"}
                         </Button>
                     </div>
-                </div>
-            </form>
+                </form>
+            </SectionCard>
 
-            <form onSubmit={updateStudyGoal}>
-                <div className="rounded-2xl border border-border/40 bg-card/50 shadow-sm p-5 space-y-5">
-                    <h3 className="text-sm font-bold text-foreground">Planner Defaults</h3>
-
-                    <div className="grid gap-4 sm:grid-cols-2 max-w-lg">
+            <SectionCard title="Planner defaults" dense>
+                <form onSubmit={updateStudyGoal} className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
-                            <Label htmlFor="dailyGoal" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                Daily Focus Goal
+                            <Label htmlFor="dailyGoal" className="text-sm font-medium text-foreground">
+                                Daily focus goal
                             </Label>
                             <div className="relative">
                                 <Input
@@ -541,40 +522,37 @@ export function ProfileForm({ userId }: { userId: string }) {
                                     inputMode="numeric"
                                     value={dailyGoal}
                                     onChange={(event) => setDailyGoal(event.target.value)}
-                                    className="rounded-xl border-border/40 bg-background/50 shadow-sm h-10 font-medium pr-20"
+                                    className="h-9 rounded-xl border-border/60 bg-background/70 pr-20"
                                     required
                                 />
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">
                                     minutes
                                 </span>
                             </div>
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="defaultBlockMinutes" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                Default Block Length
+                            <Label htmlFor="defaultBlockMinutes" className="text-sm font-medium text-foreground">
+                                Default block length
                             </Label>
                             <Select value={defaultBlockMinutes} onValueChange={setDefaultBlockMinutes}>
-                                <SelectTrigger
-                                    id="defaultBlockMinutes"
-                                    className="h-10 rounded-xl border-border/40 bg-background/50 font-medium shadow-sm"
-                                >
+                                <SelectTrigger id="defaultBlockMinutes" className="h-9 rounded-xl border-border/60 bg-background/70 font-medium">
                                     <SelectValue placeholder="Block length" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {BLOCK_DURATION_OPTIONS
                                         .filter((minutes) => minutes <= (Number.parseInt(plannerDayEndHour, 10) - Number.parseInt(plannerDayStartHour, 10)) * 60)
                                         .map((minutes) => (
-                                        <SelectItem key={minutes} value={String(minutes)}>
-                                            {minutes} minutes
-                                        </SelectItem>
-                                    ))}
+                                            <SelectItem key={minutes} value={String(minutes)}>
+                                                {minutes} minutes
+                                            </SelectItem>
+                                        ))}
                                 </SelectContent>
                             </Select>
                         </div>
                     </div>
 
-                    <div className="space-y-1.5 max-w-lg">
-                        <Label htmlFor="plannerTimeZone" className="text-xs font-bold uppercase tracking-wider opacity-70">
+                    <div className="space-y-1.5">
+                        <Label htmlFor="plannerTimeZone" className="text-sm font-medium text-foreground">
                             Timezone
                         </Label>
                         <Input
@@ -582,21 +560,18 @@ export function ProfileForm({ userId }: { userId: string }) {
                             value={timeZone}
                             onChange={(event) => setTimeZone(event.target.value)}
                             placeholder="Asia/Singapore"
-                            className="rounded-xl border-border/40 bg-background/50 shadow-sm h-10 font-medium"
+                            className="h-9 rounded-xl border-border/60 bg-background/70"
                             required
                         />
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-3 max-w-lg">
+                    <div className="grid gap-3 sm:grid-cols-3">
                         <div className="space-y-1.5">
-                            <Label htmlFor="weekStartsOn" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                Week Starts
+                            <Label htmlFor="weekStartsOn" className="text-sm font-medium text-foreground">
+                                Week starts
                             </Label>
                             <Select value={weekStartsOn} onValueChange={setWeekStartsOn}>
-                                <SelectTrigger
-                                    id="weekStartsOn"
-                                    className="h-10 rounded-xl border-border/40 bg-background/50 font-medium shadow-sm"
-                                >
+                                <SelectTrigger id="weekStartsOn" className="h-9 rounded-xl border-border/60 bg-background/70 font-medium">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -609,14 +584,11 @@ export function ProfileForm({ userId }: { userId: string }) {
                             </Select>
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="plannerDayStartHour" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                Day Starts
+                            <Label htmlFor="plannerDayStartHour" className="text-sm font-medium text-foreground">
+                                Day starts
                             </Label>
                             <Select value={plannerDayStartHour} onValueChange={setPlannerDayStartHour}>
-                                <SelectTrigger
-                                    id="plannerDayStartHour"
-                                    className="h-10 rounded-xl border-border/40 bg-background/50 font-medium shadow-sm"
-                                >
+                                <SelectTrigger id="plannerDayStartHour" className="h-9 rounded-xl border-border/60 bg-background/70 font-medium">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -629,14 +601,11 @@ export function ProfileForm({ userId }: { userId: string }) {
                             </Select>
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="plannerDayEndHour" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                Day Ends
+                            <Label htmlFor="plannerDayEndHour" className="text-sm font-medium text-foreground">
+                                Day ends
                             </Label>
                             <Select value={plannerDayEndHour} onValueChange={setPlannerDayEndHour}>
-                                <SelectTrigger
-                                    id="plannerDayEndHour"
-                                    className="h-10 rounded-xl border-border/40 bg-background/50 font-medium shadow-sm"
-                                >
+                                <SelectTrigger id="plannerDayEndHour" className="h-9 rounded-xl border-border/60 bg-background/70 font-medium">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -653,84 +622,72 @@ export function ProfileForm({ userId }: { userId: string }) {
                     </div>
 
                     <div className="flex justify-end">
-                        <Button
-                            type="submit"
-                            disabled={studyGoalSaving}
-                            size="sm"
-                            className="rounded-xl px-5 font-bold gap-2 shadow-sm text-xs h-8"
-                        >
-                            {studyGoalSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            {studyGoalSaving ? "Saving..." : "Save Planner"}
+                        <Button type="submit" disabled={studyGoalSaving} size="sm" className="gap-2 rounded-xl px-4">
+                            {studyGoalSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                            {studyGoalSaving ? "Saving..." : "Save planner"}
                         </Button>
                     </div>
-                </div>
-            </form>
+                </form>
+            </SectionCard>
 
-            <form onSubmit={updatePassword}>
-                <div className="rounded-2xl border border-border/40 bg-card/50 shadow-sm p-5 space-y-5">
-                    <h3 className="text-sm font-bold text-foreground">Security</h3>
-
-                    <div className="space-y-4 max-w-sm">
+            <SectionCard title="Security" dense>
+                <form onSubmit={updatePassword} className="space-y-4">
+                    <div className="grid max-w-md gap-3">
                         <div className="space-y-1.5">
-                            <Label htmlFor="currentPassword" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                Current Password
+                            <Label htmlFor="currentPassword" className="text-sm font-medium text-foreground">
+                                Current password
                             </Label>
                             <Input
                                 id="currentPassword"
                                 type="password"
                                 value={currentPassword}
                                 onChange={(event) => setCurrentPassword(event.target.value)}
-                                className="rounded-xl border-border/40 bg-background/50 shadow-sm h-10 font-medium"
+                                className="h-9 rounded-xl border-border/60 bg-background/70"
                                 autoComplete="current-password"
                                 required
                             />
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="newPassword" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                New Password
+                            <Label htmlFor="newPassword" className="text-sm font-medium text-foreground">
+                                New password
                             </Label>
                             <Input
                                 id="newPassword"
                                 type="password"
                                 value={newPassword}
                                 onChange={(event) => setNewPassword(event.target.value)}
-                                className="rounded-xl border-border/40 bg-background/50 shadow-sm h-10 font-medium"
+                                className="h-9 rounded-xl border-border/60 bg-background/70"
                                 autoComplete="new-password"
                                 required
                             />
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="confirmPassword" className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                Confirm New Password
+                            <Label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">
+                                Confirm new password
                             </Label>
                             <Input
                                 id="confirmPassword"
                                 type="password"
                                 value={confirmPassword}
                                 onChange={(event) => setConfirmPassword(event.target.value)}
-                                className="rounded-xl border-border/40 bg-background/50 shadow-sm h-10 font-medium"
+                                className="h-9 rounded-xl border-border/60 bg-background/70"
                                 autoComplete="new-password"
                                 required
                             />
                         </div>
-                        <p className="text-[10px] text-muted-foreground font-bold uppercase">
-                            Min 8 chars, uppercase, lowercase, and a number.
+                        <p className="text-sm leading-6 text-muted-foreground">
+                            Minimum 8 characters with uppercase, lowercase, and a number.
                         </p>
                     </div>
 
                     <div className="flex justify-end">
-                        <Button
-                            type="submit"
-                            disabled={passwordSaving}
-                            size="sm"
-                            className="rounded-xl px-5 font-bold gap-2 shadow-sm text-xs h-8"
-                        >
-                            {passwordSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
-                            {passwordSaving ? "Updating..." : "Change Password"}
+                        <Button type="submit" disabled={passwordSaving} size="sm" className="gap-2 rounded-xl px-4">
+                            {passwordSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                            {passwordSaving ? "Updating..." : "Change password"}
                         </Button>
                     </div>
-                </div>
-            </form>
+                </form>
+            </SectionCard>
         </div>
     );
 }

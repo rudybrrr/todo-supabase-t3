@@ -1,18 +1,16 @@
 "use client";
 
-import { formatDistanceToNow } from "date-fns";
-import { CheckCircle2, Loader2, MessageSquareText, Target, Trophy, Users } from "lucide-react";
+import { Loader2, Target, Trophy, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "~/components/app-shell";
-import { EmptyState, PageHeader, SectionCard } from "~/components/app-primitives";
+import { EmptyState, MetricTile, PageHeader, SectionCard } from "~/components/app-primitives";
 import { useData } from "~/components/data-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
-import { useTaskDataset } from "~/hooks/use-task-dataset";
 import { buildCommunityLeaderboard, createEmptyWeeklyCommitment, type CommunityLeaderboardEntry } from "~/lib/community-data";
 import { getPlannerPreferences } from "~/lib/planning";
 import { getProgressWeekWindow } from "~/lib/progress-review";
@@ -53,7 +51,6 @@ export default function CommunityClient() {
 function CommunityContent() {
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const { userId, lists, profile } = useData();
-    const { tasks } = useTaskDataset();
     const plannerPreferences = useMemo(() => getPlannerPreferences(profile), [profile]);
     const currentWindow = useMemo(
         () => getProgressWeekWindow(profile?.timezone, new Date(), plannerPreferences.weekStartsOn),
@@ -165,7 +162,7 @@ function CommunityContent() {
         } finally {
             setLoading(false);
         }
-    }, [currentWindow.startDateKey, lists, plannerPreferences.weekStartsOn, profile?.timezone, supabase, tasks, userId]);
+    }, [currentWindow.startDateKey, lists, plannerPreferences.weekStartsOn, profile?.timezone, supabase, userId]);
 
     useEffect(() => {
         void loadCommunity();
@@ -212,49 +209,70 @@ function CommunityContent() {
         }
     }
 
+    const totalSharedProjects = useMemo(
+        () => leaderboard.reduce((total, entry) => total + entry.shared_project_count, 0),
+        [leaderboard],
+    );
+    const commitmentState = commitmentSummary.trim() ? "Written" : "Open";
+
     return (
-        <div className="page-container">
+        <div className="page-container space-y-5">
             <PageHeader
                 title="Community"
                 description={`Shared accountability for ${currentWindow.label}.`}
             />
 
             {loading ? (
-                <div className="surface-muted rounded-xl px-4 py-5 text-sm text-muted-foreground">Loading community...</div>
+                <div className="rounded-xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                    Loading community...
+                </div>
             ) : (
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                    <div className="space-y-5">
-                        <SectionCard title="This week's commitment">
-                            <div className="space-y-3">
-                                <div className="rounded-xl border border-border/60 bg-background/65 px-3.5 py-3">
+                <div className="space-y-5">
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <MetricTile label="Peers" value={`${peerCount}`} meta="People sharing a project with you" />
+                        <MetricTile label="Ranked" value={`${leaderboard.length}`} meta="Peers with focus logged this week" />
+                        <MetricTile label="Shared projects" value={`${totalSharedProjects}`} meta="Overlap across shared workspaces" />
+                        <MetricTile label="Commitment" value={commitmentState} meta={targetFocusMinutes || targetTaskCount ? "Weekly target captured" : "No weekly target yet"} />
+                    </div>
+
+                    <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                        <SectionCard title="Weekly commitment" description="Write the outcome you want to protect this week.">
+                            <div className="space-y-4">
+                                <div className="rounded-xl border border-border/60 bg-background/70 p-4">
                                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                         Week of {currentWindow.label}
                                     </p>
                                     <Textarea
                                         value={commitmentSummary}
                                         onChange={(event) => setCommitmentSummary(event.target.value)}
-                                        placeholder="What are you committing to this week?"
-                                        className="mt-3 min-h-[96px] resize-none rounded-xl border-border/70 bg-muted/15 px-3.5 py-3 text-sm leading-6 shadow-none focus-visible:ring-0"
+                                        placeholder="State the work you are committing to finish."
+                                        className="mt-3 min-h-[112px] resize-none rounded-xl border-border/70 bg-muted/15 px-3.5 py-3 text-sm leading-6 shadow-none focus-visible:ring-0"
                                     />
-                                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            inputMode="numeric"
-                                            value={targetFocusMinutes}
-                                            onChange={(event) => setTargetFocusMinutes(event.target.value)}
-                                            placeholder="Target focus minutes"
-                                        />
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            inputMode="numeric"
-                                            value={targetTaskCount}
-                                            onChange={(event) => setTargetTaskCount(event.target.value)}
-                                            placeholder="Target completed tasks"
-                                        />
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <label className="space-y-1.5">
+                                            <span className="text-xs font-medium text-muted-foreground">Focus target</span>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                inputMode="numeric"
+                                                value={targetFocusMinutes}
+                                                onChange={(event) => setTargetFocusMinutes(event.target.value)}
+                                                placeholder="120"
+                                            />
+                                        </label>
+                                        <label className="space-y-1.5">
+                                            <span className="text-xs font-medium text-muted-foreground">Task target</span>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                inputMode="numeric"
+                                                value={targetTaskCount}
+                                                onChange={(event) => setTargetTaskCount(event.target.value)}
+                                                placeholder="8"
+                                            />
+                                        </label>
                                     </div>
-                                    <div className="mt-3 flex justify-end">
+                                    <div className="mt-4 flex justify-end">
                                         <Button size="sm" onClick={() => void handleSaveCommitment()} disabled={savingCommitment}>
                                             {savingCommitment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Target className="h-4 w-4" />}
                                             Save commitment
@@ -264,12 +282,15 @@ function CommunityContent() {
                             </div>
                         </SectionCard>
 
-                        <SectionCard title="Shared peers">
+                        <SectionCard title="Peer leaderboard" description="Focused peers across your shared projects this week.">
                             {peerCount > 0 ? (
                                 leaderboard.length > 0 ? (
                                     <div className="overflow-hidden rounded-xl border border-border/60 bg-background/60">
                                         {leaderboard.map((entry, index) => (
-                                            <div key={entry.user_id} className={`flex items-center gap-3 px-3.5 py-3 ${index !== leaderboard.length - 1 ? "border-b border-border/50" : ""}`}>
+                                            <div
+                                                key={entry.user_id}
+                                                className={`flex items-center gap-3 px-3.5 py-3 ${index !== leaderboard.length - 1 ? "border-b border-border/50" : ""}`}
+                                            >
                                                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary/70 text-sm font-semibold text-foreground">
                                                     {entry.rank === 1 ? <Trophy className="h-5 w-5 text-amber-500" /> : entry.rank}
                                                 </div>
@@ -306,12 +327,6 @@ function CommunityContent() {
                                     icon={<Users className="h-8 w-8" />}
                                 />
                             )}
-                        </SectionCard>
-                    </div>
-
-                    <div className="space-y-5">
-                        <SectionCard title="Leaderboard placeholder">
-                            <p className="text-sm text-muted-foreground">More community insights are coming soon.</p>
                         </SectionCard>
                     </div>
                 </div>

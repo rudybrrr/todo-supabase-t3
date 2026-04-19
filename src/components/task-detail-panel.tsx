@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import Image from "next/image";
 import {
   Bell,
   CalendarRange,
@@ -94,7 +95,7 @@ import {
   parseTaskLabelInput,
   sortTaskLabels,
 } from "~/lib/task-labels";
-import { canTaskRecur, RECURRENCE_RULE_OPTIONS } from "~/lib/task-recurrence";
+import { RECURRENCE_RULE_OPTIONS } from "~/lib/task-recurrence";
 import {
   buildTaskReminderMutation,
   getReminderOffsetInputValue,
@@ -280,7 +281,6 @@ function createComparableTaskDetailFormSnapshot(
 
 function TaskDetailMetaField({
   label,
-  hint,
   children,
   className,
 }: {
@@ -292,17 +292,16 @@ function TaskDetailMetaField({
   return (
     <div
       className={cn(
-        "flex items-start gap-4 py-2",
+        "grid gap-2 py-3 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-3",
         className,
       )}
     >
-      <p className="text-muted-foreground w-[5.25rem] shrink-0 pt-0.5 text-sm font-medium leading-5">
-        {label}
-      </p>
-      <div className="min-w-0 flex-1 space-y-1.5">{children}</div>
-      {hint ? (
-        <div className="text-muted-foreground hidden text-sm xl:block">{hint}</div>
-      ) : null}
+      <div className="space-y-0.5 sm:pt-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          {label}
+        </p>
+      </div>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }
@@ -657,6 +656,14 @@ function TaskDetailForm({
     parsedReminderOffsetMinutes,
     profile?.timezone,
   ]);
+  const reminderPreviewLabel = useMemo(() => {
+    if (!reminderPreviewAt) return null;
+
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(reminderPreviewAt));
+  }, [reminderPreviewAt]);
   const { comments, loading: commentsLoading, addComment, removeComment } = 
     useTaskComments(task.id);
 
@@ -1015,21 +1022,35 @@ function TaskDetailForm({
   }
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="border-border/60 space-y-2 border-b px-5 pt-3 pb-3 sm:px-6 sm:pt-4 sm:pb-3">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="border-border/60 border-b bg-background/95 px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-foreground text-sm font-semibold tracking-tight">
-                {taskPositionLabel ? `Task ${taskPositionLabel}` : "Task"}
-              </p>
-              <p className="text-muted-foreground mt-2 truncate text-sm">
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-2">
+                <p className="text-foreground text-sm font-semibold tracking-tight">
+                  {taskPositionLabel ? `Task ${taskPositionLabel}` : "Task"}
+                </p>
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]",
+                    saving
+                      ? "border-border/60 bg-muted/60 text-muted-foreground"
+                      : isDirty
+                        ? "border-primary/25 bg-primary/10 text-primary"
+                        : "border-border/60 bg-muted/35 text-muted-foreground",
+                  )}
+                >
+                  {saving ? "Saving" : isDirty ? "Unsaved" : "Saved"}
+                </span>
+              </div>
+              <p className="truncate text-sm text-muted-foreground">
                 {headerContextLabel}
               </p>
             </div>
 
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1.5">
               {onNavigateToTask ? (
-                <div className="border-border/70 bg-muted/35 inline-flex items-center rounded-lg border p-0.5">
+                <div className="border-border/70 bg-muted/35 inline-flex items-center rounded-md border p-0.5">
                   <Button
                     type="button"
                     variant="ghost"
@@ -1056,10 +1077,16 @@ function TaskDetailForm({
               ) : null}
 
               {isDirty ? (
-                <Button variant="tonal" size="sm" onClick={() => void handleSave()} disabled={saving || !cleanedTitle}>
-                  {saving ? "Saving..." : "Save"}
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => void handleSave()}
+                  disabled={saving || !cleanedTitle}
+                >
+                  {saving ? "Saving..." : "Save changes"}
                 </Button>
               ) : null}
+
               {onClose ? (
                 <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>
                   <X className="h-4 w-4" />
@@ -1067,339 +1094,472 @@ function TaskDetailForm({
               ) : null}
             </div>
           </div>
+        </div>
 
-          <div className="px-1 py-0.5 sm:px-1 sm:py-1">
-            <div className="flex items-start gap-3">
-              <button
-                type="button"
-                onClick={() => void handleToggleCompletion()}
-                className={cn(
-                  "mt-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border transition-colors",
-                  isDone
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-card hover:border-primary/60 text-transparent",
+        <div className="border-border/50 border-b px-4 py-4 sm:px-6 sm:py-5">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => void handleToggleCompletion()}
+              className={cn(
+                "mt-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border transition-colors",
+                isDone
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-transparent hover:border-primary/60",
+              )}
+            >
+              <Check className="h-4 w-4" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <TaskSyntaxComposer
+                value={title}
+                ariaLabel="Task title"
+                placeholder="Task title"
+                tokens={parsedTitleInput.tokens}
+                suggestionState={activeSuggestion}
+                selectionPosition={selectionPosition}
+                onSelectionChange={(selection) => {
+                  setComposerSelection(selection);
+                  if (selectionPosition != null) setSelectionPosition(null);
+                }}
+                onChange={setTitle}
+                onApplySuggestion={(suggestion) => {
+                  if (!activeSuggestion) return;
+                  const nextValue = applyQuickAddSuggestion(title, activeSuggestion, suggestion);
+                  setTitle(nextValue.value);
+                  setComposerSelection(nextValue.selection);
+                  setSelectionPosition(nextValue.selection);
+                }}
+                onSubmit={() => void handleSave()}
+                rows={1}
+                className={cn("mt-0.5", isDone && "opacity-70")}
+                composerClassName="text-[1.15rem] leading-7 font-semibold tracking-[-0.02em] sm:text-[1.35rem]"
+              />
+
+              {parsedTitleInput.chips.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {parsedTitleInput.chips.map((chip, index) => (
+                    <span
+                      key={`${chip.kind}-${chip.value}-${index}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-muted/35 px-2 py-1 text-[10px] font-medium text-muted-foreground"
+                    >
+                      <span className="uppercase tracking-[0.14em]">{chip.label}</span>
+                      <span className="text-foreground">{chip.value}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              {showEmptyTitleWarning ? (
+                <p className="mt-2 text-sm text-destructive">Add a task name.</p>
+              ) : null}
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                {saving ? (
+                  <span className="text-muted-foreground">Saving changes...</span>
+                ) : isDirty ? (
+                  <span className="text-primary">Unsaved edits</span>
+                ) : (
+                  <span className="text-muted-foreground">Ready</span>
                 )}
-              >
-                <Check className="h-4 w-4" />
-              </button>
-              <div className="min-w-0 flex-1">
-                <TaskSyntaxComposer
-                  value={title}
-                  ariaLabel="Task title"
-                  placeholder="Task title"
-                  tokens={parsedTitleInput.tokens}
-                  suggestionState={activeSuggestion}
-                  selectionPosition={selectionPosition}
-                  onSelectionChange={(selection) => {
-                    setComposerSelection(selection);
-                    if (selectionPosition != null) setSelectionPosition(null);
-                  }}
-                  onChange={setTitle}
-                  onApplySuggestion={(suggestion) => {
-                    if (!activeSuggestion) return;
-                    const nextValue = applyQuickAddSuggestion(title, activeSuggestion, suggestion);
-                    setTitle(nextValue.value);
-                    setComposerSelection(nextValue.selection);
-                    setSelectionPosition(nextValue.selection);
-                  }}
-                  onSubmit={() => void handleSave()}
-                  rows={1}
-                  className={cn("mt-0.5", isDone && "opacity-70")}
-                  composerClassName="text-[1.15rem] leading-7 font-semibold tracking-[-0.03em] sm:text-[1.25rem]"
-                />
-                {parsedTitleInput.chips.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {parsedTitleInput.chips.map((chip, index) => (
-                      <span
-                        key={`${chip.kind}-${chip.value}-${index}`}
-                        className="bg-muted/55 text-muted-foreground inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
-                      >
-                        <span className="text-[11px] tracking-[0.12em] uppercase">{chip.label}</span>
-                        <span className="text-foreground">{chip.value}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {showEmptyTitleWarning && <p className="text-destructive mt-3 text-sm">Add a task name.</p>}
-                {isDirty && <p className="text-muted-foreground mt-2 text-sm">Unsaved changes</p>}
+                {isDone ? (
+                  <span className="text-muted-foreground">Completed</span>
+                ) : null}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="task-detail-scroll min-h-0 flex-1 lg:overflow-y-auto lg:overscroll-y-contain">
-        <div className="space-y-4 p-4 sm:p-5 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-4 lg:space-y-0">
-        {/* Pane 1: Core Content */}
-        <div className="flex min-h-0 flex-col lg:h-full">
-          <div className="space-y-5 rounded-2xl border border-border/55 bg-card p-5">
-            <section className="space-y-2">
-              <h3 className="text-foreground px-1 text-sm font-semibold">Description</h3>
-              <Textarea
-                id="detailNotes"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Add details, links, or context"
-                className="border border-border/60 bg-background min-h-[110px] resize-none rounded-lg px-3.5 py-3 text-[15px] leading-6 shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60"
-              />
-            </section>
-
-            <TaskStepsSection taskId={task.id} />
-
-            <section className="space-y-4">
-              <div className="flex items-center justify-between px-1">
-                <h3 className="text-foreground text-sm font-semibold">Attachments</h3>
-                <div className="text-muted-foreground/50 text-[10px] font-medium tabular-nums">
-                  {(totalAttachmentsSize / (1024 * 1024)).toFixed(1)} / {MAX_ATTACHMENT_SIZE_MB} MB
-                </div>
-              </div>
-              <TaskAttachmentUpload
-                userId={userId}
-                todoId={task.id}
-                listId={task.list_id}
-                currentTotalSizeBytes={totalAttachmentsSize}
-                onUploaded={handleAttachmentsUploaded}
-              />
-              {images.length > 0 ? (
-                <div className="space-y-2">
-                  {images.map((image) => {
-                    const publicUrl = supabase.storage.from("todo-images").getPublicUrl(image.path).data.publicUrl;
-                    const displayName = getAttachmentDisplayName(image);
-                    const extension = getAttachmentExtension(displayName).toUpperCase();
-                    const imageAttachment = isImageAttachment(image);
-                    const isDeleting = deletingAttachmentId === image.id;
-                    const metaLabel = [imageAttachment ? "Image" : extension || "File", formatAttachmentSize(image.size_bytes)].filter(Boolean).join(" - ");
-
-                    return (
-                      <div key={image.id} className="border-border/60 flex items-center gap-3 rounded-lg border px-3 py-2">
-                        <a href={publicUrl} target="_blank" rel="noreferrer" className="bg-card flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md">
-                          {imageAttachment ? (
-                            <img src={publicUrl} alt={displayName} className="h-full w-full object-cover" />
-                          ) : (
-                            <FileText className="text-muted-foreground h-4 w-4" />
-                          )}
-                        </a>
-                        <a href={publicUrl} target="_blank" rel="noreferrer" className="min-w-0 flex-1">
-                          <p className="text-foreground truncate text-sm font-medium">{displayName}</p>
-                          <p className="text-muted-foreground truncate text-sm">{metaLabel}</p>
-                        </a>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          className="text-muted-foreground hover:text-destructive shrink-0"
-                          disabled={isDeleting}
-                          onClick={() => void handleAttachmentDelete(image)}
-                        >
-                          {isDeleting ? (
-                            <div className="border-muted-foreground/35 border-t-muted-foreground h-3.5 w-3.5 animate-spin rounded-full border-2" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </section>
-
-            <TaskCommentsSection
-              comments={comments}
-              loading={commentsLoading}
-              currentUserId={userId}
-              onAddComment={handleAddComment}
-              onDeleteComment={handleDeleteComment}
-            />
-          </div>
-        </div>
-
-        {/* Pane 2: Metadata */}
-        <div className="flex min-h-0 flex-col lg:h-full">
-          <div className="space-y-5 rounded-2xl border border-border/55 bg-background p-5">
-            <h3 className="text-foreground px-1 text-sm font-semibold">Metadata</h3>
-            <div className="space-y-3 px-1">
-              <TaskDetailMetaField label="Project">
-                <Select
-                  value={projectSelectValue}
-                  onValueChange={(val) => {
-                    if (val === PENDING_PROJECT_SELECT_VALUE) return;
-                    setManualListId(val);
-                    setManualSectionId("");
-                  }}
-                >
-                  <SelectTrigger className="border-border/60 bg-background h-auto min-h-0 rounded-lg px-3.5 py-2.5 text-sm shadow-none focus-visible:ring-0">
-                    <span className="truncate">{projectDisplayLabel}</span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {pendingProjectName && (
-                      <SelectItem value={PENDING_PROJECT_SELECT_VALUE}>Create {pendingProjectName}</SelectItem>
-                    )}
-                    {lists.map((list) => (
-                      <SelectItem key={list.id} value={list.id}>{list.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </TaskDetailMetaField>
-
-              <TaskDetailMetaField label="Date">
-                <div className="grid gap-2">
-                  <TaskDueDatePicker
-                    value={effectiveDueDate}
-                    onChange={setManualDueDate}
-                    allowClear
-                    className="border-border/60 bg-background h-auto rounded-lg px-3.5 py-2.5 text-sm shadow-none focus-visible:ring-0"
+        <div className="task-detail-scroll min-h-0 flex-1 overflow-y-auto lg:overscroll-y-contain">
+          <div className="grid min-h-0 gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-5">
+            <div className="min-w-0 space-y-4">
+              <section className="rounded-2xl border border-border/60 bg-card">
+                <div className="border-border/60 border-b px-4 py-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold tracking-[-0.02em] text-foreground">
+                      Description
+                    </h3>
+                    <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      Context, links, notes
+                    </span>
+                  </div>
+                  <Textarea
+                    id="detailNotes"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Add details, links, or context"
+                    className="min-h-[120px] resize-none rounded-xl border-border/60 bg-background px-3.5 py-3 text-[15px] leading-6 shadow-none placeholder:text-muted-foreground/60 focus-visible:ring-0"
                   />
-                  {(effectiveDueDate || effectiveDueTime) && (
-                    <TimeSelectField
-                      value={effectiveDueTime}
-                      onChange={setManualDueTime}
-                      allowClear
-                      className="border-border/60 bg-background h-auto min-h-0 rounded-lg px-3.5 py-2.5 font-mono text-sm shadow-none focus-visible:ring-0"
+                </div>
+
+                <div className="px-4 py-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold tracking-[-0.02em] text-foreground">
+                      Attachments
+                    </h3>
+                    <div className="text-[10px] font-medium tabular-nums text-muted-foreground">
+                      {(totalAttachmentsSize / (1024 * 1024)).toFixed(1)} / {MAX_ATTACHMENT_SIZE_MB} MB
+                    </div>
+                  </div>
+                  <TaskAttachmentUpload
+                    userId={userId}
+                    todoId={task.id}
+                    listId={task.list_id}
+                    currentTotalSizeBytes={totalAttachmentsSize}
+                    onUploaded={handleAttachmentsUploaded}
+                  />
+                  {images.length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      {images.map((image) => {
+                        const publicUrl = supabase.storage.from("todo-images").getPublicUrl(image.path).data.publicUrl;
+                        const displayName = getAttachmentDisplayName(image);
+                        const extension = getAttachmentExtension(displayName).toUpperCase();
+                        const imageAttachment = isImageAttachment(image);
+                        const isDeleting = deletingAttachmentId === image.id;
+                        const metaLabel = [imageAttachment ? "Image" : extension || "File", formatAttachmentSize(image.size_bytes)].filter(Boolean).join(" - ");
+
+                        return (
+                          <div key={image.id} className="border-border/60 flex items-center gap-3 rounded-xl border bg-background/70 px-3 py-2.5">
+                              <a href={publicUrl} target="_blank" rel="noreferrer" className="bg-card relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/50">
+                                {imageAttachment ? (
+                                  <Image
+                                    src={publicUrl}
+                                    alt={displayName}
+                                    fill
+                                    unoptimized
+                                    sizes="36px"
+                                    className="object-cover"
+                                  />
+                                ) : (
+                                  <FileText className="text-muted-foreground h-4 w-4" />
+                                )}
+                              </a>
+                            <a href={publicUrl} target="_blank" rel="noreferrer" className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
+                              <p className="truncate text-xs text-muted-foreground">{metaLabel}</p>
+                            </a>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-xs"
+                              className="shrink-0 text-muted-foreground hover:text-destructive"
+                              disabled={isDeleting}
+                              onClick={() => void handleAttachmentDelete(image)}
+                            >
+                              {isDeleting ? (
+                                <div className="border-muted-foreground/35 border-t-muted-foreground h-3.5 w-3.5 animate-spin rounded-full border-2" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
+              <TaskStepsSection taskId={task.id} />
+
+              <TaskCommentsSection
+                comments={comments}
+                loading={commentsLoading}
+                currentUserId={userId}
+                onAddComment={handleAddComment}
+                onDeleteComment={handleDeleteComment}
+              />
+            </div>
+
+            <section className="flex min-w-0 flex-col rounded-2xl border border-border/60 bg-background">
+              <div className="border-border/60 border-b px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold tracking-[-0.02em] text-foreground">
+                      Metadata
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Project, timing, ownership, and planning details.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowMoreMeta((open) => !open)}
+                  >
+                    <ChevronDown
+                      className={cn(
+                        "mr-1 h-4 w-4 transition-transform",
+                        showMoreMeta && "rotate-180",
+                      )}
                     />
-                  )}
+                    {showMoreMeta ? "Fewer details" : "More details"}
+                  </Button>
                 </div>
-              </TaskDetailMetaField>
-
-              <TaskDetailMetaField label="Priority">
-                <Select value={effectivePriority || "none"} onValueChange={(val) => setManualPriority(val === "none" ? "" : val as any)}>
-                  <SelectTrigger className="border-border/60 bg-background h-auto min-h-0 rounded-lg px-3.5 py-2.5 text-sm shadow-none focus-visible:ring-0">
-                    <SelectValue placeholder="No priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No priority</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </TaskDetailMetaField>
-
-              <TaskDetailMetaField label="Estimate">
-                <div className="border-border/60 bg-background flex items-center gap-2 rounded-lg border px-3.5 py-2.5">
-                  <Input
-                    type="number"
-                    min="1"
-                    inputMode="numeric"
-                    value={effectiveEstimatedMinutes}
-                    onChange={(e) => setManualEstimatedMinutes(e.target.value)}
-                    placeholder="45"
-                    className="h-auto w-20 rounded-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
-                  />
-                  <span className="text-muted-foreground text-xs font-medium uppercase">Min</span>
-                </div>
-              </TaskDetailMetaField>
-              <TaskDetailMetaField label="Plan">
-                <Button variant="tonal" size="sm" onClick={handlePlanBlock}>
-                  <CalendarRange className="mr-2 h-4 w-4" /> Plan block in calendar
-                </Button>
-              </TaskDetailMetaField>
-
-              <div className="border-t border-border/50 pt-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground h-8 px-2"
-                  onClick={() => setShowMoreMeta((open) => !open)}
-                >
-                  <ChevronDown
-                    className={cn(
-                      "mr-1 h-4 w-4 transition-transform",
-                      showMoreMeta && "rotate-180",
-                    )}
-                  />
-                  More details
-                </Button>
               </div>
 
-              {showMoreMeta ? (
-                <div className="space-y-3 border-t border-border/50 pt-3">
-                  {showSectionSelector && (
-                    <TaskDetailMetaField label="Section">
-                      <Select value={effectiveSectionId || "none"} onValueChange={(val) => setManualSectionId(val === "none" ? "" : val)}>
-                        <SelectTrigger className="border-border/60 bg-background h-auto min-h-0 rounded-lg px-3.5 py-2.5 text-sm shadow-none focus-visible:ring-0">
-                          <SelectValue placeholder="No section" />
+              <div className="divide-y divide-border/50 px-4">
+                <TaskDetailMetaField
+                  label="Project"
+                  hint="Move the task to another workspace."
+                  className="py-4"
+                >
+                  <Select
+                    value={projectSelectValue}
+                    onValueChange={(val) => {
+                      if (val === PENDING_PROJECT_SELECT_VALUE) return;
+                      setManualListId(val);
+                      setManualSectionId("");
+                    }}
+                  >
+                    <SelectTrigger className="border-border/60 bg-background h-11 rounded-xl px-3.5 text-sm shadow-none focus-visible:ring-0">
+                      <span className="truncate">{projectDisplayLabel}</span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pendingProjectName ? (
+                        <SelectItem value={PENDING_PROJECT_SELECT_VALUE}>
+                          Create {pendingProjectName}
+                        </SelectItem>
+                      ) : null}
+                      {lists.map((list) => (
+                        <SelectItem key={list.id} value={list.id}>
+                          {list.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </TaskDetailMetaField>
+
+                <TaskDetailMetaField
+                  label="Date"
+                  hint="Deadline, time, and reminder timing."
+                  className="py-4"
+                >
+                  <div className="grid gap-2">
+                    <TaskDueDatePicker
+                      value={effectiveDueDate}
+                      onChange={setManualDueDate}
+                      allowClear
+                      className="border-border/60 bg-background h-11 rounded-xl px-3.5 text-sm shadow-none focus-visible:ring-0"
+                    />
+                    {(effectiveDueDate || effectiveDueTime) ? (
+                      <TimeSelectField
+                        value={effectiveDueTime}
+                        onChange={setManualDueTime}
+                        allowClear
+                        className="border-border/60 bg-background h-11 min-h-0 rounded-xl px-3.5 font-mono text-sm shadow-none focus-visible:ring-0"
+                      />
+                    ) : null}
+                  </div>
+                </TaskDetailMetaField>
+
+                <TaskDetailMetaField
+                  label="Priority"
+                  hint="Use only for meaningful urgency."
+                  className="py-4"
+                >
+                  <Select
+                    value={effectivePriority || "none"}
+                    onValueChange={(val) =>
+                      setManualPriority(
+                        val === "none" ? "" : (val as "high" | "medium" | "low"),
+                      )
+                    }
+                  >
+                    <SelectTrigger className="border-border/60 bg-background h-11 rounded-xl px-3.5 text-sm shadow-none focus-visible:ring-0">
+                      <SelectValue placeholder="No priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No priority</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TaskDetailMetaField>
+
+                <TaskDetailMetaField
+                  label="Estimate"
+                  hint="Useful for planning focus blocks."
+                  className="py-4"
+                >
+                  <div className="border-border/60 bg-background flex h-11 items-center gap-2 rounded-xl border px-3.5">
+                    <Input
+                      type="number"
+                      min="1"
+                      inputMode="numeric"
+                      value={effectiveEstimatedMinutes}
+                      onChange={(e) => setManualEstimatedMinutes(e.target.value)}
+                      placeholder="45"
+                      className="h-auto w-20 rounded-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
+                    />
+                    <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      Min
+                    </span>
+                  </div>
+                </TaskDetailMetaField>
+
+                <TaskDetailMetaField
+                  label="Plan"
+                  hint={reminderPreviewLabel ? `Reminder preview: ${reminderPreviewLabel}` : "Open the calendar with this task prefilled."}
+                  className="py-4"
+                >
+                  <Button
+                    variant="tonal"
+                    size="sm"
+                    onClick={handlePlanBlock}
+                    className="w-full justify-start sm:w-auto"
+                  >
+                    <CalendarRange className="mr-2 h-4 w-4" /> Plan block in calendar
+                  </Button>
+                </TaskDetailMetaField>
+
+                {showMoreMeta ? (
+                  <div className="divide-y divide-border/50">
+                    {showSectionSelector ? (
+                      <TaskDetailMetaField
+                        label="Section"
+                        hint="Keep work grouped inside the project."
+                        className="py-4"
+                      >
+                        <Select
+                          value={effectiveSectionId || "none"}
+                          onValueChange={(val) =>
+                            setManualSectionId(val === "none" ? "" : val)
+                          }
+                        >
+                          <SelectTrigger className="border-border/60 bg-background h-11 rounded-xl px-3.5 text-sm shadow-none focus-visible:ring-0">
+                            <SelectValue placeholder="No section" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No section</SelectItem>
+                            {sections.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TaskDetailMetaField>
+                    ) : null}
+
+                    <TaskDetailMetaField
+                      label="Assignee"
+                      hint="Ownership within the selected project."
+                      className="py-4"
+                    >
+                      <TaskDetailAssignee
+                        value={assigneeUserId}
+                        members={activeListMembers}
+                        onChange={setAssigneeUserId}
+                      />
+                    </TaskDetailMetaField>
+
+                    <TaskDetailMetaField
+                      label="Reminder"
+                      hint="A reminder is tied to the deadline."
+                      className="py-4"
+                    >
+                      <Select
+                        value={effectiveReminderOffsetMinutes || "none"}
+                        onValueChange={(val) =>
+                          setManualReminderOffsetMinutes(val === "none" ? "" : val)
+                        }
+                      >
+                        <SelectTrigger className="border-border/60 bg-background h-11 rounded-xl px-3.5 text-sm shadow-none focus-visible:ring-0">
+                          <span className="inline-flex w-full items-center gap-2">
+                            <Bell className="text-muted-foreground h-4 w-4 shrink-0" />
+                            <span>{reminderLabel ?? "No reminder"}</span>
+                          </span>
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">No section</SelectItem>
-                          {sections.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                          <SelectItem value="none">No reminder</SelectItem>
+                          {REMINDER_OFFSET_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={String(opt.value)}>
+                              {opt.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </TaskDetailMetaField>
-                  )}
 
-                  <TaskDetailMetaField label="Assignee">
-                    <TaskDetailAssignee value={assigneeUserId} members={activeListMembers} onChange={setAssigneeUserId} />
-                  </TaskDetailMetaField>
+                    <TaskDetailMetaField
+                      label="Repeat"
+                      hint="Set a cadence for repeat work."
+                      className="py-4"
+                    >
+                      <Select
+                        value={effectiveRecurrenceRule || "none"}
+                        onValueChange={(val) =>
+                          setManualRecurrenceRule(
+                            val === "none" ? "" : (val as RecurrenceRule),
+                          )
+                        }
+                      >
+                        <SelectTrigger className="border-border/60 bg-background h-11 rounded-xl px-3.5 text-sm shadow-none focus-visible:ring-0">
+                          <SelectValue placeholder="Does not repeat" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Does not repeat</SelectItem>
+                          {RECURRENCE_RULE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TaskDetailMetaField>
 
-                  <TaskDetailMetaField label="Reminder">
-                    <Select value={effectiveReminderOffsetMinutes || "none"} onValueChange={(val) => setManualReminderOffsetMinutes(val === "none" ? "" : val)}>
-                      <SelectTrigger className="border-border/60 bg-background h-auto min-h-0 rounded-lg px-3.5 py-2.5 text-sm shadow-none focus-visible:ring-0">
-                        <span className="inline-flex w-full items-center gap-2">
-                          <Bell className="text-muted-foreground h-4 w-4 shrink-0" />
-                          <span>{reminderLabel ?? "No reminder"}</span>
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No reminder</SelectItem>
-                        {REMINDER_OFFSET_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TaskDetailMetaField>
-
-                  <TaskDetailMetaField label="Repeat">
-                    <Select value={effectiveRecurrenceRule || "none"} onValueChange={(val) => setManualRecurrenceRule(val === "none" ? "" : val as RecurrenceRule)}>
-                      <SelectTrigger className="border-border/60 bg-background h-auto min-h-0 rounded-lg px-3.5 py-2.5 text-sm shadow-none focus-visible:ring-0">
-                        <SelectValue placeholder="Does not repeat" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Does not repeat</SelectItem>
-                        {RECURRENCE_RULE_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TaskDetailMetaField>
-
-                  <TaskDetailMetaField label="Labels">
-                    <Input
-                      value={manualLabelsInput ?? formatTaskLabelInput(effectiveLabelNames.map(n => ({ name: n })))}
-                      onChange={(e) => setManualLabelsInput(e.target.value)}
-                      placeholder="math, urgent"
-                      className="border-border/60 bg-background h-auto rounded-lg px-3.5 py-2.5 text-sm shadow-none focus-visible:ring-0"
-                    />
-                    {effectiveLabelNames.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {effectiveLabelNames.map((name) => (
-                          <TaskLabelBadge key={name.toLowerCase()} label={taskLabels.find(l => l.name.toLowerCase() === name.toLowerCase()) ?? { name, color_token: "slate" }} />
-                        ))}
+                    <TaskDetailMetaField
+                      label="Labels"
+                      hint="Labels stay searchable but quiet."
+                      className="py-4"
+                    >
+                      <div className="space-y-3">
+                        <Input
+                          value={manualLabelsInput ?? formatTaskLabelInput(effectiveLabelNames.map((n) => ({ name: n })))}
+                          onChange={(e) => setManualLabelsInput(e.target.value)}
+                          placeholder="math, urgent"
+                          className="border-border/60 bg-background h-11 rounded-xl px-3.5 text-sm shadow-none focus-visible:ring-0"
+                        />
+                        {effectiveLabelNames.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {effectiveLabelNames.map((name) => (
+                              <TaskLabelBadge
+                                key={name.toLowerCase()}
+                                label={
+                                  taskLabels.find(
+                                    (l) => l.name.toLowerCase() === name.toLowerCase(),
+                                  ) ?? { name, color_token: "slate" }
+                                }
+                              />
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
-                    )}
-                  </TaskDetailMetaField>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
+                    </TaskDetailMetaField>
+                  </div>
+                ) : null}
+              </div>
 
-        <div className="lg:col-span-2">
-          <div className="border-t border-border/40 pt-4">
-            <Button
-              variant="ghost"
-              size="xs"
-              className="text-destructive/60 hover:text-destructive justify-start"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete task
-            </Button>
+              <div className="border-t border-border/60 px-4 py-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start border-destructive/20 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                  disabled={saving}
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete task
+                </Button>
+              </div>
+            </section>
           </div>
         </div>
-        </div>
-      </div>
       </div>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

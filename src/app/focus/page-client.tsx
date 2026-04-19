@@ -7,13 +7,13 @@ import {
     BarChart3,
     Brain,
     CalendarRange,
-    Clock3,
     Pause,
     Play,
     RotateCcw,
     Users,
 } from "lucide-react";
 
+import { PageHeader } from "~/components/app-primitives";
 import { AppShell } from "~/components/app-shell";
 import { useData } from "~/components/data-provider";
 import { MODE_CONFIG, useFocus } from "~/components/focus-provider";
@@ -69,21 +69,41 @@ function getModeTone(mode: (typeof MODE_OPTIONS)[number]) {
             return {
                 pill: "border-primary/15 bg-primary/10 text-primary",
                 iconWrap: "border-primary/16 bg-primary/11 text-primary",
-                heroGlow: "bg-[radial-gradient(circle_at_top,_color-mix(in_oklab,var(--color-primary)_22%,transparent)_0%,transparent_58%)]",
+                status: "border-primary/15 bg-primary/10 text-primary",
             };
         case "shortBreak":
             return {
                 pill: "border-[color-mix(in_oklab,var(--color-chart-3)_26%,transparent)] bg-[color-mix(in_oklab,var(--color-chart-3)_11%,transparent)] text-[color:var(--color-chart-3)]",
                 iconWrap: "border-[color-mix(in_oklab,var(--color-chart-3)_24%,transparent)] bg-[color-mix(in_oklab,var(--color-chart-3)_10%,transparent)] text-[color:var(--color-chart-3)]",
-                heroGlow: "bg-[radial-gradient(circle_at_top,_color-mix(in_oklab,var(--color-chart-3)_20%,transparent)_0%,transparent_55%)]",
+                status: "border-[color-mix(in_oklab,var(--color-chart-3)_26%,transparent)] bg-[color-mix(in_oklab,var(--color-chart-3)_11%,transparent)] text-[color:var(--color-chart-3)]",
             };
         case "longBreak":
             return {
                 pill: "border-[color-mix(in_oklab,var(--color-chart-2)_26%,transparent)] bg-[color-mix(in_oklab,var(--color-chart-2)_11%,transparent)] text-[color:var(--color-chart-2)]",
                 iconWrap: "border-[color-mix(in_oklab,var(--color-chart-2)_24%,transparent)] bg-[color-mix(in_oklab,var(--color-chart-2)_10%,transparent)] text-[color:var(--color-chart-2)]",
-                heroGlow: "bg-[radial-gradient(circle_at_top,_color-mix(in_oklab,var(--color-chart-2)_18%,transparent)_0%,transparent_55%)]",
+                status: "border-[color-mix(in_oklab,var(--color-chart-2)_26%,transparent)] bg-[color-mix(in_oklab,var(--color-chart-2)_11%,transparent)] text-[color:var(--color-chart-2)]",
             };
     }
+}
+
+function FocusMetricTile({
+    label,
+    value,
+    meta,
+}: {
+    label: string;
+    value: string;
+    meta?: string;
+}) {
+    return (
+        <div className="rounded-lg border border-border/70 bg-background/72 px-3 py-2.5">
+            <p className="eyebrow">{label}</p>
+            <p className="mt-1 text-[1.05rem] font-semibold tracking-[-0.03em] text-foreground">
+                {value}
+            </p>
+            {meta ? <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">{meta}</p> : null}
+        </div>
+    );
 }
 
 function FocusLinkCard({
@@ -100,19 +120,18 @@ function FocusLinkCard({
     return (
         <Link
             href={href}
-            className="group surface-card relative overflow-hidden p-3.5 transition-[transform,border-color,box-shadow] hover:-translate-y-0.5 hover:border-ring/35 hover:shadow-[0_14px_30px_rgba(17,18,15,0.08)]"
+            className="group surface-card flex items-center justify-between gap-4 px-3.5 py-3 transition-colors hover:border-ring/35 hover:bg-muted/35"
         >
-            <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_oklab,var(--color-primary)_30%,transparent),transparent)]" />
-            <div className="relative flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background/80 text-muted-foreground transition-colors group-hover:text-foreground">
+            <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/80 text-muted-foreground transition-colors group-hover:text-foreground">
                     <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="text-sm font-semibold tracking-[-0.03em] text-foreground sm:text-[15px]">{title}</p>
                     <p className="truncate text-[13px] leading-5 text-muted-foreground">{description}</p>
                 </div>
-                <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
             </div>
+            <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
         </Link>
     );
 }
@@ -131,14 +150,20 @@ function FocusPlannerBlockCard({
     timeLabel?: string | null;
 }) {
     return (
-        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
-            <p className="eyebrow">{label}</p>
-            <p className="mt-1 text-sm font-semibold text-foreground">
-                {taskTitle ?? emptyLabel}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-                {[projectName, timeLabel].filter(Boolean).join(" / ") || "No block in scope"}
-            </p>
+        <div className="flex items-start justify-between gap-4 px-4 py-3">
+            <div className="min-w-0 space-y-1">
+                <p className="eyebrow">{label}</p>
+                <p className={cn("truncate text-sm font-semibold tracking-[-0.03em] text-foreground", !taskTitle && "text-muted-foreground")}>
+                    {taskTitle ?? emptyLabel}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                    {[projectName, timeLabel].filter(Boolean).join(" / ") || "No block in scope"}
+                </p>
+            </div>
+            <div className="shrink-0 text-right">
+                <p className="text-xs font-medium text-foreground/80">{timeLabel ?? "--"}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{projectName ?? "General"}</p>
+            </div>
         </div>
     );
 }
@@ -316,18 +341,15 @@ function FocusPageContent() {
     return (
         <div className="page-container gap-3 lg:gap-4">
             <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 lg:gap-4">
-                <div className="text-center">
-                    <p className="eyebrow">Pomodoro</p>
-                </div>
+                <PageHeader
+                    eyebrow="Focus"
+                    title="Session console"
+                    description="Keep the timer, current block, and next block in one dense workspace."
+                />
 
-                <section className="surface-card relative overflow-hidden p-3.5 sm:p-5 lg:p-6 xl:p-7">
-                    <div className={cn("absolute inset-0 opacity-95", tone.heroGlow)} />
-                    <div className="absolute inset-x-10 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_oklab,var(--color-primary)_34%,transparent),transparent)]" />
-                    <div className="absolute left-1/2 top-8 h-40 w-40 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,_color-mix(in_oklab,var(--color-primary)_16%,transparent)_0%,transparent_72%)] opacity-80" />
-                    <div className="absolute right-[-7rem] bottom-[-8rem] h-56 w-56 rounded-full bg-[radial-gradient(circle,_color-mix(in_oklab,var(--color-card)_75%,transparent)_0%,transparent_70%)] opacity-70" />
-
-                    <div className="relative flex h-full flex-col gap-3 lg:gap-4">
-                        <div className="flex flex-wrap items-center justify-center gap-2">
+                <section className="surface-card overflow-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3.5">
+                        <div className="flex flex-wrap items-center gap-2">
                             {MODE_OPTIONS.map((nextMode) => {
                                 const active = mode === nextMode;
                                 return (
@@ -336,7 +358,7 @@ function FocusPageContent() {
                                         type="button"
                                         onClick={() => handleModeChange(nextMode)}
                                         className={cn(
-                                            "inline-flex items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors",
+                                            "inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition-colors",
                                             active
                                                 ? tone.pill
                                                 : "border-border/70 bg-background/72 text-muted-foreground hover:border-ring/30 hover:text-foreground",
@@ -348,183 +370,206 @@ function FocusPageContent() {
                             })}
                         </div>
 
-                        <div className="grid gap-4 lg:min-h-[25rem] lg:grid-cols-[minmax(0,1.12fr)_minmax(19rem,0.88fr)] xl:gap-4">
-                            <div className="flex min-h-[18rem] flex-col items-center justify-center rounded-[1.5rem] border border-border/70 bg-background/64 px-4 py-5 text-center backdrop-blur-sm sm:px-5 sm:py-6 lg:min-h-full lg:px-8 lg:py-6">
-                                <div className={cn("mb-3 flex h-[4rem] w-[4rem] items-center justify-center rounded-[1.2rem] border backdrop-blur-sm", tone.iconWrap)}>
-                                    <config.icon className="h-7 w-7" />
-                                </div>
-                                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/72 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
-                                    {config.label}
-                                </div>
-                                <p className="mb-2 font-mono text-[clamp(4rem,10vw,7rem)] leading-none font-semibold tracking-[-0.1em] text-foreground">
-                                    {formatTime(timeLeft)}
-                                </p>
-                                <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-                                    {isActive
-                                        ? mode === "focus"
-                                            ? "Keep the page quiet and let the block run."
-                                            : "Take the break fully, then slide back into the next block."
-                                        : mode === "focus"
-                                            ? "Start a clean session when you are ready."
-                                            : "Pause here for a short reset before the next study block."}
-                                </p>
+                        <span className={cn("inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em]", tone.status)}>
+                            {isActive ? "Running" : mode === "focus" ? "Ready" : "Paused"}
+                        </span>
+                    </div>
 
-                                <div className="mt-3 flex w-full flex-col items-stretch justify-center gap-2 sm:w-auto sm:flex-row">
-                                    <Button size="lg" className="w-full sm:w-auto sm:min-w-[12rem]" onClick={toggleTimer}>
+                    <div className="grid gap-0 xl:grid-cols-[minmax(0,1.2fr)_minmax(18.5rem,0.8fr)]">
+                        <div className="border-b border-border/70 px-4 py-5 sm:px-5 sm:py-6 xl:border-b-0 xl:border-r">
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-1">
+                                    <p className="eyebrow">Session timer</p>
+                                    <p className="text-sm leading-6 text-muted-foreground">
+                                        {isActive
+                                            ? mode === "focus"
+                                                ? "Keep the page quiet and let the block run."
+                                                : "Take the break fully, then slide back into the next block."
+                                            : mode === "focus"
+                                                ? "Start a clean session when you are ready."
+                                                : "Pause here for a short reset before the next study block."}
+                                    </p>
+                                </div>
+                                <div className={cn("flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border", tone.iconWrap)}>
+                                    <config.icon className="h-6 w-6" />
+                                </div>
+                            </div>
+
+                            <div className="mt-5 flex flex-col gap-4">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                                    <p className="font-mono text-[clamp(4.5rem,9vw,7.75rem)] leading-none font-semibold tracking-[-0.1em] text-foreground">
+                                        {formatTime(timeLeft)}
+                                    </p>
+                                    <div className="max-w-sm rounded-lg border border-border/70 bg-background/72 px-3 py-2 text-sm leading-6 text-muted-foreground">
+                                        {config.label}
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                    <Button size="lg" className="w-full sm:min-w-[12rem] sm:flex-1" onClick={toggleTimer}>
                                         {isActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                                         {isActive ? "Pause" : mode === "focus" ? "Start focus" : "Start break"}
                                     </Button>
-                                    <Button size="lg" variant="outline" className="w-full sm:w-auto sm:min-w-[9.5rem]" onClick={resetTimer}>
+                                    <Button size="lg" variant="outline" className="w-full sm:min-w-[9.5rem] sm:flex-1" onClick={resetTimer}>
                                         <RotateCcw className="h-4 w-4" />
                                         Reset
                                     </Button>
                                 </div>
-                            </div>
 
-                            <div className="flex flex-col gap-3 lg:justify-center">
-                                <div className="rounded-[1.2rem] border border-border/70 bg-background/68 p-3.5 backdrop-blur-sm">
-                                    <div className="mb-2 flex items-center justify-between gap-3">
-                                        <p className="eyebrow">Session project</p>
-                                        {selectedProjectName ? (
-                                            <span className="truncate text-xs font-medium text-foreground/80">{selectedProjectName}</span>
-                                        ) : (
-                                            <span className="text-xs text-muted-foreground">General</span>
-                                        )}
-                                    </div>
-                                    <Select
-                                        value={selectedProjectId ?? "general"}
-                                        onValueChange={(value) => {
-                                            setCurrentListId(value === "general" ? null : value);
-                                            setCurrentTaskId(null);
-                                            setCurrentBlockId(null);
-                                        }}
-                                    >
-                                        <SelectTrigger className="h-10 border-border/70 bg-card/75 shadow-none focus-visible:ring-0">
-                                            <SelectValue placeholder="General" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="general">General</SelectItem>
-                                            {orderedProjectSummaries.map((summary) => (
-                                                <SelectItem key={summary.list.id} value={summary.list.id}>
-                                                    {summary.list.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                    <FocusMetricTile
+                                        label="Session"
+                                        value={sessionMinutes > 0 ? `${sessionMinutes}m` : "0m"}
+                                        meta="Elapsed this cycle"
+                                    />
+                                    <FocusMetricTile
+                                        label="Typical"
+                                        value={isFocusDataLoading ? "--" : (stats?.avgSession ?? "0m")}
+                                        meta="Average focus block"
+                                    />
+                                    <FocusMetricTile
+                                        label="Streak"
+                                        value={isFocusDataLoading ? "--" : `${stats?.streak ?? 0}d`}
+                                        meta={isFocusDataLoading ? "Loading" : "Consecutive days"}
+                                    />
                                 </div>
+                            </div>
+                        </div>
 
-                                <div className="rounded-[1.2rem] border border-border/70 bg-background/68 p-3.5 backdrop-blur-sm">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="space-y-1">
-                                            <p className="eyebrow">Daily goal</p>
-                                            <p className="text-base font-semibold tracking-[-0.04em] text-foreground">
-                                                {isFocusDataLoading
-                                                    ? "Loading focus data"
-                                                    : `${todayFocusMinutes}m / ${dailyGoal}m today`}
-                                            </p>
-                                        </div>
-                                        <div className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/72 px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                                            <Brain className="h-3.5 w-3.5" />
-                                            {isFocusDataLoading ? "--" : (stats?.streak ?? 0)} day streak
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-3 space-y-2.5">
-                                        <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-                                            <div
-                                                className="h-full rounded-full bg-primary transition-[width]"
-                                                style={{ width: `${focusProgress}%` }}
-                                            />
-                                        </div>
-                                        <p className="text-sm text-muted-foreground">
-                                            {isFocusDataLoading
-                                                ? "Syncing goal and session totals"
-                                                : remainingMinutes > 0
-                                                    ? `${remainingMinutes} minutes left to goal`
-                                                    : "Daily focus goal reached"}
+                        <div className="space-y-4 px-4 py-4 sm:px-5 sm:py-5 xl:px-5 xl:py-6">
+                            <div className="surface-muted space-y-3 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="space-y-1">
+                                        <p className="eyebrow">Session project</p>
+                                        <p className="text-sm font-semibold tracking-[-0.03em] text-foreground">
+                                            {selectedProjectName ?? "General"}
                                         </p>
                                     </div>
+                                    <span className="text-xs text-muted-foreground">
+                                        {selectedProjectId ? "Scoped" : "Unscoped"}
+                                    </span>
+                                </div>
+                                <Select
+                                    value={selectedProjectId ?? "general"}
+                                    onValueChange={(value) => {
+                                        setCurrentListId(value === "general" ? null : value);
+                                        setCurrentTaskId(null);
+                                        setCurrentBlockId(null);
+                                    }}
+                                >
+                                    <SelectTrigger className="h-10 border-border/70 bg-background/80 shadow-none focus-visible:ring-0">
+                                        <SelectValue placeholder="General" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="general">General</SelectItem>
+                                        {orderedProjectSummaries.map((summary) => (
+                                            <SelectItem key={summary.list.id} value={summary.list.id}>
+                                                {summary.list.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                                    <div className="mt-3 grid grid-cols-3 gap-2">
-                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
-                                            <p className="eyebrow">Current</p>
-                                            <p className="mt-1 text-sm font-semibold text-foreground">
-                                                {sessionMinutes > 0 ? `${sessionMinutes}m` : "--"}
-                                            </p>
-                                        </div>
-                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
-                                            <p className="eyebrow">Typical</p>
-                                            <p className="mt-1 text-sm font-semibold text-foreground">
-                                                {isFocusDataLoading ? "--" : (stats?.avgSession ?? "0m")}
-                                            </p>
-                                        </div>
-                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
-                                            <p className="eyebrow">Goal</p>
-                                            <p className="mt-1 text-sm font-semibold text-foreground">
-                                                {isFocusDataLoading ? "--" : `${Math.round(focusProgress)}%`}
-                                            </p>
-                                        </div>
+                            <div className="surface-muted p-0">
+                                <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
+                                    <div className="space-y-1">
+                                        <p className="eyebrow">Planner context</p>
+                                        <p className="text-sm font-semibold tracking-[-0.03em] text-foreground">
+                                            {currentPlannedBlock
+                                                ? "Run the current block"
+                                                : nextPlannedBlock
+                                                    ? "Next block is queued"
+                                                    : "No scheduled block in scope"}
+                                        </p>
+                                    </div>
+                                    <Button asChild variant="outline" size="xs">
+                                        <Link href={plannerHref}>
+                                            <CalendarRange className="h-3.5 w-3.5" />
+                                            Open calendar
+                                        </Link>
+                                    </Button>
+                                </div>
+
+                                <div className="divide-y divide-border/70">
+                                    <FocusPlannerBlockCard
+                                        label="Current block"
+                                        emptyLabel="Nothing running now"
+                                        projectName={currentPlannedBlock ? (listMap.get(currentPlannedBlock.list_id)?.name ?? "Project") : null}
+                                        taskTitle={currentPlannedBlock?.todo_id ? (taskMap.get(currentPlannedBlock.todo_id)?.title ?? currentPlannedBlock.title) : currentPlannedBlock?.title}
+                                        timeLabel={currentPlannedBlock ? formatBlockTimeRange(currentPlannedBlock.scheduled_start, currentPlannedBlock.scheduled_end) : null}
+                                    />
+                                    <FocusPlannerBlockCard
+                                        label="Next block"
+                                        emptyLabel="Nothing else planned today"
+                                        projectName={nextPlannedBlock ? (listMap.get(nextPlannedBlock.list_id)?.name ?? "Project") : null}
+                                        taskTitle={nextPlannedBlock?.todo_id ? (taskMap.get(nextPlannedBlock.todo_id)?.title ?? nextPlannedBlock.title) : nextPlannedBlock?.title}
+                                        timeLabel={nextPlannedBlock ? formatBlockTimeRange(nextPlannedBlock.scheduled_start, nextPlannedBlock.scheduled_end) : null}
+                                    />
+                                </div>
+
+                                <div className="grid gap-2 border-t border-border/70 p-4 sm:grid-cols-2">
+                                    <FocusMetricTile
+                                        label="Planned left"
+                                        value={formatMinutesCompact(remainingPlannedMinutes)}
+                                        meta={remainingPlannedMinutes > 0 ? "Still scheduled today" : "Nothing else scheduled today"}
+                                    />
+                                    <FocusMetricTile
+                                        label="Task context"
+                                        value={plannerTask?.title ?? "General focus"}
+                                        meta={selectedProjectName ?? "Project context"}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="surface-muted p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <p className="eyebrow">Daily goal</p>
+                                        <p className="text-sm font-semibold tracking-[-0.03em] text-foreground">
+                                            {isFocusDataLoading
+                                                ? "Loading focus data"
+                                                : `${todayFocusMinutes}m / ${dailyGoal}m today`}
+                                        </p>
+                                    </div>
+                                    <div className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium", tone.status)}>
+                                        <Brain className="h-3.5 w-3.5" />
+                                        {isFocusDataLoading ? "--" : (stats?.streak ?? 0)} day streak
                                     </div>
                                 </div>
 
-                                <div className="rounded-[1.2rem] border border-border/70 bg-background/68 p-3.5 backdrop-blur-sm">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="space-y-1">
-                                            <p className="eyebrow">Planner context</p>
-                                            <p className="text-base font-semibold tracking-[-0.04em] text-foreground">
-                                                {currentPlannedBlock
-                                                    ? "Run the current block"
-                                                    : nextPlannedBlock
-                                                        ? "Next block is queued"
-                                                        : "No scheduled block in scope"}
-                                            </p>
-                                        </div>
-                                        <Button asChild variant="outline" size="xs">
-                                            <Link href={plannerHref}>
-                                                <CalendarRange className="h-3.5 w-3.5" />
-                                                Open calendar
-                                            </Link>
-                                        </Button>
-                                    </div>
-
-                                    <div className="mt-3 grid gap-2">
-                                        <FocusPlannerBlockCard
-                                            label="Current block"
-                                            emptyLabel="Nothing running now"
-                                            projectName={currentPlannedBlock ? (listMap.get(currentPlannedBlock.list_id)?.name ?? "Project") : null}
-                                            taskTitle={currentPlannedBlock?.todo_id ? (taskMap.get(currentPlannedBlock.todo_id)?.title ?? currentPlannedBlock.title) : currentPlannedBlock?.title}
-                                            timeLabel={currentPlannedBlock ? formatBlockTimeRange(currentPlannedBlock.scheduled_start, currentPlannedBlock.scheduled_end) : null}
-                                        />
-                                        <FocusPlannerBlockCard
-                                            label="Next block"
-                                            emptyLabel="Nothing else planned today"
-                                            projectName={nextPlannedBlock ? (listMap.get(nextPlannedBlock.list_id)?.name ?? "Project") : null}
-                                            taskTitle={nextPlannedBlock?.todo_id ? (taskMap.get(nextPlannedBlock.todo_id)?.title ?? nextPlannedBlock.title) : nextPlannedBlock?.title}
-                                            timeLabel={nextPlannedBlock ? formatBlockTimeRange(nextPlannedBlock.scheduled_start, nextPlannedBlock.scheduled_end) : null}
+                                <div className="mt-3 space-y-2">
+                                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                                        <div
+                                            className="h-full rounded-full bg-primary transition-[width]"
+                                            style={{ width: `${focusProgress}%` }}
                                         />
                                     </div>
-
-                                    <div className="mt-3 grid grid-cols-2 gap-2">
-                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
-                                            <p className="eyebrow">Planned left</p>
-                                            <p className="mt-1 text-sm font-semibold text-foreground">
-                                                {formatMinutesCompact(remainingPlannedMinutes)}
-                                            </p>
-                                        </div>
-                                        <div className="rounded-xl border border-border/65 bg-background/72 px-3 py-2">
-                                            <p className="eyebrow">Task context</p>
-                                            <p className="mt-1 text-sm font-semibold text-foreground">
-                                                {plannerTask?.title ?? "General focus"}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                                        <Clock3 className="h-3.5 w-3.5" />
-                                        {remainingPlannedMinutes > 0
-                                            ? `${formatMinutesCompact(remainingPlannedMinutes)} still scheduled today`
-                                            : "Nothing else scheduled today"}
+                                    <p className="text-sm leading-6 text-muted-foreground">
+                                        {isFocusDataLoading
+                                            ? "Syncing goal and session totals"
+                                            : remainingMinutes > 0
+                                                ? `${remainingMinutes} minutes left to goal`
+                                                : "Daily focus goal reached"}
                                     </p>
+                                </div>
+
+                                <div className="mt-3 grid grid-cols-3 gap-2">
+                                    <FocusMetricTile
+                                        label="Today"
+                                        value={isFocusDataLoading ? "--" : `${todayFocusMinutes}m`}
+                                        meta="Logged so far"
+                                    />
+                                    <FocusMetricTile
+                                        label="Goal"
+                                        value={isFocusDataLoading ? "--" : `${Math.round(focusProgress)}%`}
+                                        meta="Progress to target"
+                                    />
+                                    <FocusMetricTile
+                                        label="Remaining"
+                                        value={isFocusDataLoading ? "--" : `${remainingMinutes}m`}
+                                        meta="Before goal"
+                                    />
                                 </div>
                             </div>
                         </div>

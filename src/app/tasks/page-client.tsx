@@ -445,6 +445,15 @@ function TasksContent({
         [bufferedTasks, view, visibleTasks],
     );
     const hasTodayDisplayTasks = overdueDisplayTasks.length > 0 || dueTodayDisplayTasks.length > 0;
+    const currentViewDescription = view === "today"
+        ? hasTodayDisplayTasks
+            ? `${overdueDisplayTasks.length} overdue and ${dueTodayDisplayTasks.length} due today.`
+            : "Nothing due today."
+        : view === "upcoming"
+            ? `${visibleDisplayTasks.length} upcoming tasks.`
+            : view === "inbox"
+                ? `${visibleDisplayTasks.length} tasks without a date.`
+                : `${visibleDisplayTasks.length} completed tasks.`;
     const selectableTasks = useMemo(
         () => view === "today"
             ? dedupeTasks([...overdueDisplayTasks, ...dueTodayDisplayTasks])
@@ -698,6 +707,8 @@ function TasksContent({
                             selectedTaskId={selectedTaskId}
                             selectedTaskIds={selectedTaskIdSet}
                             selectionMode={selectionMode}
+                            compact={isCompact}
+                            variant="tasks"
                             onSelectionToggle={handleTaskSelection}
                             onSelect={handleTaskSelect}
                             onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
@@ -718,6 +729,8 @@ function TasksContent({
                         selectedTaskId={selectedTaskId}
                         selectedTaskIds={selectedTaskIdSet}
                         selectionMode={selectionMode}
+                        compact={isCompact}
+                        variant="tasks"
                         onSelectionToggle={handleTaskSelection}
                         onSelect={handleTaskSelect}
                         onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
@@ -756,6 +769,8 @@ function TasksContent({
             selectedTaskId={selectedTaskId}
             selectedTaskIds={selectedTaskIdSet}
             selectionMode={selectionMode}
+            compact={isCompact}
+            variant="tasks"
             onSelectionToggle={handleTaskSelection}
             onSelect={handleTaskSelect}
             onToggle={(task, nextIsDone) => void handleToggle(task.id, nextIsDone)}
@@ -767,6 +782,7 @@ function TasksContent({
             <div className={selectionMode ? "page-container pb-28" : "page-container"}>
                 <PageHeader
                     title={currentViewLabel}
+                    description={currentViewDescription}
                     actions={
                         <>
                             <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
@@ -880,24 +896,6 @@ function TasksContent({
                     }
                 />
 
-                <div className="flex flex-wrap gap-2 sm:hidden">
-                    {VIEW_OPTIONS.map((option) => {
-                        const active = view === option.value;
-
-                        return (
-                            <Button
-                                key={option.value}
-                                type="button"
-                                size="xs"
-                                variant={active ? "tonal" : "outline"}
-                                onClick={() => setRouteView(option.value)}
-                            >
-                                {option.label}
-                            </Button>
-                        );
-                    })}
-                </div>
-
                 <AnimatePresence>
                     {selectionMode ? (
                         <TaskSelectionBar
@@ -908,6 +906,7 @@ function TasksContent({
                             editing={bulkEditing}
                             completing={bulkCompleting}
                             deleting={bulkDeleting}
+                            variant="tasks"
                             onCancel={requestSelectionModeExit}
                             onToggleSelectAll={handleToggleSelectAll}
                             onSetDueDate={handleSetSelectedDueDate}
@@ -1070,7 +1069,7 @@ function TasksFilterPanel({
             <div className="space-y-2">
                 <p className="eyebrow">Project</p>
                 <Select value={projectFilter} onValueChange={onProjectFilterChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 rounded-lg bg-background">
                         <SelectValue placeholder="All projects" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1106,7 +1105,7 @@ function TasksFilterPanel({
                     if (!isTaskSavedViewPlanningStatusFilter(value)) return;
                     onPlanningStatusFilterChange(value);
                 }}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 rounded-lg bg-background">
                         <SelectValue placeholder="All planning" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1125,7 +1124,7 @@ function TasksFilterPanel({
                     if (!isTaskSavedViewDeadlineScope(value)) return;
                     onDeadlineScopeChange(value);
                 }}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 rounded-lg bg-background">
                         <SelectValue placeholder="All deadlines" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1167,6 +1166,7 @@ function TasksFilterPanel({
                     value={saveViewName}
                     onChange={(event) => onChangeSaveViewName(event.target.value)}
                     placeholder="Exam prep, deep work, backlog"
+                    className="h-9 rounded-lg bg-background"
                 />
                 <div className="flex flex-wrap gap-2">
                     <Button
@@ -1200,7 +1200,7 @@ function TasksFilterPanel({
                 <Button
                     variant="ghost"
                     size="sm"
-                    className="h-9 w-full justify-center"
+                    className="h-9 w-full justify-center rounded-lg"
                     onClick={onClearFilters}
                 >
                     Clear filters
@@ -1212,6 +1212,6 @@ function TasksFilterPanel({
 
 function cnFilterChip(active: boolean, className?: string) {
     return active
-        ? `inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-foreground ${className ?? ""}`.trim()
-        : `inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground ${className ?? ""}`.trim();
+        ? `inline-flex items-center gap-1.5 rounded-lg border border-primary bg-primary/10 px-3 py-1.5 text-[11px] font-semibold tracking-normal text-primary ${className ?? ""}`.trim()
+        : `inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-medium tracking-normal text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground ${className ?? ""}`.trim();
 }

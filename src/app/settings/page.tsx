@@ -1,9 +1,11 @@
-import { redirect } from "next/navigation";
+import { requireUser } from "~/lib/require-user";
+import SettingsPageClient from "./page-client";
 
 export const metadata = {
     title: "Settings | Stride",
 };
 
-export default function SettingsPage() {
-    redirect("/tasks?settings=true");
+export default async function SettingsPage() {
+    const user = await requireUser();
+    return <SettingsPageClient userId={user.id} />;
 }

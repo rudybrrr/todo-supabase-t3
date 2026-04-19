@@ -39,9 +39,12 @@ export function PlannerFilterBar({
     }
 
     return (
-        <div className="space-y-2">
+        <div className="rounded-lg border border-border/70 bg-card/90 px-3 py-2.5">
             {savedFilters.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                        Saved views
+                    </span>
                     {savedFilters.map((filter) => {
                         const active = activeSavedFilterId === filter.id && activeSavedFilterScopeApplied;
 
@@ -61,24 +64,27 @@ export function PlannerFilterBar({
             ) : null}
 
             {(hasTaskFilters || activeSavedFilter) ? (
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                        Active
+                    </span>
                     {activeSavedFilter ? (
-                        <Badge variant="secondary">
+                        <Badge variant="secondary" className="rounded-full">
                             {activeSavedFilter.name}
                         </Badge>
                     ) : null}
                     {currentFilterState.listId !== "all" ? (
-                        <Badge variant="outline">
+                        <Badge variant="outline" className="rounded-full">
                             {listMap.get(currentFilterState.listId)?.name ?? "Project"}
                         </Badge>
                     ) : null}
                     {currentFilterState.planningStatusFilter !== "all" ? (
-                        <Badge variant="outline">
+                        <Badge variant="outline" className="rounded-full">
                             {getPlannerPlanningStatusFilterLabel(currentFilterState.planningStatusFilter)}
                         </Badge>
                     ) : null}
                     {currentFilterState.deadlineScope !== "all" ? (
-                        <Badge variant="outline">
+                        <Badge variant="outline" className="rounded-full">
                             {getPlannerDeadlineScopeLabel(currentFilterState.deadlineScope)}
                         </Badge>
                     ) : null}

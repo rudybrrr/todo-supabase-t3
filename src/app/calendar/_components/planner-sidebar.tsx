@@ -34,45 +34,48 @@ function PlannerTaskPreview({
   actions?: Array<{ label: string; onClick: () => void }>;
 }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-background/60 px-3 py-2 transition-colors hover:bg-muted/55">
+    <div
+      className={cn(
+        "rounded-md border border-border/70 bg-background/70 px-3 py-2.5 transition-colors hover:border-border hover:bg-background/90",
+        tone === "warning" && "border-amber-500/20 bg-amber-500/[0.04]",
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={onClick}
-            className="w-full text-left"
-          >
-            <div className="truncate text-[13px] font-semibold text-foreground">{title}</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">{subtitle}</div>
-          </button>
-          {actions && actions.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {actions.map((action) => (
-                <button
-                  key={action.label}
-                  type="button"
-                  onClick={action.onClick}
-                  className="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-ring/30 hover:text-foreground"
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <button type="button" onClick={onClick} className="min-w-0 flex-1 text-left">
+          <div className="truncate text-[13px] font-semibold leading-5 text-foreground">
+            {title}
+          </div>
+          <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
+            {subtitle}
+          </div>
+        </button>
         {trailing ? (
           <span
             className={cn(
-              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]",
+              "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-[0.12em]",
               tone === "warning"
-                ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                : "bg-primary/10 text-primary",
+                ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                : "border-border/70 bg-background/80 text-primary",
             )}
           >
             {trailing}
           </span>
         ) : null}
       </div>
+      {actions && actions.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={action.onClick}
+              className="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground transition-colors hover:border-ring/30 hover:text-foreground"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -94,17 +97,20 @@ function PlannerBlockPreview({
       type="button"
       onClick={() => onEditBlock(block)}
       className={cn(
-        "w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-background/90",
+        "relative w-full overflow-hidden rounded-md border px-3 py-2.5 text-left transition-colors hover:bg-background/90",
         colors.soft,
         colors.border,
       )}
     >
-      <div className="flex items-start gap-3">
-        <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", colors.accent)} />
-        <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold text-foreground">{block.title}</div>
-          <div className="mt-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+      <span className={cn("absolute inset-y-2 left-0 w-1.5 rounded-r-full", colors.accent)} />
+      <div className="flex items-start gap-2.5 pl-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-semibold leading-5 text-foreground">{block.title}</div>
+          <div className="mt-1 text-[11px] font-medium text-muted-foreground">
             {formatBlockTimeRange(block.scheduled_start, block.scheduled_end)}
+          </div>
+          <div className="mt-1.5 truncate text-[11px] text-muted-foreground">
+            {project?.name ?? "Project"}
           </div>
         </div>
       </div>
@@ -176,36 +182,34 @@ export function PlannerSidebar({
         onQuickCreate={onQuickCreate}
       />
 
-      <div className="rounded-xl border border-border/70 bg-card/96 p-4">
+      <div className="rounded-lg border border-border/70 bg-card/96 p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <p className="text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
               Selected day
             </p>
-            <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-foreground">
+            <h3 className="mt-1 text-base font-semibold tracking-[-0.02em] text-foreground">
               {format(date, "EEEE, MMM d")}
             </h3>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-right text-[11px] text-muted-foreground">
-            <div>
-              <div className="uppercase tracking-[0.14em]">Due</div>
-              <div className="mt-1 font-mono text-sm text-foreground">{selectedDayTasks.length}</div>
-            </div>
-            <div>
-              <div className="uppercase tracking-[0.14em]">Blocks</div>
-              <div className="mt-1 font-mono text-sm text-foreground">{selectedDayBlocks.length}</div>
-            </div>
+          <div className="flex flex-wrap justify-end gap-1.5 text-[11px] text-muted-foreground">
+            <span className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5">
+              Due {selectedDayTasks.length}
+            </span>
+            <span className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5">
+              Blocks {selectedDayBlocks.length}
+            </span>
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4">
+        <div className="mt-3 grid gap-3">
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <p className="text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
                 Due tasks
               </p>
               {hiddenSelectedDayTaskCount > 0 ? (
-                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <span className="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground">
                   +{hiddenSelectedDayTaskCount} more
                 </span>
               ) : null}
@@ -223,7 +227,7 @@ export function PlannerSidebar({
                 />
               );
             }) : (
-              <div className="rounded-lg border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
                 No due tasks.
               </div>
             )}
@@ -231,11 +235,11 @@ export function PlannerSidebar({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <p className="text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
                 Planned blocks
               </p>
               {hiddenSelectedDayBlockCount > 0 ? (
-                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <span className="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground">
                   +{hiddenSelectedDayBlockCount} more
                 </span>
               ) : null}
@@ -249,7 +253,7 @@ export function PlannerSidebar({
                 onEditBlock={onEditBlock}
               />
             )) : (
-              <div className="rounded-lg border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
                 No planned blocks.
               </div>
             )}
@@ -257,10 +261,10 @@ export function PlannerSidebar({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border/70 bg-card/96 p-4">
+      <div className="rounded-lg border border-border/70 bg-card/96 p-3.5">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            <p className="text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
               Planning queue
             </p>
             <h3 className="mt-1 text-sm font-semibold tracking-[-0.02em] text-foreground">
@@ -284,7 +288,7 @@ export function PlannerSidebar({
               type="button"
               onClick={() => setQueueMode(tab.key)}
               className={cn(
-                "flex-1 rounded-md px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors",
+                "flex-1 rounded-md px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.12em] transition-colors",
                 queueMode === tab.key
                   ? "bg-foreground text-background"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -314,7 +318,7 @@ export function PlannerSidebar({
                 />
               );
             }) : (
-              <div className="rounded-lg border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
                 Everything visible is already planned.
               </div>
             )
@@ -340,7 +344,7 @@ export function PlannerSidebar({
                 />
               );
             }) : (
-              <div className="rounded-lg border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
                 No partially planned tasks in scope.
               </div>
             )
@@ -362,7 +366,7 @@ export function PlannerSidebar({
                 />
               );
             }) : (
-              <div className="rounded-lg border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
                 No upcoming items in scope.
               </div>
             )
@@ -387,23 +391,29 @@ export function PlannerSidebarActions({
   onQuickCreate: (date: Date) => void;
 }) {
   return (
-    <div className="rounded-xl border border-border/70 bg-card/96 p-3.5">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/65">
-            <Clock3 className="h-4 w-4 text-muted-foreground" />
+    <div className="rounded-lg border border-border/70 bg-card/96 p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/65">
+              <Clock3 className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
+                Focus today
+              </div>
+              <div className="mt-0.5 font-mono text-lg text-foreground">
+                {todayFocusMinutes}m
+                <span className="text-sm text-muted-foreground"> / {dailyGoal}m goal</span>
+              </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Focus today
-            </div>
-            <div className="mt-0.5 font-mono text-lg text-foreground">
-              {todayFocusMinutes}m / {dailyGoal}m
-            </div>
+          <div className="mt-2 text-[11px] text-muted-foreground">
+            {format(date, "EEE, MMM d")}
           </div>
         </div>
 
-        <Button size="sm" className="h-10 rounded-lg px-3.5" onClick={() => onQuickCreate(date)}>
+        <Button size="sm" className="h-9 rounded-md px-3.5" onClick={() => onQuickCreate(date)}>
           <Plus className="h-4 w-4" />
           New block
         </Button>

@@ -33,7 +33,7 @@ function Calendar({
     <DayPicker
       showOutsideDays={showOutsideDays}
       className={cn(
-        "bg-background group/calendar p-3 [--cell-size:--spacing(8)] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent",
+        "bg-background group/calendar p-2.5 [--cell-size:--spacing(9)] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent",
         String.raw`rtl:**:[.rdp-button\_next>svg]:rotate-180`,
         String.raw`rtl:**:[.rdp-button\_previous>svg]:rotate-180`,
         className
@@ -57,12 +57,12 @@ function Calendar({
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-8 rounded-full border border-border/45 bg-background/72 p-0 shadow-none select-none hover:border-border/70 hover:bg-muted/55 aria-disabled:opacity-45",
+          "size-8 rounded-md border border-border/60 bg-background/90 p-0 shadow-none select-none hover:border-border/80 hover:bg-muted/70 aria-disabled:opacity-45",
           defaultClassNames.button_previous
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-8 rounded-full border border-border/45 bg-background/72 p-0 shadow-none select-none hover:border-border/70 hover:bg-muted/55 aria-disabled:opacity-45",
+          "size-8 rounded-md border border-border/60 bg-background/90 p-0 shadow-none select-none hover:border-border/80 hover:bg-muted/70 aria-disabled:opacity-45",
           defaultClassNames.button_next
         ),
         month_caption: cn(
@@ -74,7 +74,7 @@ function Calendar({
           defaultClassNames.dropdowns
         ),
         dropdown_root: cn(
-          "relative has-focus:border-ring border border-input shadow-xs has-focus:ring-ring/50 has-focus:ring-[3px] rounded-md",
+          "relative has-focus:border-ring border border-input shadow-none has-focus:ring-ring/50 has-focus:ring-[2px] rounded-md",
           defaultClassNames.dropdown_root
         ),
         dropdown: cn(
@@ -119,7 +119,7 @@ function Calendar({
         range_middle: cn("rounded-none", defaultClassNames.range_middle),
         range_end: cn("rounded-r-md bg-accent", defaultClassNames.range_end),
         today: cn(
-          "rounded-xl border border-primary/35 bg-primary/8 text-foreground data-[selected=true]:rounded-none",
+          "rounded-md border border-primary/45 bg-primary/10 text-foreground data-[selected=true]:rounded-none",
           defaultClassNames.today
         ),
         outside: cn(
@@ -211,7 +211,7 @@ function CalendarDayButton({
       data-range-end={modifiers.range_end}
       data-range-middle={modifiers.range_middle}
       className={cn(
-        "relative flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 rounded-xl border border-transparent bg-transparent leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-ring/50 group-data-[focused=true]/day:ring-[3px] hover:bg-muted/80 dark:hover:text-accent-foreground data-[today=true]:border-primary/55 data-[today=true]:bg-primary/12 data-[today=true]:font-semibold data-[today=true]:text-foreground data-[today=true]:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-primary)_24%,transparent)] data-[selected-single=true]:border-primary data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-middle=true]:rounded-none data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md [&>span]:text-xs [&>span]:opacity-70",
+        "relative flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 rounded-md border border-transparent bg-transparent leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-ring/50 group-data-[focused=true]/day:ring-[2px] hover:bg-muted/80 dark:hover:text-accent-foreground data-[today=true]:border-primary/55 data-[today=true]:bg-primary/12 data-[today=true]:font-semibold data-[today=true]:text-foreground data-[today=true]:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-primary)_24%,transparent)] data-[selected-single=true]:border-primary data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-middle=true]:rounded-none data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md [&>span]:text-xs [&>span]:opacity-70",
         defaultClassNames.day,
         className
       )}

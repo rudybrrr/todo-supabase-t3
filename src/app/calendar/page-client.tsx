@@ -164,30 +164,30 @@ function CalendarMonthDayButton({
     metrics?: PlannerDaySummary;
 }) {
     return (
-            <CalendarDayButton
+        <CalendarDayButton
             {...props}
             day={day}
             className={cn(
-                "group/month-day h-full min-h-[var(--cell-size)] w-full items-start justify-start rounded-lg border border-transparent px-2 py-1.5 text-left shadow-none hover:border-border hover:bg-muted/45 data-[today=true]:border-primary/30 data-[today=true]:bg-primary/8 data-[selected-single=true]:border-primary data-[selected-single=true]:bg-primary/12 data-[selected-single=true]:text-foreground [&>span:first-child]:text-sm [&>span:first-child]:font-semibold",
+                "group/month-day h-full min-h-[var(--cell-size)] w-full items-start justify-start rounded-md border border-border/60 bg-background/70 px-2.5 py-2 text-left shadow-none transition-colors hover:border-border hover:bg-muted/35 data-[today=true]:border-primary/40 data-[today=true]:bg-primary/8 data-[selected-single=true]:border-primary data-[selected-single=true]:bg-primary/12 data-[selected-single=true]:text-foreground [&>span:first-child]:text-sm [&>span:first-child]:font-semibold",
                 className,
             )}
         >
             <span className="leading-none">{format(day.date, "d")}</span>
             {metrics && (metrics.dueCount > 0 || metrics.blockCount > 0) ? (
-                <span className="mt-auto flex flex-wrap items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.12em]">
+                <span className="mt-auto flex flex-wrap items-center gap-1 text-[9px] font-semibold">
                     {metrics.dueCount > 0 ? (
-                        <span className="rounded-sm bg-amber-500/14 px-1.5 py-0.5 text-amber-800 dark:text-amber-200">
-                            {metrics.dueCount} task{metrics.dueCount === 1 ? "" : "s"}
+                        <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-amber-800 dark:text-amber-200">
+                            {metrics.dueCount} due
                         </span>
                     ) : null}
                     {metrics.blockCount > 0 ? (
-                        <span className="rounded-sm bg-primary/14 px-1.5 py-0.5 text-primary">
+                        <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-primary">
                             {metrics.blockCount} block{metrics.blockCount === 1 ? "" : "s"}
                         </span>
                     ) : null}
                 </span>
             ) : (
-                <span className="mt-auto text-[9px] uppercase tracking-[0.12em] text-transparent">.</span>
+                <span className="mt-auto text-[9px] text-transparent">.</span>
             )}
         </CalendarDayButton>
     );
@@ -1263,7 +1263,7 @@ function CalendarContent() {
     function renderMonthView() {
         return (
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_19rem] xl:items-start">
-                <div className="overflow-hidden rounded-xl border border-border/70 bg-card/98">
+                <div className="overflow-hidden rounded-lg border border-border/70 bg-card/96">
                     <Calendar
                         mode="single"
                         selected={selectedDate}
@@ -1275,21 +1275,21 @@ function CalendarContent() {
                             setSelectedDate(normalizedDate);
                             setAnchorDate(normalizedDate);
                         }}
-                        className="w-full bg-transparent p-3 sm:p-4 [--cell-size:clamp(4rem,6.2vw,5.2rem)]"
+                        className="w-full bg-transparent p-3 sm:p-4 [--cell-size:clamp(3.75rem,5.8vw,4.9rem)]"
                         weekStartsOn={plannerPreferences.weekStartsOn}
                         classNames={{
                             root: "w-full",
                             months: "w-full",
-                            month: "w-full gap-4",
+                            month: "w-full gap-3",
                             table: "w-full",
                             month_grid: "w-full",
                             nav: "absolute inset-x-3 top-3 flex items-center justify-between sm:inset-x-4 sm:top-4",
                             month_caption: "flex h-(--cell-size) w-full items-center justify-center px-12 sm:px-14",
-                            weekdays: "mt-3 flex w-full",
+                            weekdays: "mt-2 flex w-full",
                             weeks: "w-full",
-                            week: "mt-1.5 flex w-full",
-                            weekday: "flex-1 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground",
-                            day: "group/day relative aspect-square flex-1 p-1 text-center select-none",
+                            week: "mt-1 flex w-full",
+                            weekday: "flex-1 text-center text-[10px] font-semibold tracking-[0.14em] text-muted-foreground",
+                            day: "group/day relative aspect-square flex-1 p-0.5 text-center select-none",
                         }}
                         components={{
                             DayButton: (props) => (

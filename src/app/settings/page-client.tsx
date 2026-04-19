@@ -31,17 +31,19 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
             <div className="page-container">
                 <PageHeader title="Settings" />
 
-                <div className="space-y-8">
-                    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_22rem]">
-                        <div className="space-y-5">
+                <div className="space-y-5">
+                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_20rem]">
+                        <div className="space-y-4">
                             <ProfileForm userId={userId} />
                         </div>
 
-                        <div className="space-y-5">
-                            <SectionCard title="Appearance">
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <p className="text-sm font-semibold text-foreground">Theme</p>
+                        <div className="space-y-4">
+                            <SectionCard title="Appearance" dense>
+                                <div className="space-y-3">
+                                    <div className="space-y-1.5">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                            Theme
+                                        </p>
                                         <div className="grid gap-2">
                                             {APP_THEMES.map((option) => {
                                                 const Icon = themeIcons[option.value];
@@ -52,7 +54,7 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
                                                         type="button"
                                                         onClick={() => setTheme(option.value)}
                                                         className={cn(
-                                                            "flex items-center justify-between rounded-xl border px-3 py-3 text-left transition-colors",
+                                                            "flex items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-colors",
                                                             active
                                                                 ? "border-primary bg-primary/10 text-foreground"
                                                                 : "border-border/60 bg-background/70 text-muted-foreground hover:border-border hover:bg-secondary/80 hover:text-foreground",
@@ -71,17 +73,11 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <p className="text-sm font-semibold text-foreground">Accent</p>
-                                            <span className="text-xs text-muted-foreground">
-                                                Synced to your profile
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground">
-                                            Accent and sidebar project ordering follow your account across devices.
+                                    <div className="space-y-1.5">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                            Accent
                                         </p>
-                                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" role="radiogroup" aria-label="Accent color">
+                                        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Accent color">
                                             {ACCENT_OPTIONS.map((option) => {
                                                 const active = mounted && accent === option.value;
                                                 return (
@@ -92,7 +88,7 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
                                                         aria-checked={active}
                                                         onClick={() => setAccent(option.value)}
                                                         className={cn(
-                                                            "flex items-center justify-between rounded-xl border px-3 py-3 text-left transition-colors",
+                                                            "flex items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-colors",
                                                             active
                                                                 ? "border-primary bg-primary/10 text-foreground"
                                                                 : "border-border/60 bg-background/70 text-muted-foreground hover:border-border hover:bg-secondary/80 hover:text-foreground",
@@ -114,12 +110,12 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
                                 </div>
                             </SectionCard>
 
-                            <SectionCard title="Keyboard">
+                            <SectionCard title="Keyboard" dense>
                                 <div className="space-y-2">
                                     {shortcuts.map((shortcut) => (
                                         <div
                                             key={shortcut.label}
-                                            className="flex items-center justify-between rounded-xl border border-border/60 bg-background/70 px-3 py-2.5"
+                                            className="flex items-center justify-between rounded-xl border border-border/60 bg-background/70 px-3 py-2"
                                         >
                                             <span className="text-sm text-foreground">{shortcut.label}</span>
                                             <span className="rounded-md border border-border bg-secondary/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
@@ -130,43 +126,34 @@ export default function SettingsPageClient({ userId }: { userId: string }) {
                                 </div>
                             </SectionCard>
 
-                            <SectionCard title="Quick Add Commands">
-                                <div className="space-y-2">
+                            <SectionCard title="Quick Add Commands" dense>
+                                <div className="grid gap-2 sm:grid-cols-2">
                                     {[
-                                        { syntax: "today, tomorrow, next mon", label: "Due Date" },
+                                        { syntax: "today, tomorrow, next mon", label: "Due date" },
                                         { syntax: "14:00, 2:30pm (requires date)", label: "Time" },
-                                        { syntax: "#project-name", label: "Project/List" },
+                                        { syntax: "#project-name", label: "Project / list" },
                                         { syntax: "+urgent, +math", label: "Label" },
-                                        { syntax: "p1, p2, p3", label: "Priority (High, Med, Low)" },
+                                        { syntax: "p1, p2, p3", label: "Priority" },
                                         { syntax: "30m, 2h 15m", label: "Duration" },
                                         { syntax: "r30m, r2h, r1d", label: "Reminder" },
                                         { syntax: "every day, every weekday", label: "Repeat" },
                                     ].map((feature) => (
                                         <div
                                             key={feature.label}
-                                            className="flex items-center justify-between gap-4 rounded-xl border border-border/60 bg-background/70 px-3 py-2.5"
+                                            className="rounded-xl border border-border/60 bg-background/70 px-3 py-2"
                                         >
-                                            <span className="shrink-0 text-sm text-foreground">{feature.label}</span>
-                                            <span className="rounded-md border border-border bg-secondary/70 px-2 py-1 text-right font-mono text-[11px] text-muted-foreground">
-                                                {feature.syntax}
-                                            </span>
+                                            <div className="flex items-start justify-between gap-3">
+                                                <span className="text-sm text-foreground">{feature.label}</span>
+                                                <span className="rounded-md border border-border bg-secondary/70 px-2 py-1 text-right font-mono text-[11px] leading-4 text-muted-foreground">
+                                                    {feature.syntax}
+                                                </span>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             </SectionCard>
                         </div>
                     </div>
-
-                    <footer className="border-t border-border/60 pt-6 text-center text-sm text-muted-foreground">
-                        <a
-                            href="https://www.rudhresh.com/"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="transition-colors hover:text-foreground"
-                        >
-                            Built by Rudy
-                        </a>
-                    </footer>
                 </div>
             </div>
         </AppShell>

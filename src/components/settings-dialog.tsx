@@ -1,19 +1,14 @@
 "use client";
 
+import { Keyboard, Palette, User, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { 
-    Keyboard, 
-    Palette, 
-    User, 
-    X 
-} from "lucide-react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog";
-import { ProfileForm } from "~/components/settings/profile-form";
-import { AppearanceSettings } from "./settings/appearance-settings";
-import { ShortcutsSettings } from "./settings/shortcuts-settings";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { cn } from "~/lib/utils";
+import { AppearanceSettings } from "./settings/appearance-settings";
+import { ProfileForm } from "~/components/settings/profile-form";
+import { ShortcutsSettings } from "./settings/shortcuts-settings";
 
 type SettingsSection = "account" | "appearance" | "shortcuts";
 
@@ -24,11 +19,11 @@ interface SettingsDialogProps {
     initialSection?: SettingsSection;
 }
 
-export function SettingsDialog({ 
-    open, 
-    onOpenChange, 
+export function SettingsDialog({
+    open,
+    onOpenChange,
     userId,
-    initialSection = "account"
+    initialSection = "account",
 }: SettingsDialogProps) {
     const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
 
@@ -46,68 +41,75 @@ export function SettingsDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent 
-                showCloseButton={true}
-                className="sm:!max-w-none sm:!w-[1100px] w-[95vw] h-[90vh] max-h-[90vh] p-0 overflow-hidden flex flex-col sm:flex-row gap-0 border-border/60 bg-background/95 backdrop-blur-xl shadow-2xl"
+            <DialogContent
+                showCloseButton
+                className="flex h-[100dvh] w-[100vw] max-h-[100dvh] flex-col overflow-hidden rounded-none border-border/60 bg-background p-0 shadow-[0_24px_70px_rgba(15,23,42,0.18)] sm:h-[90vh] sm:w-[95vw] sm:max-h-[90vh] sm:max-w-[1100px] sm:rounded-lg lg:flex-row"
             >
                 <DialogTitle className="sr-only">Settings</DialogTitle>
                 <DialogDescription className="sr-only">
-                    Manage your profile, account preferences, data, and app appearance.
+                    Manage your account, appearance, and shortcut preferences.
                 </DialogDescription>
 
-                {/* Sidebar */}
-                <aside className="w-full sm:h-full sm:w-56 border-b sm:border-b-0 sm:border-r border-border/50 bg-secondary/5 flex flex-col">
-                    <div className="p-6 flex items-center justify-between">
-                        <h2 className="text-lg font-bold tracking-tight text-foreground">Settings</h2>
-                        <button 
+                <aside className="flex w-full flex-col border-b border-border/60 bg-muted/20 lg:w-64 lg:border-b-0 lg:border-r">
+                    <div className="flex items-start justify-between gap-3 border-b border-border/60 px-5 py-5">
+                        <div className="space-y-1">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                Preferences
+                            </p>
+                            <h2 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Settings</h2>
+                        </div>
+                        <button
+                            type="button"
                             onClick={() => onOpenChange(false)}
-                            className="sm:hidden p-2 rounded-lg hover:bg-secondary/80 transition-colors"
+                            className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition-colors hover:text-foreground lg:hidden"
                         >
-                            <X className="h-5 w-5 text-muted-foreground" />
+                            <X className="h-4.5 w-4.5" />
                         </button>
                     </div>
 
-                    <nav className="flex-1 px-3 space-y-1">
+                    <nav className="flex-1 space-y-1 p-3">
                         {sections.map((section) => {
                             const Icon = section.icon;
                             const active = activeSection === section.id;
+
                             return (
                                 <button
                                     key={section.id}
+                                    type="button"
                                     onClick={() => setActiveSection(section.id)}
                                     className={cn(
-                                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer text-left",
-                                        active 
-                                            ? "bg-primary/10 text-primary" 
-                                            : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                                        "flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-colors",
+                                        active
+                                            ? "border-primary bg-primary/10 text-foreground"
+                                            : "border-transparent text-muted-foreground hover:border-border hover:bg-background/70 hover:text-foreground",
                                     )}
                                 >
-                                    <Icon className={cn("h-4.5 w-4.5", active ? "text-primary" : "text-muted-foreground")} />
-                                    {section.label}
+                                    <span
+                                        className={cn(
+                                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border",
+                                            active
+                                                ? "border-primary/20 bg-primary/15 text-primary"
+                                                : "border-border/60 bg-secondary/60 text-muted-foreground",
+                                        )}
+                                    >
+                                        <Icon className="h-4.5 w-4.5" />
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block text-sm font-medium text-foreground">{section.label}</span>
+                                    </span>
                                 </button>
                             );
                         })}
                     </nav>
 
-                    <div className="p-6 mt-auto border-t border-border/40">
-                        <a 
-                            href="https://www.rudhresh.com/" 
-                            target="_blank" 
-                            rel="noreferrer"
-                            className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                            Built by Rudy
-                        </a>
-                    </div>
                 </aside>
 
-                {/* Content Area */}
-                <main className="relative flex min-h-0 flex-1 flex-col bg-background/50">
-                    <ScrollArea className="min-h-0 flex-1">
-                        <div className="px-8 py-10 md:px-12 lg:px-16 mx-auto w-full">
-                            {activeSection === "account" && <ProfileForm userId={userId} />}
-                            {activeSection === "appearance" && <AppearanceSettings />}
-                            {activeSection === "shortcuts" && <ShortcutsSettings />}
+                <main className="min-h-0 flex-1 bg-background">
+                    <ScrollArea className="h-full">
+                        <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-5 py-6 sm:px-7 sm:py-8 lg:px-10">
+                            {activeSection === "account" ? <ProfileForm userId={userId} /> : null}
+                            {activeSection === "appearance" ? <AppearanceSettings /> : null}
+                            {activeSection === "shortcuts" ? <ShortcutsSettings /> : null}
                         </div>
                     </ScrollArea>
                 </main>

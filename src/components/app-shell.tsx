@@ -42,6 +42,7 @@ import { Input } from "~/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "~/components/ui/sheet";
 import { getPublicAvatarUrl } from "~/lib/avatar";
 import { getProjectColorClasses, getProjectIcon } from "~/lib/project-appearance";
+import { formatProjectScheduledLabel } from "~/lib/project-summaries";
 import { formatTaskReminderScheduledLabel, getReminderOffsetLabel, hasTaskReminder } from "~/lib/task-reminders";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { formatTaskDueLabel, taskMatchesSearch } from "~/lib/task-views";
@@ -64,12 +65,14 @@ const DESKTOP_SIDEBAR_PREVIEW_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 const PRIMARY_ITEMS = [
     { href: "/tasks", label: "Today", icon: CheckSquare2 },
-    { href: "/calendar", label: "Calendar", icon: CalendarRange },
+    { href: "/calendar", label: "Plan", icon: CalendarRange },
     { href: "/focus", label: "Focus", icon: Timer },
+    { href: "/progress", label: "Progress", icon: BarChart3 },
 ] as const;
 
 const SECONDARY_ITEMS = [
-    { href: "/progress", label: "Progress", icon: BarChart3 },
+    { href: "/projects", label: "Projects", icon: FolderKanban },
+    { href: "/community", label: "Community", icon: Users },
 ] as const;
 
 const SMART_VIEW_ITEMS = [
@@ -80,7 +83,7 @@ const SMART_VIEW_ITEMS = [
 
 const GLOBAL_SEARCH_VIEW_ITEMS = [
     { href: "/tasks", label: "Today", icon: CheckSquare2, keywords: ["tasks", "focus"] },
-    { href: "/calendar", label: "Calendar", icon: CalendarRange, keywords: ["plan"] },
+    { href: "/calendar", label: "Plan", icon: CalendarRange, keywords: ["calendar", "plan"] },
     { href: "/focus", label: "Focus", icon: Timer, keywords: ["pomodoro", "timer", "study"] },
     { href: "/progress", label: "Progress", icon: BarChart3, keywords: ["analytics", "review", "stats"] },
     { href: "/projects", label: "Projects", icon: FolderKanban, keywords: ["workspace"] },
@@ -104,6 +107,33 @@ function getActiveSmartView(pathname: string, rawView: string | null) {
         return rawView;
     }
     return null;
+}
+
+function getProjectStatusLabel(summary: {
+    incompleteCount: number;
+    overdueCount: number;
+    dueSoonCount: number;
+    nextScheduledBlock: Parameters<typeof formatProjectScheduledLabel>[0];
+    memberCount: number;
+}) {
+    const parts = [`${summary.incompleteCount} open`];
+
+    if (summary.overdueCount > 0) {
+        parts.push(`${summary.overdueCount} overdue`);
+    } else if (summary.dueSoonCount > 0) {
+        parts.push(`${summary.dueSoonCount} due soon`);
+    }
+
+    if (summary.nextScheduledBlock) {
+        const scheduledLabel = formatProjectScheduledLabel(summary.nextScheduledBlock);
+        if (scheduledLabel) parts.push(scheduledLabel);
+    }
+
+    if (summary.memberCount > 1) {
+        parts.push(`${summary.memberCount} members`);
+    }
+
+    return parts.slice(0, 3);
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null) {
@@ -588,26 +618,26 @@ function AppShellLayout({ children }: { children: ReactNode }) {
         return (
             <DropdownMenuContent
                 align="end"
-                className="w-64 rounded-lg"
+                className="w-64 rounded-xl border-border/70 p-1.5 shadow-[0_18px_36px_rgba(15,23,42,0.12)]"
             >
-                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => handleNavigate("/progress")}>
+                <DropdownMenuItem className="rounded-lg px-2.5 py-2" onClick={() => handleNavigate("/progress")}>
                     <BarChart3 className="h-4 w-4" />
                     Progress
                 </DropdownMenuItem>
-                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => handleNavigate("/community")}>
+                <DropdownMenuItem className="rounded-lg px-2.5 py-2" onClick={() => handleNavigate("/community")}>
                     <Users className="h-4 w-4" />
                     Community
                 </DropdownMenuItem>
-                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => handleNavigate("/tasks?view=done")}>
+                <DropdownMenuItem className="rounded-lg px-2.5 py-2" onClick={() => handleNavigate("/tasks?view=done")}>
                     <CheckSquare2 className="h-4 w-4" />
                     Completed Tasks
                 </DropdownMenuItem>
-                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => openSettings()}>
+                <DropdownMenuItem className="rounded-lg px-2.5 py-2" onClick={() => openSettings()}>
                     <Settings className="h-4 w-4" />
                     Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="rounded-md px-2.5 py-2" onClick={() => void handleLogout()}>
+                <DropdownMenuItem className="rounded-lg px-2.5 py-2" onClick={() => void handleLogout()}>
                     <LogOut className="h-4 w-4" />
                     Log out
                 </DropdownMenuItem>
@@ -624,7 +654,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                     type="button"
                     onClick={() => openGlobalSearch()}
                     title="Search"
-                    className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg border border-sidebar-border bg-sidebar text-muted-foreground transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground"
+                    className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-sidebar-border bg-sidebar text-muted-foreground transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/80 hover:text-sidebar-foreground"
                 >
                     <Search className="h-4 w-4" />
                     <span className="sr-only">Search</span>
@@ -636,12 +666,12 @@ function AppShellLayout({ children }: { children: ReactNode }) {
             <button
                 type="button"
                 onClick={() => openGlobalSearch()}
-                className="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar px-3 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground"
+                className="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl border border-sidebar-border bg-sidebar px-3 text-sm text-muted-foreground transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/80 hover:text-sidebar-foreground"
             >
                 <Search className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 flex-1 text-left">Search</span>
                 {mobile ? null : (
-                    <span className="rounded-sm border border-sidebar-border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    <span className="rounded-md border border-sidebar-border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                         Ctrl K
                     </span>
                 )}
@@ -665,19 +695,20 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 key={summary.list.id}
                                 type="button"
                                 title={summary.list.name}
+                                aria-current={active ? "page" : undefined}
                                 onClick={() => handleNavigate(`/projects/${summary.list.id}`)}
                                 className={cn(
-                                    "group mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-transparent transition-colors",
+                                    "group mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-transparent transition-colors",
                                     active
-                                        ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
-                                        : "hover:border-sidebar-border hover:bg-sidebar-accent/60",
+                                        ? "border-sidebar-border bg-sidebar-accent/90 text-sidebar-accent-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]"
+                                        : "hover:border-sidebar-border hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
                                 )}
                             >
                                 <span
                                     className={cn(
-                                        "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
+                                        "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
                                         palette.soft,
-                                        active ? cn("border", palette.border) : "opacity-80 group-hover:opacity-100",
+                                        active ? cn("border shadow-[0_0_0_1px_rgba(255,255,255,0.08)]", palette.border) : "opacity-80 group-hover:opacity-100",
                                     )}
                                 >
                                     <Icon className={cn("h-4 w-4", palette.text, !active && "opacity-90")} />
@@ -696,6 +727,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                     const active = activeProjectId === summary.list.id;
                     const palette = getProjectColorClasses(summary.list.color_token);
                     const Icon = getProjectIcon(summary.list.icon_token);
+                    const statusLabel = getProjectStatusLabel(summary).join(" / ");
 
                     return (
                         <Draggable key={summary.list.id} draggableId={summary.list.id} index={index}>
@@ -722,18 +754,23 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                         cursor: snapshot.isDragging ? "grabbing" : "pointer",
                                     }}
                                     className={cn(
-                                        "flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 text-left font-medium transition-colors",
-                                        isCompact ? "py-1.5 text-[13px]" : "py-2.5 text-sm",
+                                        "flex w-full items-center gap-2.5 rounded-xl border border-transparent px-3 text-left font-medium transition-colors",
+                                        isCompact ? "py-[0.375rem] text-[13px]" : "py-2.5 text-sm",
                                         active
-                                            ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
+                                            ? "border-sidebar-border bg-sidebar-accent/90 text-sidebar-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
                                             : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
                                         snapshot.isDragging && "cursor-grabbing border-sidebar-border bg-sidebar-accent/80",
                                     )}
                                 >
-                                    <span className={cn("pointer-events-none h-2.5 w-2.5 rounded-sm", palette.accent)} />
+                                    <span className={cn("pointer-events-none h-2.5 w-2.5 shrink-0 rounded-sm", palette.accent)} />
                                     <Icon className={cn("pointer-events-none h-4 w-4 shrink-0", active ? palette.text : "text-muted-foreground")} />
-                                    <span className="pointer-events-none min-w-0 flex-1 truncate">{summary.list.name}</span>
-                                    <span className="pointer-events-none font-mono text-[10px] text-muted-foreground">
+                                    <span className="pointer-events-none min-w-0 flex-1">
+                                        <span className="block truncate">{summary.list.name}</span>
+                                        <span className="block truncate text-[11px] font-normal text-muted-foreground">
+                                            {statusLabel}
+                                        </span>
+                                    </span>
+                                    <span className="pointer-events-none rounded-md border border-border/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                                         {summary.incompleteCount}
                                     </span>
                                 </div>
@@ -751,6 +788,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                         const active = activeProjectId === summary.list.id;
                         const palette = getProjectColorClasses(summary.list.color_token);
                         const Icon = getProjectIcon(summary.list.icon_token);
+                        const statusLabel = getProjectStatusLabel(summary).join(" / ");
 
                         return (
                             <button
@@ -758,16 +796,23 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 type="button"
                                 onClick={() => handleNavigate(`/projects/${summary.list.id}`)}
                                 className={cn(
-                                    "flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-2.5 text-left text-sm font-medium transition-colors",
+                                    "flex w-full items-center gap-2.5 rounded-xl border border-transparent px-3 py-2.5 text-left text-sm font-medium transition-colors",
                                     active
-                                        ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
+                                        ? "border-sidebar-border bg-sidebar-accent/90 text-sidebar-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
                                         : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
                                 )}
                             >
-                                <span className={cn("h-2.5 w-2.5 rounded-sm", palette.accent)} />
+                                <span className={cn("h-2.5 w-2.5 shrink-0 rounded-sm", palette.accent)} />
                                 <Icon className={cn("h-4 w-4 shrink-0", active ? palette.text : "text-muted-foreground")} />
-                                <span className="min-w-0 flex-1 truncate">{summary.list.name}</span>
-                                <span className="font-mono text-[10px] text-muted-foreground">{summary.incompleteCount}</span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate">{summary.list.name}</span>
+                                    <span className="block truncate text-[11px] font-normal text-muted-foreground">
+                                        {statusLabel}
+                                    </span>
+                                </span>
+                                <span className="rounded-md border border-border/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                                    {summary.incompleteCount}
+                                </span>
                             </button>
                         );
                     })}
@@ -796,7 +841,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
     function renderSidebarContent(options: { collapsed: boolean; mobile: boolean; previewing?: boolean }) {
         const { collapsed, mobile, previewing = false } = options;
-        const projectsIndexActive = pathname === "/projects";
+        const projectsIndexActive = pathname === "/projects" || pathname.startsWith("/projects/");
         const profileMenuTriggerId = mobile
             ? "mobile-sidebar-profile-menu-trigger"
             : collapsed
@@ -811,12 +856,12 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                 <div className={cn("border-b border-sidebar-border", collapsed ? "px-2 py-3" : "px-3 py-3")}>
                     {collapsed ? (
                         <div className="flex flex-col items-center gap-3">
-                                <Link
-                                    href="/tasks"
-                                    title="Go to Today"
-                                    onClick={() => dismissPrimaryActivities()}
-                                    className="flex h-10 w-10 items-center justify-center rounded-lg border border-sidebar-border bg-sidebar-accent text-sm font-semibold tracking-[0.08em] text-sidebar-foreground transition-colors hover:bg-sidebar-accent/80"
-                                >
+                            <Link
+                                href="/tasks"
+                                title="Go to Today"
+                                onClick={() => dismissPrimaryActivities()}
+                                className="flex h-10 w-10 items-center justify-center rounded-xl border border-sidebar-border bg-sidebar-accent text-sm font-semibold tracking-[0.08em] text-sidebar-foreground transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/80"
+                            >
                                 <span aria-hidden="true">S</span>
                                 <span className="sr-only">Go to Today</span>
                             </Link>
@@ -829,7 +874,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                     openQuickAdd();
                                 }}
                                 title="Quick add"
-                                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg border border-primary bg-primary text-primary-foreground transition-colors hover:bg-primary/92"
+                                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl border border-primary bg-primary text-primary-foreground transition-colors hover:bg-primary/92"
                             >
                                 <Plus className="h-4 w-4" />
                                 <span className="sr-only">Quick Add</span>
@@ -837,9 +882,18 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                         </div>
                     ) : (
                         <>
-                            <div className="flex items-center justify-between gap-2.5">
-                                <Link href="/tasks" onClick={() => dismissPrimaryActivities()} className="min-w-0 text-sm font-semibold uppercase tracking-[0.14em] text-sidebar-foreground">
-                                    Stride
+                            <div className="flex items-start justify-between gap-3">
+                                <Link
+                                    href="/tasks"
+                                    onClick={() => dismissPrimaryActivities()}
+                                    className="flex min-w-0 items-center gap-2"
+                                >
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sidebar-border bg-sidebar-accent text-sm font-semibold tracking-[0.08em] text-sidebar-foreground">
+                                        S
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-sm font-semibold text-sidebar-foreground">Stride</span>
+                                    </span>
                                 </Link>
 
                                 {mobile ? null : (
@@ -849,8 +903,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                         onClick={() => setCollapsedState(!desktopCollapsed)}
                                         title={previewing ? "Keep sidebar open" : "Collapse sidebar"}
                                         className={cn(
-                                            "text-muted-foreground",
-                                            previewing && "rounded-md border border-sidebar-border hover:bg-sidebar-accent/80 hover:text-sidebar-foreground",
+                                            "rounded-xl border border-sidebar-border/70 text-muted-foreground hover:bg-sidebar-accent/80 hover:text-sidebar-foreground",
+                                            previewing && "bg-sidebar-accent/60",
                                         )}
                                     >
                                         {previewing ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -859,11 +913,11 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 )}
                             </div>
 
-                            <div className="mt-2.5 space-y-2">
+                            <div className="mt-3 space-y-2">
                                 {renderGlobalSearchTrigger({ collapsed, mobile })}
 
                                 <Button
-                                    className="h-10 w-full justify-between rounded-md px-3"
+                                    className="h-10 w-full justify-between rounded-xl px-3"
                                     size="sm"
                                     onClick={() => {
                                         openQuickAdd();
@@ -872,10 +926,10 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                 >
                                     <span className="inline-flex items-center gap-2">
                                         <Plus className="h-4 w-4" />
-                                        Add
+                                        Add task
                                     </span>
                                     {mobile ? null : (
-                                        <span className="rounded-sm border border-primary-foreground/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-primary-foreground/80">
+                                        <span className="rounded-md border border-primary-foreground/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-primary-foreground/80">
                                             Q
                                         </span>
                                     )}
@@ -887,60 +941,80 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
                 <div className={cn("flex-1 overflow-y-auto py-3", collapsed ? "px-2" : "px-2.5")}>
                     <div className={cn("space-y-5", collapsed && "space-y-4")}>
-                        <nav className="space-y-1">
-                            {PRIMARY_ITEMS.map((item) => {
-                                const active = item.href === "/tasks"
-                                    ? pathname === "/tasks" && activeSmartView === null
-                                    : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                        <section className="space-y-1">
+                            {!collapsed ? (
+                                <div className="px-2.5">
+                                    <p className="eyebrow">Loop</p>
+                                </div>
+                            ) : null}
+                            <nav className="space-y-1">
+                                {PRIMARY_ITEMS.map((item) => {
+                                    const active = item.href === "/tasks"
+                                        ? pathname === "/tasks" && activeSmartView === null
+                                        : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
-                                return (
-                                    <button
-                                        key={item.href}
-                                        type="button"
-                                        onClick={() => handleNavigate(item.href)}
-                                        title={collapsed ? item.label : undefined}
-                                        className={cn(
-                                            "flex w-full cursor-pointer items-center rounded-md border border-transparent font-medium transition-colors",
-                                            collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : cn("gap-2.5 px-2.5", isCompact ? "py-1.5 text-[13px]" : "py-2.5 text-sm"),
-                                            active
-                                                ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
-                                                : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-                                        )}
-                                    >
-                                        <item.icon className="h-4.5 w-4.5 shrink-0" />
-                                        {collapsed ? <span className="sr-only">{item.label}</span> : <span>{item.label}</span>}
-                                    </button>
-                                );
-                            })}
-                        </nav>
+                                    return (
+                                        <button
+                                            key={item.href}
+                                            type="button"
+                                            onClick={() => handleNavigate(item.href)}
+                                            title={collapsed ? item.label : undefined}
+                                            aria-current={active ? "page" : undefined}
+                                            className={cn(
+                                                "relative flex w-full cursor-pointer items-center justify-start rounded-xl border border-transparent text-left font-medium transition-colors",
+                                                collapsed ? "mx-auto h-10 w-10 justify-center px-0" : cn("gap-2.5 px-3", isCompact ? "py-[0.375rem] text-[13px]" : "py-2.5 text-sm"),
+                                                active
+                                                    ? "border-sidebar-border bg-sidebar-accent/90 text-sidebar-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
+                                                    : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                                            )}
+                                        >
+                                            <item.icon className="h-4.5 w-4.5 shrink-0" />
+                                            {collapsed ? <span className="sr-only">{item.label}</span> : (
+                                                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </nav>
+                        </section>
 
-                        <nav className="space-y-1">
-                            {SECONDARY_ITEMS.map((item) => {
-                                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                        <section className="space-y-1">
+                            {!collapsed ? (
+                                <div className="px-2.5">
+                                    <p className="eyebrow">Workspace</p>
+                                </div>
+                            ) : null}
+                            <nav className="space-y-1">
+                                {SECONDARY_ITEMS.map((item) => {
+                                    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
 
-                                return (
-                                    <button
-                                        key={item.href}
-                                        type="button"
-                                        onClick={() => handleNavigate(item.href)}
-                                        title={collapsed ? item.label : undefined}
-                                        className={cn(
-                                            "flex w-full cursor-pointer items-center rounded-md border border-transparent font-medium transition-colors",
-                                            collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : cn("gap-2.5 px-2.5", isCompact ? "py-1.5 text-[13px]" : "py-2.5 text-sm"),
-                                            active
-                                                ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
-                                                : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-                                        )}
-                                    >
-                                        <item.icon className="h-4.5 w-4.5 shrink-0" />
-                                        {collapsed ? <span className="sr-only">{item.label}</span> : <span>{item.label}</span>}
-                                    </button>
-                                );
-                            })}
-                        </nav>
+                                    return (
+                                        <button
+                                            key={item.href}
+                                            type="button"
+                                            onClick={() => handleNavigate(item.href)}
+                                            title={collapsed ? item.label : undefined}
+                                            aria-current={active ? "page" : undefined}
+                                            className={cn(
+                                                "relative flex w-full cursor-pointer items-center justify-start rounded-xl border border-transparent text-left font-medium transition-colors",
+                                                collapsed ? "mx-auto h-10 w-10 justify-center px-0" : cn("gap-2.5 px-3", isCompact ? "py-[0.375rem] text-[13px]" : "py-2.5 text-sm"),
+                                                active
+                                                    ? "border-sidebar-border bg-sidebar-accent/90 text-sidebar-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
+                                                    : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                                            )}
+                                        >
+                                            <item.icon className="h-4.5 w-4.5 shrink-0" />
+                                            {collapsed ? <span className="sr-only">{item.label}</span> : (
+                                                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </nav>
+                        </section>
 
                         {!collapsed && pathname === "/tasks" ? (
-                            <div className="space-y-1.5">
+                            <section className="space-y-1.5">
                                 <div className="px-2.5">
                                     <p className="eyebrow">Views</p>
                                 </div>
@@ -953,29 +1027,30 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                 key={item.value}
                                                 type="button"
                                                 onClick={() => handleNavigate(item.href)}
+                                                aria-current={active ? "page" : undefined}
                                                 className={cn(
-                                                    "flex w-full cursor-pointer items-center justify-between rounded-md border border-transparent px-2.5 font-medium transition-colors",
-                                                    isCompact ? "py-1.5 text-[13px]" : "py-2.5 text-sm",
+                                                    "flex w-full cursor-pointer items-center gap-2.5 rounded-xl border border-transparent px-3 text-left font-medium transition-colors",
+                                                    isCompact ? "py-[0.375rem] text-[13px]" : "py-2.5 text-sm",
                                                     active
-                                                        ? "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground"
+                                                        ? "border-sidebar-border bg-sidebar-accent/90 text-sidebar-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
                                                         : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
                                                 )}
                                             >
-                                                <span className="flex items-center gap-2.5">
-                                                    <item.icon className="h-4 w-4" />
-                                                    <span>{item.label}</span>
+                                                <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                                                    <item.icon className="h-4 w-4 shrink-0" />
+                                                    <span className="truncate">{item.label}</span>
                                                 </span>
-                                                <span className="rounded-sm border border-sidebar-border bg-sidebar px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                                                <span className="ml-auto rounded-md border border-sidebar-border bg-sidebar px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                                                     {count}
                                                 </span>
                                             </button>
                                         );
                                     })}
                                 </nav>
-                            </div>
+                            </section>
                         ) : null}
 
-                        <div className="space-y-1.5">
+                        <section className="space-y-1.5">
                             {!collapsed ? (
                                 <div className="flex items-center justify-between px-2.5 py-0.5">
                                     <button
@@ -988,42 +1063,28 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                     >
                                         Projects
                                     </button>
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleProjectDialogOpenChange(true)}
-                                            className="cursor-pointer text-xs font-semibold text-primary transition-colors hover:text-primary/80"
-                                        >
-                                            + New
-                                        </button>
+                                    <div className="flex items-center gap-2">
                                         <button
                                             type="button"
                                             onClick={() => handleNavigate("/projects")}
-                                            className="cursor-pointer text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                                            className="cursor-pointer rounded-md border border-sidebar-border px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-sidebar-accent/70 hover:text-foreground"
                                         >
                                             Manage
                                         </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleProjectDialogOpenChange(true)}
+                                            aria-label="New project"
+                                            title="New project"
+                                            className="cursor-pointer rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/15"
+                                        >
+                                            +
+                                        </button>
                                     </div>
                                 </div>
-                            ) : (
-                                <div className="flex items-center justify-center">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        onClick={() => handleNavigate("/projects")}
-                                        title="Projects"
-                                        className={cn(
-                                            "rounded-lg border border-transparent text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-                                            projectsIndexActive && "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground",
-                                        )}
-                                    >
-                                        <FolderKanban className="h-4 w-4" />
-                                        <span className="sr-only">Projects</span>
-                                    </Button>
-                                </div>
-                            )}
+                            ) : null}
                             {renderProjectLinks({ collapsed, mobile })}
-                        </div>
+                        </section>
                     </div>
                 </div>
 
@@ -1043,8 +1104,8 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                             <button
                                 id={profileMenuTriggerId}
                                 className={cn(
-                                    "flex w-full cursor-pointer items-center rounded-md border border-transparent transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/70",
-                                    collapsed ? "mx-auto h-10 w-10 justify-center rounded-lg px-0" : "gap-2.5 px-2.5 py-2 text-left",
+                                    "flex w-full cursor-pointer items-center rounded-xl border border-transparent transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/70",
+                                    collapsed ? "mx-auto h-10 w-10 justify-center px-0" : "gap-3 px-3 py-2 text-left",
                                 )}
                             >
                                 <Avatar className={cn("border border-border/60", collapsed ? "h-8 w-8" : "h-9 w-9")}>
@@ -1053,11 +1114,14 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                         {profile?.username?.slice(0, 1).toUpperCase() ?? "S"}
                                     </AvatarFallback>
                                 </Avatar>
-                                {collapsed ? <span className="sr-only">Open account menu</span> : (
+                                {collapsed ? (
+                                    <span className="sr-only">Open account menu</span>
+                                ) : (
                                     <div className="min-w-0 flex-1">
                                         <p className="truncate text-sm font-semibold text-foreground">
                                             {profile?.username ?? "Profile"}
                                         </p>
+                                        <p className="truncate text-[11px] text-muted-foreground">Account and preferences</p>
                                     </div>
                                 )}
                             </button>
@@ -1125,52 +1189,71 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                 </aside>
             )}
 
-            <main className={cn("transition-[padding-left] duration-200", desktopCollapsed ? "lg:pl-[4.25rem]" : "lg:pl-72")}>
+            <main className={cn("pt-0 transition-[padding-left,padding-top] duration-200 lg:pt-0", desktopCollapsed ? "lg:pl-[4.25rem]" : "lg:pl-72")}>
                 {children}
             </main>
 
             {userId ? (
                 <>
-                    <div className="fixed left-4 top-[max(1rem,env(safe-area-inset-top))] z-30 lg:hidden">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => handleMobileSidebarOpenChange(true)}
-                            className="rounded-lg border-border bg-card"
-                        >
-                            <Menu className="h-5 w-5" />
-                            <span className="sr-only">Open navigation</span>
-                        </Button>
-                    </div>
+                    <div className="fixed inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-30 flex items-start justify-between gap-3 px-3 sm:px-4 lg:hidden">
+                        <div className="flex items-start justify-between gap-3">
+                            <Button
+                                variant="outline"
+                                size="icon-sm"
+                                onClick={() => handleMobileSidebarOpenChange(true)}
+                                className="rounded-xl border-border/80 bg-card/95 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+                            >
+                                <Menu className="h-5 w-5" />
+                                <span className="sr-only">Open navigation</span>
+                            </Button>
 
-                    <div className="fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-30 lg:hidden">
-                        <DropdownMenu
-                            open={mobileProfileMenuSource === "topbar"}
-                            onOpenChange={(open) => setMobileProfileMenuSource(open ? "topbar" : null)}
-                        >
-                            <DropdownMenuTrigger asChild>
-                                <button
-                                    id="mobile-topbar-profile-menu-trigger"
-                                    className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border border-border bg-card"
+                            <div className="flex items-center gap-1.5">
+                                <Button
+                                    variant="outline"
+                                    size="icon-sm"
+                                    onClick={() => openGlobalSearch()}
+                                    className="rounded-xl border-border/80 bg-card/95 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
                                 >
-                                    <Avatar className="h-9 w-9 border border-border/60">
-                                        <AvatarImage src={avatarUrl ?? ""} alt={profile?.username ?? "User"} />
-                                        <AvatarFallback className="bg-primary/12 text-primary">
-                                            {profile?.username?.slice(0, 1).toUpperCase() ?? "S"}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <span className="sr-only">Open account menu</span>
-                                </button>
-                            </DropdownMenuTrigger>
-                            {renderProfileMenuContent()}
-                        </DropdownMenu>
+                                    <Search className="h-4.5 w-4.5" />
+                                    <span className="sr-only">Search</span>
+                                </Button>
+                                <Button
+                                    size="icon-sm"
+                                    onClick={() => openQuickAdd()}
+                                    className="rounded-xl shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+                                >
+                                    <Plus className="h-4.5 w-4.5" />
+                                    <span className="sr-only">Quick add</span>
+                                </Button>
+                                <DropdownMenu
+                                    open={mobileProfileMenuSource === "topbar"}
+                                    onOpenChange={(open) => setMobileProfileMenuSource(open ? "topbar" : null)}
+                                >
+                                    <DropdownMenuTrigger asChild>
+                                        <button
+                                            id="mobile-topbar-profile-menu-trigger"
+                                            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl border border-border/80 bg-card/95 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+                                        >
+                                            <Avatar className="h-7 w-7 border border-border/60">
+                                                <AvatarImage src={avatarUrl ?? ""} alt={profile?.username ?? "User"} />
+                                                <AvatarFallback className="bg-primary/12 text-primary">
+                                                    {profile?.username?.slice(0, 1).toUpperCase() ?? "S"}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <span className="sr-only">Open account menu</span>
+                                        </button>
+                                    </DropdownMenuTrigger>
+                                    {renderProfileMenuContent()}
+                                </DropdownMenu>
+                            </div>
+                        </div>
                     </div>
 
                     <Sheet open={mobileSidebarOpen} onOpenChange={handleMobileSidebarOpenChange}>
                         <SheetContent
                             side="left"
                             showCloseButton={false}
-                            className="w-[86vw] max-w-[22rem] border-r border-sidebar-border bg-sidebar p-0"
+                            className="w-[86vw] max-w-[22rem] border-r border-sidebar-border bg-sidebar p-0 shadow-[0_24px_60px_rgba(15,23,42,0.18)]"
                         >
                             <SheetHeader className="sr-only">
                                 <SheetTitle>Navigation</SheetTitle>
@@ -1183,35 +1266,50 @@ function AppShellLayout({ children }: { children: ReactNode }) {
             ) : null}
 
             <Dialog open={globalSearchOpen} onOpenChange={handleGlobalSearchOpenChange}>
-                <DialogContent showCloseButton={false} className="max-w-xl overflow-hidden border-border/70 p-0">
+                <DialogContent showCloseButton={false} className="max-w-2xl overflow-hidden rounded-2xl border-border/80 p-0 shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
                     <DialogTitle className="sr-only">Command palette</DialogTitle>
                     <DialogDescription className="sr-only">
                         Search destinations, projects, and tasks across your workspace, or run quick actions.
                     </DialogDescription>
 
-                    <div className="border-b border-border/70 px-4 py-3.5">
-                        <div className="flex items-center gap-2.5">
-                            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <Input
-                                autoFocus
-                                value={globalSearchQuery}
-                                onChange={(event) => setGlobalSearchQuery(event.target.value)}
-                                placeholder="Search or run a command"
-                                className="h-10 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0"
-                            />
+                    <div className="border-b border-border/70 bg-card/40 px-4 py-4">
+                        <div className="flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground">
+                                <Search className="h-4 w-4" />
+                            </div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-semibold text-foreground">Command palette</p>
+                                            </div>
+                                            <span className="rounded-md border border-border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                                                Ctrl K
+                                    </span>
+                                </div>
+                                <div className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5">
+                                    <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                    <Input
+                                        autoFocus
+                                        value={globalSearchQuery}
+                                        onChange={(event) => setGlobalSearchQuery(event.target.value)}
+                                        placeholder="Search or run a command"
+                                        className="h-10 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0"
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="max-h-[70vh] overflow-y-auto p-2.5">
+                    <div className="max-h-[70vh] overflow-y-auto p-3">
                         {!hasGlobalSearchResults ? (
-                            <div className="rounded-lg border border-dashed border-border px-4 py-7 text-center text-sm text-muted-foreground">
+                            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                                 No commands or results for &quot;{globalSearchQuery.trim()}&quot;.
                             </div>
                         ) : (
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                                 {matchingActionResults.length > 0 ? (
                                     <div className="space-y-1">
-                                        <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                        <p className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                             Actions
                                         </p>
                                         {matchingActionResults.map((item) => (
@@ -1219,9 +1317,9 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                 key={item.id}
                                                 type="button"
                                                 onClick={() => handleCommandAction(item.id)}
-                                                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/70"
+                                                className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-sidebar-accent/60"
                                             >
-                                                <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+                                                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground">
                                                     <item.icon className="h-4 w-4" />
                                                 </span>
                                                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{item.label}</span>
@@ -1232,7 +1330,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
                                 {matchingViewResults.length > 0 ? (
                                     <div className={cn("space-y-1", matchingActionResults.length > 0 && "border-t border-border/60 pt-3")}>
-                                        <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                        <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                             Navigate
                                         </p>
                                         {matchingViewResults.map((item) => (
@@ -1240,9 +1338,9 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                 key={item.href}
                                                 type="button"
                                                 onClick={() => handleGlobalSearchNavigate(item.href)}
-                                                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/70"
+                                                className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-sidebar-accent/60"
                                             >
-                                                <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+                                                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground">
                                                     <item.icon className="h-4 w-4" />
                                                 </span>
                                                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{item.label}</span>
@@ -1253,25 +1351,22 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
                                 {matchingProjectResults.length > 0 ? (
                                     <div className="space-y-1 border-t border-border/60 pt-3">
-                                        <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                        <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                             Projects
                                         </p>
                                         {matchingProjectResults.map((summary) => {
                                             const palette = getProjectColorClasses(summary.list.color_token);
                                             const Icon = getProjectIcon(summary.list.icon_token);
-                                            const metaParts = [`${summary.incompleteCount} open`];
-
-                                            if (summary.overdueCount > 0) metaParts.push(`${summary.overdueCount} overdue`);
-                                            else if (summary.dueSoonCount > 0) metaParts.push(`${summary.dueSoonCount} due soon`);
+                                            const metaParts = getProjectStatusLabel(summary);
 
                                             return (
                                                 <button
                                                     key={summary.list.id}
                                                     type="button"
                                                     onClick={() => handleGlobalSearchNavigate(`/projects/${summary.list.id}`)}
-                                                    className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/70"
+                                                    className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-sidebar-accent/60"
                                                 >
-                                                    <span className={cn("flex h-8 w-8 items-center justify-center rounded-md border", palette.soft, palette.border)}>
+                                                    <span className={cn("flex h-8 w-8 items-center justify-center rounded-lg border", palette.soft, palette.border)}>
                                                         <Icon className={cn("h-4 w-4", palette.text)} />
                                                     </span>
                                                     <div className="min-w-0 flex-1">
@@ -1286,7 +1381,7 @@ function AppShellLayout({ children }: { children: ReactNode }) {
 
                                 {matchingTaskResults.length > 0 ? (
                                     <div className="space-y-1 border-t border-border/60 pt-3">
-                                        <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                        <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                             Tasks
                                         </p>
                                         {matchingTaskResults.map(({ projectName, task }) => {
@@ -1296,10 +1391,10 @@ function AppShellLayout({ children }: { children: ReactNode }) {
                                                     key={task.id}
                                                     type="button"
                                                     onClick={() => handleGlobalSearchNavigate(`/tasks?taskId=${task.id}`)}
-                                                    className="flex w-full items-start gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent/70"
+                                                    className="flex w-full items-start gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:border-border hover:bg-sidebar-accent/60"
                                                 >
                                                     <span className={cn(
-                                                        "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border",
+                                                        "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border",
                                                         task.is_done
                                                             ? "border-primary/70 bg-primary/12 text-primary"
                                                             : "border-border bg-card text-muted-foreground",

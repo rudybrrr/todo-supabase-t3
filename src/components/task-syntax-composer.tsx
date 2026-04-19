@@ -8,34 +8,34 @@ import { cn } from "~/lib/utils";
 
 function getTokenHighlightClass(kind: QuickAddMatchedToken["kind"]) {
     if (kind === "project") {
-        return "rounded-[0.35rem] bg-accent/40 text-foreground";
+        return "rounded-sm border border-border/60 bg-accent/10 text-foreground";
     }
 
     if (kind === "date") {
-        return "rounded-[0.35rem] bg-secondary text-foreground";
+        return "rounded-sm border border-border/60 bg-secondary/70 text-foreground";
     }
 
     if (kind === "time") {
-        return "rounded-[0.35rem] bg-secondary/80 text-foreground";
+        return "rounded-sm border border-border/60 bg-secondary/60 text-foreground";
     }
 
     if (kind === "priority") {
-        return "rounded-[0.35rem] bg-destructive/12 text-destructive";
+        return "rounded-sm border border-destructive/20 bg-destructive/8 text-destructive";
     }
 
     if (kind === "reminder") {
-        return "rounded-[0.35rem] bg-amber-500/14 text-amber-900 dark:text-amber-200";
+        return "rounded-sm border border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-200";
     }
 
     if (kind === "recurrence") {
-        return "rounded-[0.35rem] bg-emerald-500/14 text-emerald-900 dark:text-emerald-200";
+        return "rounded-sm border border-emerald-500/20 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200";
     }
 
     if (kind === "label") {
-        return "rounded-[0.35rem] bg-primary/12 text-primary";
+        return "rounded-sm border border-primary/20 bg-primary/10 text-primary";
     }
 
-    return "rounded-[0.35rem] bg-muted text-foreground";
+    return "rounded-sm border border-border/60 bg-muted/70 text-foreground";
 }
 
 function renderHighlightedComposerText(input: string, tokens: QuickAddMatchedToken[], placeholder: string) {
@@ -228,8 +228,8 @@ export function TaskSyntaxComposer({
             />
 
             {hasSuggestions ? (
-                <div className="absolute inset-x-0 top-full z-30 mt-3 overflow-hidden rounded-[1rem] border border-border/70 bg-popover shadow-[0_18px_36px_rgba(17,18,15,0.16)]">
-                    <div className="border-b border-border/60 px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                <div className="absolute inset-x-0 top-full z-30 mt-2.5 overflow-hidden rounded-lg border border-border/70 bg-popover/98 shadow-[0_14px_28px_rgba(17,18,15,0.12)]">
+                    <div className="border-b border-border/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                         {suggestionState?.kind === "project" ? "Projects" : "Labels"}
                     </div>
                     <div className="max-h-72 overflow-y-auto p-1.5">
@@ -243,11 +243,11 @@ export function TaskSyntaxComposer({
                                     onMouseDown={(event) => event.preventDefault()}
                                     onClick={() => handleSuggestionSelect(suggestion)}
                                     className={cn(
-                                        "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors",
-                                        active ? "bg-secondary text-foreground" : "text-foreground hover:bg-secondary/70",
+                                        "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors",
+                                        active ? "bg-secondary/80 text-foreground" : "text-foreground hover:bg-secondary/60",
                                     )}
                                 >
-                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background/80">
+                                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background/80">
                                         {getSuggestionIcon(suggestion)}
                                     </div>
                                     <div className="min-w-0 flex-1">

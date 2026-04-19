@@ -3,12 +3,12 @@
 import { DragDropContext, Draggable, Droppable, type DraggableProvidedDragHandleProps, type DropResult } from "@hello-pangea/dnd";
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, CalendarRange, CheckSquare2, Clock3, Filter, FolderKanban, ListTodo, MoreHorizontal, PencilLine, Plus, Rows3, Share2, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarRange, CheckSquare2, Clock3, Filter, FolderKanban, GripVertical, ListTodo, MoreHorizontal, PencilLine, Plus, Rows3, Share2, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { AppShell, useShellActions } from "~/components/app-shell";
-import { EmptyState, PageHeader } from "~/components/app-primitives";
+import { EmptyState } from "~/components/app-primitives";
 import { useData } from "~/components/data-provider";
 import { useCompactMode } from "~/components/compact-mode-provider";
 import { ProjectDialog } from "~/components/project-dialog";
@@ -51,6 +51,7 @@ import { useTaskDataset } from "~/hooks/use-task-dataset";
 import { dedupeTasks, useTaskSelectionActions } from "~/hooks/use-task-selection-actions";
 import { mergeBufferedTasks, useTaskTransitionBuffer } from "~/hooks/use-task-transition-buffer";
 import { formatProjectScheduledLabel, getProjectScheduledBlockState } from "~/lib/project-summaries";
+import { getProjectColorClasses, getProjectIcon } from "~/lib/project-appearance";
 import { createSupabaseBrowserClient } from "~/lib/supabase/browser";
 import { updateTask } from "~/lib/task-actions";
 import { getDateInputValue, getTimeInputValue } from "~/lib/task-deadlines";
@@ -111,7 +112,6 @@ export default function ProjectWorkspaceClient({ projectId }: { projectId: strin
 function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
     const router = useRouter();
     const { profile, userId } = useData();
-    const { isCompact } = useCompactMode();
     const { enterPrimaryActivity, openQuickAdd, registerPrimaryActivityReset } = useShellActions();
     const supabase = useMemo(() => createSupabaseBrowserClient(), []);
     const {
@@ -220,6 +220,8 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
         : 0;
     const projectScheduledLabel = formatProjectScheduledLabel(projectSummary?.nextScheduledBlock);
     const projectScheduledState = getProjectScheduledBlockState(projectSummary?.nextScheduledBlock);
+    const projectPalette = getProjectColorClasses(project?.color_token);
+    const ProjectIcon = getProjectIcon(project?.icon_token);
 
     useEffect(() => {
         if (!selectedTaskId) return;
@@ -471,7 +473,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
             .finally(() => {
                 removePendingTaskMoveIds(pendingTaskIds);
             });
-    }, [addPendingTaskMoveIds, applyTaskPatch, detailDirty, profile?.timezone, projectTasks, removePendingTaskMoveIds, reorderSections, sections, selectedTaskId, supabase, upsertTask, userId]);
+    }, [addPendingTaskMoveIds, applyTaskPatch, detailDirty, profile?.timezone, projectTasks, removePendingTaskMoveIds, reorderSections, sections, selectedTaskId, supabase, upsertTask]);
 
     useEffect(() => registerPrimaryActivityReset("project-workspace:selection", () => {
         setBulkDeletingOpen(false);
@@ -584,10 +586,66 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
     return (
         <>
             <div className={selectionMode ? "page-container pb-28" : "page-container"}>
-                <PageHeader
-                    title={project.name}
-                    actions={
-                        <>
+                <div className="surface-card overflow-hidden">
+                    <div className="flex flex-col gap-4 border-b border-border/70 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0 flex-1 space-y-3">
+                            <div className="flex min-w-0 items-start gap-3">
+                                <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-md border", projectPalette.soft, projectPalette.border)}>
+                                    <ProjectIcon className={cn("h-4.5 w-4.5", projectPalette.text)} />
+                                </span>
+                                <div className="min-w-0 space-y-1">
+                                    <p className="eyebrow">Project workspace</p>
+                                    <h1 className="truncate text-[1.65rem] font-semibold tracking-[-0.03em] text-foreground sm:text-[1.9rem]">
+                                        {project.name}
+                                    </h1>
+                                    <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                                        {projectSummary.incompleteCount === 0
+                                            ? "No open tasks right now."
+                                            : `${projectSummary.incompleteCount} active ${projectSummary.incompleteCount === 1 ? "task" : "tasks"} in this workspace.`}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/45 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                                    <ListTodo className="h-3.5 w-3.5" />
+                                    {projectSummary.incompleteCount} open
+                                </span>
+                                {projectSummary.overdueCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-md border border-destructive/20 bg-destructive/8 px-2.5 py-1 text-[11px] font-semibold text-destructive">
+                                        <AlertTriangle className="h-3.5 w-3.5" />
+                                        {projectSummary.overdueCount} overdue
+                                    </span>
+                                ) : null}
+                                {needsCoverageCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/8 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                                        <Rows3 className="h-3.5 w-3.5" />
+                                        {needsCoverageCount} to plan
+                                    </span>
+                                ) : null}
+                                {projectSummary.memberCount > 1 ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/45 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/70" />
+                                        {projectSummary.memberCount} members
+                                    </span>
+                                ) : null}
+                                {projectScheduledLabel ? (
+                                    <span
+                                        className={cn(
+                                            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold",
+                                            projectScheduledState === "current"
+                                                ? "border-emerald-500/20 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300"
+                                                : "border-border/70 bg-muted/45 text-muted-foreground",
+                                        )}
+                                    >
+                                        <Clock3 className="h-3.5 w-3.5" />
+                                        {projectScheduledState === "current" ? "In progress" : projectScheduledLabel}
+                                    </span>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
                             <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
                                 <SheetTrigger asChild>
                                     <Button variant="outline" size="icon-sm" className="relative sm:hidden">
@@ -713,9 +771,9 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
-                        </>
-                    }
-                />
+                        </div>
+                    </div>
+                </div>
 
                 <ProjectWorkspaceSummaryStrip
                     incompleteCount={projectSummary.incompleteCount}
@@ -848,6 +906,11 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                                                 selectionMode={selectionMode}
                                                 dragEnabled={canUseProjectDragAndDrop}
                                                 pendingTaskMoveIds={pendingTaskMoveIdSet}
+                                                description={canUseProjectDragAndDrop
+                                                    ? "Drop tasks here to clear their section."
+                                                    : activeFilterCount > 0
+                                                        ? "No matching tasks."
+                                                        : "Tasks without a section."}
                                                 emptyMessage={canUseProjectDragAndDrop ? "Drag tasks here to clear their section." : activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
                                                 onSelectionToggle={handleTaskSelection}
                                                 onSelect={handleTaskSelect}
@@ -882,6 +945,7 @@ function ProjectWorkspaceContent({ projectId }: { projectId: string }) {
                                                                         pending={pendingSectionIds.has(group.section.id)}
                                                                         pendingTaskMoveIds={pendingTaskMoveIdSet}
                                                                         sectionDragging={snapshot.isDragging}
+                                                                        description={canUseProjectDragAndDrop ? "Drag tasks into this section." : undefined}
                                                                         emptyMessage={activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
                                                                         dragHandleProps={draggableProvided.dragHandleProps}
                                                                         onAddTask={() => openQuickAdd({
@@ -1118,7 +1182,7 @@ function ProjectWorkspaceSummaryStrip({
     scheduledState: "current" | "upcoming" | null;
 }) {
     return (
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <ProjectSummaryCard
                 icon={<ListTodo className="h-4 w-4" />}
                 eyebrow="Open"
@@ -1166,20 +1230,20 @@ function ProjectSummaryCard({
     return (
         <div
             className={cn(
-                "rounded-2xl border px-4 py-3.5",
+                "rounded-xl border px-4 py-3",
                 tone === "danger" && "border-destructive/25 bg-destructive/6",
                 tone === "warning" && "border-amber-500/20 bg-amber-500/6",
                 tone === "success" && "border-emerald-500/20 bg-emerald-500/6",
                 tone === "muted" && "border-border/70 bg-card/70",
             )}
         >
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/70 bg-background/80 text-foreground">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <span className="flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-background/80 text-foreground">
                     {icon}
                 </span>
                 {eyebrow}
             </div>
-            <p className="mt-3 text-lg font-semibold tracking-[-0.03em] text-foreground">{value}</p>
+            <p className="mt-3 text-[1.05rem] font-semibold tracking-[-0.03em] text-foreground">{value}</p>
             <p className="mt-1 text-sm text-muted-foreground">{note}</p>
         </div>
     );
@@ -1222,7 +1286,7 @@ function ProjectBoardView({
 }) {
     return (
         <div className="overflow-x-auto pb-2">
-            <div className="flex min-w-max gap-4">
+            <div className="grid min-w-max grid-flow-col auto-cols-[20rem] gap-4">
                 <div className="w-[20rem] shrink-0">
                     <ProjectTaskDroppableList
                         title="No section"
@@ -1234,6 +1298,11 @@ function ProjectBoardView({
                         selectionMode={selectionMode}
                         dragEnabled={dragEnabled}
                         pendingTaskMoveIds={pendingTaskMoveIds}
+                        description={dragEnabled
+                            ? "Drop tasks here to clear their section."
+                            : activeFilterCount > 0
+                                ? "No matching tasks."
+                                : "Tasks without a section."}
                         emptyMessage={dragEnabled ? "Drag tasks here to clear their section." : activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
                         onSelectionToggle={onSelectionToggle}
                         onSelect={onSelect}
@@ -1277,6 +1346,7 @@ function ProjectBoardView({
                                                 pending={pendingSectionIds.has(group.section.id)}
                                                 pendingTaskMoveIds={pendingTaskMoveIds}
                                                 sectionDragging={false}
+                                                description={dragEnabled ? "Drag tasks into this column." : undefined}
                                                 emptyMessage={activeFilterCount > 0 ? "No matching tasks." : "No tasks yet."}
                                                 dragHandleProps={draggableProvided.dragHandleProps}
                                                 onAddTask={() => onAddTask(group.section.id)}
@@ -1309,6 +1379,7 @@ function ProjectTaskDroppableList({
     selectionMode,
     dragEnabled,
     pendingTaskMoveIds,
+    description,
     emptyMessage,
     onSelectionToggle,
     onSelect,
@@ -1323,6 +1394,7 @@ function ProjectTaskDroppableList({
     selectionMode: boolean;
     dragEnabled: boolean;
     pendingTaskMoveIds: Set<string>;
+    description?: string;
     emptyMessage: string;
     onSelectionToggle: (task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => void;
     onSelect: (task: TaskDatasetRecord, options?: { shiftKey?: boolean }) => void;
@@ -1332,13 +1404,28 @@ function ProjectTaskDroppableList({
     return (
         <section className="space-y-2">
             {title ? (
-                <div className={cn("flex min-w-0 items-center gap-2", isCompact ? "px-2" : "px-3")}>
-                    <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                        {title}
-                    </p>
-                    <span className="rounded-full border border-border/70 bg-muted/45 px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
-                        {tasks.length}
-                    </span>
+                <div className={cn("flex min-w-0 items-start justify-between gap-3", isCompact ? "px-2" : "px-3")}>
+                    <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                {title}
+                            </p>
+                            <span className="rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                                {tasks.length}
+                            </span>
+                        </div>
+                        {description ? (
+                            <p className="mt-1 max-w-[15rem] text-[11px] leading-5 text-muted-foreground">
+                                {description}
+                            </p>
+                        ) : null}
+                    </div>
+                    {dragEnabled ? (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            <GripVertical className="h-3.5 w-3.5" />
+                            Drag
+                        </span>
+                    ) : null}
                 </div>
             ) : null}
 
@@ -1348,10 +1435,11 @@ function ProjectTaskDroppableList({
                         {tasks.length > 0 ? (
                             <div
                                 className={cn(
-                                    "rounded-xl border border-border bg-card/70 p-2",
+                                    "overflow-hidden rounded-xl border border-border/80 bg-card",
                                     snapshot.isDraggingOver && dragEnabled && "border-primary/35 bg-primary/6",
                                 )}
                             >
+                                <div className="p-2">
                                 <AnimatePresence initial={false}>
                                     {tasks.map((task, index) => (
                                         <Draggable
@@ -1387,6 +1475,7 @@ function ProjectTaskDroppableList({
                                     ))}
                                 </AnimatePresence>
                                 {provided.placeholder}
+                                </div>
                             </div>
                         ) : (
                             <div
@@ -1417,6 +1506,7 @@ function ProjectSectionGroup({
     pending,
     pendingTaskMoveIds,
     sectionDragging,
+    description,
     emptyMessage,
     dragHandleProps,
     onAddTask,
@@ -1436,6 +1526,7 @@ function ProjectSectionGroup({
     pending: boolean;
     pendingTaskMoveIds: Set<string>;
     sectionDragging: boolean;
+    description?: string;
     emptyMessage: string;
     dragHandleProps: DraggableProvidedDragHandleProps | null | undefined;
     onAddTask: () => void;
@@ -1448,21 +1539,36 @@ function ProjectSectionGroup({
     const { isCompact } = useCompactMode();
     return (
         <section className={cn("space-y-2", sectionDragging && "rounded-2xl border border-border/70 bg-card/50 p-2")}>
-            <div 
-                {...(dragEnabled ? dragHandleProps ?? {} : {})}
+            <div
                 className={cn(
-                    "group/section flex items-center justify-between gap-2 py-0.5",
+                    "group/section flex items-start justify-between gap-3 py-0.5",
                     isCompact ? "px-2" : "px-3",
-                    dragEnabled && !selectionMode && "cursor-grab select-none active:cursor-grabbing",
                 )}
             >
-                <div className="relative flex min-w-0 items-center gap-2">
-                    <p className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                        {section.name}
-                    </p>
-                    <span className="rounded-full border border-border/70 bg-muted/45 px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
-                        {tasks.length}
-                    </span>
+                <div
+                    {...(dragEnabled ? dragHandleProps ?? {} : {})}
+                    className={cn(
+                        "flex min-w-0 flex-1 items-center gap-2",
+                        dragEnabled && !selectionMode && "cursor-grab select-none active:cursor-grabbing",
+                    )}
+                    title={dragEnabled && !selectionMode ? "Drag to reorder section" : undefined}
+                >
+                    <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                {section.name}
+                            </p>
+                            <span className="rounded-md border border-border/70 bg-muted/45 px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                                {tasks.length}
+                            </span>
+                        </div>
+                        {description ? (
+                            <p className="mt-1 max-w-[15rem] text-[11px] leading-5 text-muted-foreground">
+                                {description}
+                            </p>
+                        ) : null}
+                    </div>
                 </div>
 
                 {!selectionMode ? (
@@ -1505,6 +1611,7 @@ function ProjectSectionGroup({
                     selectionMode={selectionMode}
                     dragEnabled={dragEnabled}
                     pendingTaskMoveIds={pendingTaskMoveIds}
+                    description={description}
                     emptyMessage={emptyMessage}
                     onSelectionToggle={onSelectionToggle}
                     onSelect={onSelect}
